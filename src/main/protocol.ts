@@ -18,14 +18,28 @@ export function registerScheme(): void {
         secure: true,
         stream: true,
         supportFetchAPI: true,
-        bypassCSP: true
+        bypassCSP: true,
+        /**
+         * Required, and easy to miss.
+         *
+         * The renderer is served from http://localhost in dev, so bard:// is a
+         * different origin. Without corsEnabled, Chromium refuses CORS for
+         * custom schemes outright ("Cross origin requests are only supported
+         * for protocol schemes: chrome, ... http, https"), and the audio
+         * element's crossOrigin request is blocked before it starts.
+         *
+         * With it off but crossOrigin unset, the request succeeds yet the
+         * MediaElementAudioSourceNode is tainted and emits pure zeroes -- the
+         * failure is inaudible and nothing throws. Both halves are needed.
+         */
+        corsEnabled: true
       }
     }
   ])
 }
 
 export function handleScheme(isAllowed: (path: string) => boolean): void {
-  protocol.handle('bard', (req) => {
+  protocol.handle('bard', async (req) => {
     let filePath: string
     try {
       filePath = decodeURIComponent(new URL(req.url).pathname)
@@ -33,7 +47,32 @@ export function handleScheme(isAllowed: (path: string) => boolean): void {
       return new Response('Bad Request', { status: 400 })
     }
     if (!isAllowed(filePath)) return new Response('Forbidden', { status: 403 })
-    return net.fetch(pathToFileURL(filePath).toString())
+
+    const res = await net.fetch(pathToFileURL(filePath).toString(), {
+      headers: req.headers // forward Range so seeking still works
+    })
+
+    /**
+     * CORS headers are load-bearing, not boilerplate.
+     *
+     * The renderer runs on http://localhost:5173 in dev while audio comes from
+     * the bard:// origin. Feeding a cross-origin media element into a
+     * MediaElementAudioSourceNode taints it, and Chromium silently substitutes
+     * ZEROES for the audio -- playback position still advances, the element
+     * still reports playing, and nothing throws. It is inaudible failure.
+     *
+     * The element sets crossOrigin='anonymous'; this is the matching half.
+     */
+    const headers = new Headers(res.headers)
+    headers.set('Access-Control-Allow-Origin', '*')
+    headers.set('Cross-Origin-Resource-Policy', 'cross-origin')
+    if (!headers.has('Accept-Ranges')) headers.set('Accept-Ranges', 'bytes')
+
+    return new Response(res.body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers
+    })
   })
 }
 

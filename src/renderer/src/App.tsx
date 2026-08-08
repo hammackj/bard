@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Config, QueueItem, Track } from '@shared/types'
+import type { ChatEvent, Config, QueueItem, Track, TwitchStatus } from '@shared/types'
 import { useAudio } from './audio/useAudio'
 import * as engine from './audio/engine'
 
@@ -11,12 +11,15 @@ function App(): React.JSX.Element {
   const [config, setConfig] = useState<Config | null>(null)
   const [tracks, setTracks] = useState<Track[]>([])
   const [queue, setQueue] = useState<QueueItem[]>([])
+  const [chat, setChat] = useState<ChatEvent[]>([])
+  const [twitch, setTwitch] = useState<TwitchStatus>('disconnected')
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState('default')
   const [scanning, setScanning] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const scanned = useRef(false)
   const canvas = useRef<HTMLCanvasElement | null>(null)
+  const chatCount = useRef(0)
 
   const { state, play, toggle, seek, setVolume, setOutputDevice } = useAudio(0.8)
 
@@ -67,9 +70,22 @@ function App(): React.JSX.Element {
     if (selfTested.current || tracks.length === 0) return
     selfTested.current = true
     void (async () => {
-      const ctx = engine.getAnalyser().context as AudioContext & { setSinkId?: unknown }
+      const ctx = engine.getAnalyser().context as AudioContext & {
+        setSinkId?: (v: unknown) => Promise<void>
+      }
       console.log(`[selftest] AudioContext.setSinkId available: ${typeof ctx.setSinkId}`)
-      engine.setVolume(0)
+
+      // Render the graph at full level into no device at all. That way the
+      // analyser sees the real signal -- which is the only way to catch a
+      // silently-zeroed MediaElementAudioSource -- without making noise.
+      let silentSink = false
+      try {
+        await ctx.setSinkId?.({ type: 'none' })
+        silentSink = true
+      } catch {
+        /* fall back to muting */
+      }
+      engine.setVolume(silentSink ? 1 : 0)
 
       // Drive the queue rather than the engine directly: enqueue should
       // auto-start the first item, and skip should advance to the second.
@@ -80,12 +96,25 @@ function App(): React.JSX.Element {
       await new Promise((r) => setTimeout(r, 2000))
 
       const p = engine.getPosition()
-      // The analyser sits after the gain node, so at zero gain it reads flat by
-      // construction. Whether the visualiser lights up can only be confirmed
-      // with audible playback -- a manual check, not something to assert here.
+
+      // Sample the analyser. A tainted MediaElementAudioSource emits exact
+      // zeroes (128 in byte-domain terms) while still reporting that it plays,
+      // so peak deviation is what separates real audio from silent failure.
+      const an = engine.getAnalyser()
+      const buf = new Uint8Array(an.fftSize)
+      let peak = 0
+      for (let i = 0; i < 40; i++) {
+        an.getByteTimeDomainData(buf)
+        for (const v of buf) peak = Math.max(peak, Math.abs(v - 128))
+        await new Promise((r) => setTimeout(r, 25))
+      }
       console.log(
         `[selftest] after enqueue: playing="${engine.getCurrentTrack()?.title}" ` +
           `expected="${a.title}" pos=${p.position.toFixed(2)}s ctx=${ctx.state}`
+      )
+      console.log(
+        `[selftest] analyser peak deviation=${peak} ` +
+          `(silentSink=${silentSink}) -> ${peak > 0 ? 'AUDIO PRESENT' : 'SILENT — zeroed source'}`
       )
 
       await window.bard.skip()
@@ -97,12 +126,30 @@ function App(): React.JSX.Element {
 
       engine.pause()
       await window.bard.clearQueue()
+      if (silentSink) await engine.setOutputDevice(deviceId)
       engine.setVolume(0.8)
+
+      // Exercise the real twitch client through IPC: connect anonymously to a
+      // busy public channel, confirm messages land as chat events, disconnect.
+      console.log('[selftest] connecting to twitch…')
+      await window.bard.connectTwitch('kaicenat')
+      await new Promise((r) => setTimeout(r, 12000))
+      await window.bard.disconnectTwitch()
+      console.log(`[selftest] twitch disconnected; chat events received=${chatCount.current}`)
     })()
   }, [tracks])
 
   // Queue state is owned by main; the renderer only mirrors the broadcast.
   useEffect(() => window.bard.onQueueChanged(setQueue), [])
+  useEffect(
+    () =>
+      window.bard.onChatEvent((e) => {
+        chatCount.current++
+        setChat((c) => [...c.slice(-499), e])
+      }),
+    []
+  )
+  useEffect(() => window.bard.onTwitchStatus(setTwitch), [])
 
   // Scope draws straight from the analyser, never through React state.
   useEffect(() => {
@@ -134,7 +181,7 @@ function App(): React.JSX.Element {
   return (
     <main style={S.page}>
       <h1 style={S.h1}>Bard</h1>
-      <p style={S.sub}>Phase 6 — queue, cooldowns, block list</p>
+      <p style={S.sub}>Phase 7 — Twitch IRC</p>
 
       <div style={S.row}>
         <button style={S.btn} onClick={runScan} disabled={scanning}>
@@ -196,6 +243,30 @@ function App(): React.JSX.Element {
       </div>
 
       <div style={S.row}>
+        <strong style={S.muted}>Twitch: {twitch}</strong>
+        <input
+          style={S.select}
+          placeholder="channel"
+          defaultValue={config?.twitch.channel ?? ''}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void window.bard.connectTwitch(e.currentTarget.value)
+          }}
+        />
+        <button style={S.btn} onClick={() => void window.bard.disconnectTwitch()}>
+          Disconnect
+        </button>
+      </div>
+      <div style={S.chatlog}>
+        {chat.slice(-14).map((e) => (
+          <div key={e.id}>
+            <span style={{ ...S.mono, color: PREFIX_COLOR[e.kind] }}>{e.kind.padEnd(3)}</span>{' '}
+            {e.user ? <span style={S.muted}>{e.user} </span> : null}
+            <span>{e.message}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={S.row}>
         <strong style={S.muted}>Queue ({queue.length})</strong>
         <button style={S.btn} onClick={() => void window.bard.skip()}>
           Skip
@@ -244,6 +315,13 @@ function fmt(s: number): string {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`
 }
 
+const PREFIX_COLOR: Record<string, string> = {
+  sys: '#94A3B8',
+  req: '#22D3EE',
+  ok: '#34D399',
+  no: '#FB7185'
+}
+
 const S: Record<string, React.CSSProperties> = {
   page: {
     fontFamily: 'system-ui, sans-serif',
@@ -277,6 +355,14 @@ const S: Record<string, React.CSSProperties> = {
     gap: 10
   },
   scope: { width: '100%', height: 54, display: 'block', background: '#020617' },
+  chatlog: {
+    border: '1px solid #1E293B',
+    background: '#0F172A',
+    padding: 10,
+    fontSize: 12,
+    maxHeight: 200,
+    overflowY: 'auto'
+  },
   transport: { display: 'flex', gap: 12, alignItems: 'center' },
   list: { listStyle: 'none', padding: 0, marginTop: 16 },
   item: {

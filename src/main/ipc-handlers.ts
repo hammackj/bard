@@ -11,6 +11,7 @@ import {
   reorderQueue,
   skip
 } from './queue'
+import { connectTwitch, disconnectTwitch } from './twitch'
 import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
 
 /**
@@ -71,6 +72,11 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(INVOKE.skip, (): void => skip())
   ipcMain.handle(INVOKE.clearQueue, (): void => clearQueue())
+
+  ipcMain.handle(INVOKE.connectTwitch, (_e, ch: string): void => {
+    connectTwitch(ch || getConfig().twitch.channel)
+  })
+  ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectTwitch())
 
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())

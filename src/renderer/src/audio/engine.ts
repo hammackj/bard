@@ -32,6 +32,11 @@ function element(): HTMLAudioElement {
   if (!el) {
     el = new Audio()
     el.preload = 'auto'
+    // Required before src is ever set. Without it the bard:// source counts as
+    // opaque cross-origin, and MediaElementAudioSourceNode emits zeroes rather
+    // than the decoded audio -- silent playback with no error anywhere. The
+    // bard:// handler returns the matching Access-Control-Allow-Origin.
+    el.crossOrigin = 'anonymous'
     // Volume is handled by the GainNode; leave the element wide open so the
     // gain ramp has full headroom to work with.
     el.volume = 1
