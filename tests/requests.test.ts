@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addBlock,
   cooldownRemaining,
   countUserItems,
   describeVerdict,
   evaluateRequest,
-  normalizeUser,
+  isUserBlocked,
+  normalizeName,
+  removeBlock,
+  requesterKey,
   type EvaluateArgs
 } from '../src/shared/requests'
-import type { QueueItem, RequestConfig, Track } from '../src/shared/types'
+import type { QueueItem, Requester, RequestConfig, Track } from '../src/shared/types'
+
+const dave: Requester = { platform: 'twitch', id: '123', name: 'dave' }
+const ytDave: Requester = { platform: 'youtube', id: 'UC999', name: 'dave' }
+const named = (name: string): Requester => ({ platform: 'twitch', name })
 
 const track = (id: string, title: string): Track => ({
   id,
@@ -23,10 +31,10 @@ const track = (id: string, title: string): Track => ({
 const ONE = track('t1', 'One')
 const TWO = track('t2', 'Two')
 
-const item = (t: Track, who?: string): QueueItem => ({
-  id: `q-${t.id}-${who ?? 'streamer'}`,
+const item = (t: Track, who?: Requester): QueueItem => ({
+  id: `q-${t.id}-${who?.name ?? 'streamer'}`,
   track: t,
-  requestedBy: who,
+  requester: who,
   addedAt: 0
 })
 
@@ -43,7 +51,7 @@ const NOW = 1_000_000
 
 const args = (over: Partial<EvaluateArgs> = {}): EvaluateArgs => ({
   query: 'one',
-  requester: 'dave',
+  requester: dave,
   now: NOW,
   queue: [],
   lastRequestAt: {},
@@ -65,68 +73,107 @@ describe('evaluateRequest', () => {
     // The query would not match either; blocked must win so the reason is
     // never misreported as not_found.
     const v = evaluateRequest(
-      args({ query: 'nonsense', config: config({ blockedUsers: ['dave'] }) })
+      args({
+        query: 'nonsense',
+        config: config({ blockedUsers: [{ platform: 'twitch', id: '123', name: 'dave', at: 0 }] })
+      })
     )
     expect(reason(v)).toBe('blocked_user')
   })
 
-  it('matches blocked users case-insensitively', () => {
-    expect(
-      reason(evaluateRequest(args({ requester: 'DaVe', config: config({ blockedUsers: ['dave'] }) })))
-    ).toBe('blocked_user')
+  it('blocks by id even after a rename', () => {
+    const v = evaluateRequest(
+      args({
+        requester: { platform: 'twitch', id: '123', name: 'NewHandle' },
+        config: config({ blockedUsers: [{ platform: 'twitch', id: '123', name: 'dave', at: 0 }] })
+      })
+    )
+    expect(reason(v)).toBe('blocked_user')
+  })
+
+  it('does not block the same handle on another platform', () => {
+    const v = evaluateRequest(
+      args({
+        requester: ytDave,
+        config: config({ blockedUsers: [{ platform: 'twitch', id: '123', name: 'dave', at: 0 }] })
+      })
+    )
+    expect(reason(v)).toBe('ok')
+  })
+
+  it('matches a name-only block case-insensitively', () => {
+    const v = evaluateRequest(
+      args({
+        requester: named('DaVe'),
+        config: config({ blockedUsers: [{ platform: 'twitch', name: 'dave', at: 0 }] })
+      })
+    )
+    expect(reason(v)).toBe('blocked_user')
   })
 
   it('rejects when the queue is full', () => {
     const v = evaluateRequest(
-      args({ config: config({ maxQueueLength: 1 }), queue: [item(TWO, 'someone')] })
+      args({ config: config({ maxQueueLength: 1 }), queue: [item(TWO, named('someone'))] })
     )
     expect(reason(v)).toBe('queue_full')
   })
 
   it('counts only the requester towards the per-user limit', () => {
-    const others = [item(TWO, 'someone'), item(track('t3', 'Three'), 'other')]
+    const others = [item(TWO, named('someone')), item(track('t3', 'Three'), named('other'))]
     expect(reason(evaluateRequest(args({ queue: others })))).toBe('ok')
   })
 
   it('rejects at the per-user limit, regardless of username case', () => {
-    const mine = [item(TWO, 'dave'), item(track('t3', 'Three'), 'DAVE')]
+    // Same id, different display name -- still the same person.
+    const mine = [
+      item(TWO, dave),
+      item(track('t3', 'Three'), { platform: 'twitch', id: '123', name: 'DAVE' })
+    ]
     expect(reason(evaluateRequest(args({ queue: mine })))).toBe('user_limit')
   })
 
   describe('cooldown', () => {
     it('passes at exactly the cooldown boundary', () => {
-      const lastRequestAt = { dave: NOW - 120_000 }
+      const lastRequestAt = { [requesterKey(dave)]: NOW - 120_000 }
       expect(reason(evaluateRequest(args({ lastRequestAt })))).toBe('ok')
     })
 
     it('rejects one millisecond short of the boundary', () => {
-      const lastRequestAt = { dave: NOW - 120_000 }
+      const lastRequestAt = { [requesterKey(dave)]: NOW - 120_000 }
       expect(reason(evaluateRequest(args({ now: NOW - 1, lastRequestAt })))).toBe('cooldown')
     })
 
     it('reports whole seconds remaining, rounded up', () => {
-      expect(cooldownRemaining('dave', NOW - 1500, { dave: NOW - 120_000 }, 120)).toBe(2)
+      expect(
+        cooldownRemaining(dave, NOW - 1500, { [requesterKey(dave)]: NOW - 120_000 }, 120)
+      ).toBe(2)
     })
 
     it('is zero for a user who has not requested before', () => {
-      expect(cooldownRemaining('nobody', NOW, {}, 120)).toBe(0)
+      expect(cooldownRemaining(named('nobody'), NOW, {}, 120)).toBe(0)
     })
   })
 
   describe('privileged users', () => {
     it('bypasses cooldown', () => {
-      const v = evaluateRequest(args({ lastRequestAt: { dave: NOW }, privileged: true }))
+      const v = evaluateRequest(
+        args({ lastRequestAt: { [requesterKey(dave)]: NOW }, privileged: true })
+      )
       expect(reason(v)).toBe('ok')
     })
 
     it('bypasses the per-user limit', () => {
-      const mine = [item(TWO, 'dave'), item(track('t3', 'Three'), 'dave')]
+      const mine = [item(TWO, dave), item(track('t3', 'Three'), dave)]
       expect(reason(evaluateRequest(args({ queue: mine, privileged: true })))).toBe('ok')
     })
 
     it('does not bypass a full queue', () => {
       const v = evaluateRequest(
-        args({ config: config({ maxQueueLength: 1 }), queue: [item(TWO, 'x')], privileged: true })
+        args({
+          config: config({ maxQueueLength: 1 }),
+          queue: [item(TWO, named('x'))],
+          privileged: true
+        })
       )
       expect(reason(v)).toBe('queue_full')
     })
@@ -143,18 +190,20 @@ describe('evaluateRequest', () => {
   })
 
   it('rejects a track already in the queue', () => {
-    expect(reason(evaluateRequest(args({ queue: [item(ONE, 'someone')] })))).toBe('already_queued')
+    expect(reason(evaluateRequest(args({ queue: [item(ONE, named('someone'))] })))).toBe(
+      'already_queued'
+    )
   })
 
   describe('purity', () => {
     it('does not mutate lastRequestAt, even on a rejected request', () => {
-      const lastRequestAt = { dave: 5 }
+      const lastRequestAt = { [requesterKey(dave)]: 5 }
       evaluateRequest(args({ query: 'zzz', lastRequestAt }))
-      expect(lastRequestAt).toEqual({ dave: 5 })
+      expect(lastRequestAt).toEqual({ [requesterKey(dave)]: 5 })
     })
 
     it('does not mutate the queue', () => {
-      const queue = [item(TWO, 'someone')]
+      const queue = [item(TWO, named('someone'))]
       evaluateRequest(args({ queue }))
       expect(queue).toHaveLength(1)
     })
@@ -162,22 +211,61 @@ describe('evaluateRequest', () => {
 })
 
 describe('helpers', () => {
-  it('normalises usernames', () => {
-    expect(normalizeUser('  DaVe  ')).toBe('dave')
+  it('normalises names', () => {
+    expect(normalizeName('  DaVe  ')).toBe('dave')
   })
 
-  it('counts a user’s queued items', () => {
-    const queue = [item(ONE, 'dave'), item(TWO, 'DAVE'), item(track('t3', 'T'), 'other')]
-    expect(countUserItems(queue, 'dave')).toBe(2)
+  it('scopes the identity key by platform', () => {
+    expect(requesterKey(dave)).not.toBe(requesterKey(ytDave))
+  })
+
+  it('keys on id rather than name, so a rename keeps the same identity', () => {
+    expect(requesterKey({ platform: 'twitch', id: '123', name: 'renamed' })).toBe(
+      requesterKey(dave)
+    )
+  })
+
+  it('counts a user’s queued items across renames', () => {
+    const queue = [
+      item(ONE, dave),
+      item(TWO, { platform: 'twitch', id: '123', name: 'DAVE' }),
+      item(track('t3', 'T'), named('other'))
+    ]
+    expect(countUserItems(queue, dave)).toBe(2)
   })
 
   it('does not count streamer-added items towards any user', () => {
-    expect(countUserItems([item(ONE)], 'dave')).toBe(0)
+    expect(countUserItems([item(ONE)], dave)).toBe(0)
   })
 
   it('describes every verdict', () => {
     expect(describeVerdict({ ok: true, track: ONE })).toContain('One')
     expect(describeVerdict({ ok: false, reason: 'not_found' })).toBe('Not in library')
     expect(describeVerdict({ ok: false, reason: 'cooldown', detail: '74s' })).toContain('74s')
+  })
+})
+
+describe('block list', () => {
+  it('adds and removes a block', () => {
+    const added = addBlock([], dave, 1)
+    expect(isUserBlocked(added, dave)).toBe(true)
+    expect(isUserBlocked(removeBlock(added, dave), dave)).toBe(false)
+  })
+
+  it('does not duplicate an existing block', () => {
+    const twice = addBlock(addBlock([], dave, 1), dave, 2)
+    expect(twice).toHaveLength(1)
+    expect(twice[0].at).toBe(2)
+  })
+
+  it('keeps blocks on other platforms when removing one', () => {
+    const both = addBlock(addBlock([], dave, 1), ytDave, 1)
+    const left = removeBlock(both, dave)
+    expect(isUserBlocked(left, ytDave)).toBe(true)
+    expect(isUserBlocked(left, dave)).toBe(false)
+  })
+
+  it('an empty list blocks nobody', () => {
+    expect(isUserBlocked([], dave)).toBe(false)
   })
 })

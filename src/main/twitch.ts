@@ -8,7 +8,7 @@ import {
   parseCommand,
   parseFrame
 } from '../shared/irc'
-import type { TwitchStatus } from '../shared/types'
+import type { Requester, TwitchStatus } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
 import { emitChat, getNowPlaying, getQueue, requestFromChat } from './queue'
@@ -163,28 +163,33 @@ function handlePrivmsg(
   if (!parsed) return
 
   const cfg = getConfig()
-  const user = displayName(tags, nick)
+  // user-id is stable across renames; display-name is only a label.
+  const requester: Requester = {
+    platform: 'twitch',
+    id: tags['user-id'] || undefined,
+    name: displayName(tags, nick)
+  }
   const prefix = cfg.twitch.commandPrefix.toLowerCase()
 
   if (parsed.command === prefix) {
-    emitChat('req', `${parsed.command} ${parsed.arg}`.trim(), user)
+    emitChat('req', `${parsed.command} ${parsed.arg}`.trim(), requester)
     if (!parsed.arg) {
       emitChat('no', 'No song given')
       return
     }
-    requestFromChat(parsed.arg, user, isPrivileged(tags))
+    requestFromChat(parsed.arg, requester, isPrivileged(tags))
     return
   }
 
   // The connection is read-only, so these only produce log entries -- there is
   // no way to reply in chat without OAuth and a bot account.
   if (parsed.command === '!queue') {
-    emitChat('req', '!queue', user)
+    emitChat('req', '!queue', requester)
     emitChat('sys', `Queue length: ${getQueue().length}`)
     return
   }
   if (parsed.command === '!song') {
-    emitChat('req', '!song', user)
+    emitChat('req', '!song', requester)
     const np = getNowPlaying()
     emitChat('sys', np ? `Now playing: ${np.track.title}` : 'Nothing playing')
   }

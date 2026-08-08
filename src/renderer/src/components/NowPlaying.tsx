@@ -58,9 +58,9 @@ export function NowPlaying(props: Props): React.JSX.Element {
           </div>
           <div className="mt-[7px] truncate text-s4">{track?.artist ?? ''}</div>
           <div className="mt-1 truncate text-s2 text-muted">{track?.album ?? ''}</div>
-          {current?.requestedBy && (
+          {current?.requester && (
             <div className="mt-3 text-s2 text-muted">
-              Requested by <b className="font-medium text-cyan">{current.requestedBy}</b>
+              Requested by <b className="font-medium text-cyan">{current.requester.name}</b>
             </div>
           )}
         </div>

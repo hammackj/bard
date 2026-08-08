@@ -46,14 +46,26 @@ export function ChatLog(): React.JSX.Element {
           </p>
         )}
         {chat.map((e) => (
-          <div key={e.id} className="grid grid-cols-[26px_1fr] gap-2">
+          <div key={e.id} className="group grid grid-cols-[26px_1fr_auto] gap-2">
             <span className={`pt-px text-s1 tracking-[.04em] ${PREFIX_CLASS[e.kind]}`}>
               {e.kind === 'no' ? ' no' : e.kind}
             </span>
             <span className={`break-words ${e.kind === 'no' ? 'text-muted' : 'text-text'}`}>
-              {e.user && <span className="text-muted">{e.user} </span>}
+              {e.requester && <span className="text-muted">{e.requester.name} </span>}
               {e.message}
             </span>
+            {e.requester && (
+              <button
+                title={`Block ${e.requester.name} from using commands`}
+                onClick={() => {
+                  const r = e.requester!
+                  void window.bard.blockUser(r).then(useStore.getState().setConfig)
+                }}
+                className="self-start text-s1 text-muted opacity-0 group-hover:opacity-100 hover:text-rose focus-visible:opacity-100"
+              >
+                block
+              </button>
+            )}
           </div>
         ))}
       </div>

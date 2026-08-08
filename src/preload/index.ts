@@ -29,7 +29,7 @@ const api: BardApi = {
   addLibraryPath: () => ipcRenderer.invoke(INVOKE.addLibraryPath),
   getArtwork: (trackId) => ipcRenderer.invoke(INVOKE.getArtwork, trackId),
 
-  enqueue: (trackId, requester) => ipcRenderer.invoke(INVOKE.enqueue, trackId, requester),
+  enqueue: (trackId) => ipcRenderer.invoke(INVOKE.enqueue, trackId),
   removeFromQueue: (queueItemId) => ipcRenderer.invoke(INVOKE.removeFromQueue, queueItemId),
   reorderQueue: (from, to) => ipcRenderer.invoke(INVOKE.reorderQueue, from, to),
   skip: () => ipcRenderer.invoke(INVOKE.skip),
@@ -48,6 +48,8 @@ const api: BardApi = {
   getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
   getPaths: () => ipcRenderer.invoke(INVOKE.getPaths),
   revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
+  blockUser: (r) => ipcRenderer.invoke(INVOKE.blockUser, r),
+  unblockUser: (r) => ipcRenderer.invoke(INVOKE.unblockUser, r),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { EVENT } from '../shared/ipc'
-import { evaluateRequest, describeVerdict, normalizeUser } from '../shared/requests'
+import { evaluateRequest, describeVerdict, requesterKey } from '../shared/requests'
 import type { RequestVerdict } from '../shared/requests'
-import type { ChatEvent, ChatEventKind, QueueItem, Track } from '../shared/types'
+import type { ChatEvent, ChatEventKind, QueueItem, Requester, Track } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
 import {
@@ -99,8 +99,12 @@ function emitQueue(): void {
   setQueueLength(queue.length)
 }
 
-export function emitChat(kind: ChatEventKind, message: string, user?: string): ChatEvent {
-  const event: ChatEvent = { id: randomUUID(), kind, message, user, at: Date.now() }
+export function emitChat(
+  kind: ChatEventKind,
+  message: string,
+  requester?: Requester
+): ChatEvent {
+  const event: ChatEvent = { id: randomUUID(), kind, message, requester, at: Date.now() }
   broadcast(EVENT.chatEvent, event)
   return event
 }
@@ -117,10 +121,10 @@ export function getNowPlaying(): QueueItem | null {
  * Streamer-initiated add. Deliberately skips evaluateRequest -- the person
  * running the stream is never rate-limited on their own machine.
  */
-export function enqueueTrack(trackId: string, requester?: string): QueueItem | null {
+export function enqueueTrack(trackId: string, requester?: Requester): QueueItem | null {
   const track = getTrackById(trackId)
   if (!track) return null
-  const item: QueueItem = { id: randomUUID(), track, requestedBy: requester, addedAt: Date.now() }
+  const item: QueueItem = { id: randomUUID(), track, requester, addedAt: Date.now() }
   queue = [...queue, item]
   emitQueue()
   if (!nowPlaying) playNext()
@@ -134,7 +138,7 @@ export function enqueueTrack(trackId: string, requester?: string): QueueItem | n
  */
 export function requestFromChat(
   query: string,
-  requester: string,
+  requester: Requester,
   privileged = false
 ): RequestVerdict {
   const verdict = evaluateRequest({
@@ -149,11 +153,11 @@ export function requestFromChat(
   })
 
   if (verdict.ok) {
-    lastRequestAt[normalizeUser(requester)] = Date.now()
+    lastRequestAt[requesterKey(requester)] = Date.now()
     const item: QueueItem = {
       id: randomUUID(),
       track: verdict.track,
-      requestedBy: requester,
+      requester,
       addedAt: Date.now()
     }
     queue = [...queue, item]

@@ -110,15 +110,29 @@ function Row({ item, index }: { item: QueueItem; index: number }): React.JSX.Ele
         {index + 1}
       </span>
       <span className="truncate text-s2">{item.track.title}</span>
-      <span className="text-s1 text-cyan">{item.requestedBy ?? ''}</span>
+      <span className="text-s1 text-cyan">{item.requester?.name ?? ''}</span>
       <span className="mono text-s1 text-muted">{fmtTime(item.track.durationSec)}</span>
-      <button
-        onClick={() => void window.bard.removeFromQueue(item.id)}
-        className="text-s1 text-muted opacity-0 group-hover:opacity-100 hover:text-rose focus-visible:opacity-100"
-        aria-label={`Remove ${item.track.title}`}
-      >
-        ✕
-      </button>
+      <span className="flex items-baseline gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+        {item.requester && (
+          <button
+            onClick={() => {
+              const r = item.requester!
+              void window.bard.blockUser(r).then(useStore.getState().setConfig)
+            }}
+            className="text-s1 text-muted hover:text-rose"
+            title={`Block ${item.requester.name}`}
+          >
+            block
+          </button>
+        )}
+        <button
+          onClick={() => void window.bard.removeFromQueue(item.id)}
+          className="text-s1 text-muted hover:text-rose"
+          aria-label={`Remove ${item.track.title}`}
+        >
+          ✕
+        </button>
+      </span>
     </div>
   )
 }

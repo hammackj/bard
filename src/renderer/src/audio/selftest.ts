@@ -37,8 +37,8 @@ export async function maybeRunSelfTest(): Promise<void> {
 
   const [a, b] = tracks
   await window.bard.clearQueue()
-  await window.bard.enqueue(a.id, 'selftest')
-  await window.bard.enqueue(b.id, 'selftest')
+  await window.bard.enqueue(a.id)
+  await window.bard.enqueue(b.id)
   await wait(2000)
 
   const analyser = engine.getAnalyser()

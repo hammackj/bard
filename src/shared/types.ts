@@ -6,6 +6,30 @@
  * bundles this file too.
  */
 
+/** Chat platforms Bard can take requests from. */
+export type ChatPlatform = 'twitch' | 'youtube'
+
+/**
+ * Who asked for something.
+ *
+ * `id` is the platform's stable user id where it provides one. Display names
+ * can be changed at will, so anything that must survive a rename -- blocks
+ * above all -- keys on the id and treats the name as a label.
+ */
+export type Requester = {
+  platform: ChatPlatform
+  id?: string
+  name: string
+}
+
+export type BlockedUser = {
+  platform: ChatPlatform
+  id?: string
+  /** Name at the time of blocking; the fallback match when there is no id. */
+  name: string
+  at: number
+}
+
 export type Track = {
   /** Stable hash of the absolute path. */
   id: string
@@ -24,8 +48,8 @@ export type QueueItem = {
   /** Identifies this queue entry, not the track -- the same track may be queued twice. */
   id: string
   track: Track
-  /** Twitch username, or undefined when the streamer queued it from the UI. */
-  requestedBy?: string
+  /** Absent when the streamer queued it themselves from the UI. */
+  requester?: Requester
   addedAt: number
 }
 
@@ -36,7 +60,8 @@ export type ChatEvent = {
   id: string
   kind: ChatEventKind
   message: string
-  user?: string
+  /** Carried so the log can offer "block" on the line that provoked it. */
+  requester?: Requester
   at: number
 }
 
@@ -71,7 +96,7 @@ export type RequestConfig = {
   cooldownSeconds: number
   maxQueueLength: number
   maxPerUserInQueue: number
-  blockedUsers: string[]
+  blockedUsers: BlockedUser[]
   blockedTracks: string[]
 }
 

@@ -18,7 +18,15 @@ import { setProgress, nowPlayingPath } from './nowplaying'
 import { artworkDir } from './artwork'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
-import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
+import { addBlock, removeBlock } from '../shared/requests'
+import type {
+  Config,
+  DeepPartial,
+  PlaybackProgress,
+  Requester,
+  ScanProgress,
+  Track
+} from '../shared/types'
 
 /**
  * Registers the handlers that exist so far. Channels in BardApi without a
@@ -75,8 +83,21 @@ export function registerIpcHandlers(): void {
 
   // Queue intents. Main owns the state; these return void and the renderer
   // re-renders from the onQueueChanged broadcast rather than a return value.
-  ipcMain.handle(INVOKE.enqueue, (_e, trackId: string, requester?: string): void => {
-    enqueueTrack(trackId, requester)
+  // Streamer adds from the UI carry no requester -- they are not rate-limited
+  // and there is nobody to attribute or block.
+  ipcMain.handle(INVOKE.enqueue, (_e, trackId: string): void => {
+    enqueueTrack(trackId)
+  })
+
+  ipcMain.handle(INVOKE.blockUser, (_e, r: Requester): Config => {
+    const cfg = getConfig()
+    return setConfig({
+      requests: { blockedUsers: addBlock(cfg.requests.blockedUsers, r, Date.now()) }
+    })
+  })
+  ipcMain.handle(INVOKE.unblockUser, (_e, r: Requester): Config => {
+    const cfg = getConfig()
+    return setConfig({ requests: { blockedUsers: removeBlock(cfg.requests.blockedUsers, r) } })
   })
   ipcMain.handle(INVOKE.removeFromQueue, (_e, queueItemId: string): void => {
     removeFromQueue(queueItemId)

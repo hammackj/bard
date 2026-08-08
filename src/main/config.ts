@@ -1,5 +1,6 @@
 import Store from 'electron-store'
 import { DEFAULT_CONFIG, type Config, type DeepPartial } from '../shared/types'
+import { migrateConfig } from '../shared/migrate'
 
 /**
  * Created lazily. Constructing the store at module load would resolve the
@@ -16,8 +17,10 @@ function store(): Store<Config> {
 export function getConfig(): Config {
   // Spread through the defaults so a config file written by an older version
   // still yields every key the app expects.
-  return mergeDeep(DEFAULT_CONFIG, store().store as DeepPartial<Config>)
+  const merged = mergeDeep(DEFAULT_CONFIG, store().store as DeepPartial<Config>)
+  return migrateConfig(merged)
 }
+
 
 export function setConfig(patch: DeepPartial<Config>): Config {
   const next = mergeDeep(getConfig(), patch)

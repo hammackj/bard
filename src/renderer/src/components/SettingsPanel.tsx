@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeepPartial, Config } from '@shared/types'
+import type { ChatPlatform, DeepPartial, Config } from '@shared/types'
 import type { AppPaths } from '@shared/ipc'
 import { useStore } from '../state/store'
 import * as engine from '../audio/engine'
@@ -121,23 +121,10 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             value={config.requests.maxPerUserInQueue}
             onChange={(v) => void patch({ requests: { maxPerUserInQueue: v } })}
           />
-          <Row label="Blocked users">
-            <input
-              defaultValue={config.requests.blockedUsers.join(', ')}
-              placeholder="comma separated"
-              onBlur={(e) =>
-                void patch({
-                  requests: {
-                    blockedUsers: e.target.value
-                      .split(',')
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  }
-                })
-              }
-              className="w-64 border border-edge bg-panel px-2 py-1 text-s2"
-            />
-          </Row>
+        </Group>
+
+        <Group title="Blocked users">
+          <BlockList />
         </Group>
 
         <Group title="Audio">
@@ -338,6 +325,83 @@ function Row({
       <span className="text-s2 text-muted">{label}</span>
       {children}
     </div>
+  )
+}
+
+/**
+ * Blocked users, per platform.
+ *
+ * Blocking is normally done from the chat log or a queue row -- one click on
+ * the line that provoked it. This list is for review and for unblocking, plus
+ * adding someone pre-emptively before they have said anything.
+ */
+function BlockList(): React.JSX.Element {
+  const blocked = useStore((s) => s.config?.requests.blockedUsers ?? [])
+  const setConfig = useStore((s) => s.setConfig)
+  const [platform, setPlatform] = useState<ChatPlatform>('twitch')
+  const [name, setName] = useState('')
+
+  const add = async (): Promise<void> => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    // Added by name: there is no id until they actually speak.
+    setConfig(await window.bard.blockUser({ platform, name: trimmed }))
+    setName('')
+  }
+
+  return (
+    <>
+      {blocked.length === 0 && (
+        <p className="text-s2 text-muted">
+          Nobody blocked. Use the <span className="text-text">block</span> action on a chat line
+          or a queue row, or add someone here.
+        </p>
+      )}
+
+      {blocked.map((b) => (
+        <div
+          key={`${b.platform}:${b.id ?? b.name}`}
+          className="flex items-center justify-between gap-3 py-1"
+        >
+          <span className="min-w-0 truncate text-s2">
+            <span className="mono mr-2 text-s1 text-muted">{b.platform}</span>
+            {b.name}
+            {b.id && <span className="mono ml-2 text-s1 text-muted">#{b.id}</span>}
+          </span>
+          <button
+            className="flex-none text-s1 text-muted hover:text-text"
+            onClick={async () =>
+              setConfig(
+                await window.bard.unblockUser({ platform: b.platform, id: b.id, name: b.name })
+              )
+            }
+          >
+            Unblock
+          </button>
+        </div>
+      ))}
+
+      <div className="mt-2 flex gap-2">
+        <select
+          value={platform}
+          onChange={(e) => setPlatform(e.target.value as ChatPlatform)}
+          className="border border-edge bg-panel px-2 py-1 text-s2"
+        >
+          <option value="twitch">twitch</option>
+          <option value="youtube">youtube</option>
+        </select>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void add()}
+          placeholder="username"
+          className="flex-1 border border-edge bg-panel px-2 py-1 text-s2"
+        />
+        <button onClick={() => void add()} className="bg-cyan-deep px-3 py-1 text-s2">
+          Block
+        </button>
+      </div>
+    </>
   )
 }
 

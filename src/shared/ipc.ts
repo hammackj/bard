@@ -7,6 +7,7 @@
  */
 import type {
   ChatEvent,
+  Requester,
   Config,
   DeepPartial,
   PlaybackProgress,
@@ -44,7 +45,9 @@ export const INVOKE = {
   setConfig: 'config:set',
   getOverlayUrl: 'overlay:url',
   getPaths: 'app:paths',
-  revealPath: 'app:revealPath'
+  revealPath: 'app:revealPath',
+  blockUser: 'requests:block',
+  unblockUser: 'requests:unblock'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -76,7 +79,7 @@ export type BardApi = {
   getArtwork: (trackId: string) => Promise<string | null>
 
   // queue -- the renderer sends intents, main owns the state
-  enqueue: (trackId: string, requester?: string) => Promise<void>
+  enqueue: (trackId: string) => Promise<void>
   removeFromQueue: (queueItemId: string) => Promise<void>
   reorderQueue: (from: number, to: number) => Promise<void>
   skip: () => Promise<void>
@@ -105,6 +108,10 @@ export type BardApi = {
   getPaths: () => Promise<AppPaths>
   /** Opens a folder in the system file manager. */
   revealPath: (path: string) => Promise<void>
+
+  /** Blocks a requester from using commands. Returns the updated config. */
+  blockUser: (r: Requester) => Promise<Config>
+  unblockUser: (r: Requester) => Promise<Config>
 
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
