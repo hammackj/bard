@@ -7,10 +7,20 @@ import { getLibraryPaths, configPath, getConfig } from './config'
 import { registerScheme, handleScheme, makeIsAllowed } from './protocol'
 import { registerIpcHandlers } from './ipc-handlers'
 import { startOverlay, stopOverlay, getOverlayUrl } from './overlay'
-import { nowPlayingPath } from './nowplaying'
+import { nowPlayingPath, onNowPlayingChange } from './nowplaying'
+import { createTray, updateTray, destroyTray } from './tray'
+import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
+import { getNowPlaying } from './queue'
 
 // Must run before app.whenReady().
 registerScheme()
+
+/** Set once the user really means to exit, so the close handler stops intercepting. */
+let quitting = false
+function quitApp(): void {
+  quitting = true
+  app.quit()
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -64,6 +74,15 @@ function createWindow(): void {
     })
   }
 
+  // Closing hides to the tray by default: a streamer will hit the X by
+  // accident mid-stream, and quitting the music is not a recoverable mistake.
+  mainWindow.on('close', (e) => {
+    if (!quitting && getConfig().window.closeToTray) {
+      e.preventDefault()
+      mainWindow.hide()
+    }
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -104,17 +123,30 @@ app.whenReady().then(() => {
     )
   })
 
+  createTray(quitApp)
+  const shortcuts = applyGlobalShortcuts(getConfig().shortcuts.globalMediaKeys)
+  if (shortcuts.failed.length) {
+    console.warn('[bard] media keys already taken:', shortcuts.failed.join(', '))
+  }
+
+  // Keep the tray tooltip and menu in step with playback.
+  onNowPlayingChange((snap) => updateTray(getNowPlaying(), snap.isPlaying, quitApp))
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
 app.on('before-quit', () => {
+  quitting = true
+  releaseGlobalShortcuts()
+  destroyTray()
   void stopOverlay()
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // With close-to-tray on, the window closing is not a request to exit.
+  if (process.platform !== 'darwin' && !getConfig().window.closeToTray) {
     app.quit()
   }
 })

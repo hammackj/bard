@@ -91,12 +91,28 @@ export type OverlayConfig = {
   writeNowPlayingJson: boolean
 }
 
+export type ShortcutConfig = {
+  /**
+   * System-wide media keys. Off by default -- grabbing the media keys for the
+   * whole machine without being asked is hostile, and would hijack them from
+   * whatever else the streamer has open.
+   */
+  globalMediaKeys: boolean
+}
+
+export type WindowConfig = {
+  /** Close hides to the tray instead of quitting. */
+  closeToTray: boolean
+}
+
 export type Config = {
   libraryPaths: string[]
   twitch: TwitchConfig
   requests: RequestConfig
   audio: AudioConfig
   overlay: OverlayConfig
+  shortcuts: ShortcutConfig
+  window: WindowConfig
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -110,7 +126,9 @@ export const DEFAULT_CONFIG: Config = {
     blockedTracks: []
   },
   audio: { volume: 0.8, outputDeviceId: 'default' },
-  overlay: { port: 4747, writeNowPlayingJson: true }
+  overlay: { port: 4747, writeNowPlayingJson: true },
+  shortcuts: { globalMediaKeys: false },
+  window: { closeToTray: true }
 }
 
 /** Recursive partial, for config patches coming over IPC. */

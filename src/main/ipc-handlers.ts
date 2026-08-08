@@ -14,6 +14,7 @@ import {
 import { connectTwitch, disconnectTwitch } from './twitch'
 import { setProgress } from './nowplaying'
 import { getOverlayUrl } from './overlay'
+import { applyGlobalShortcuts } from './shortcuts'
 import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
 
 /**
@@ -23,7 +24,15 @@ import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from 
  */
 export function registerIpcHandlers(): void {
   ipcMain.handle(INVOKE.getConfig, (): Config => getConfig())
-  ipcMain.handle(INVOKE.setConfig, (_e, patch: DeepPartial<Config>): Config => setConfig(patch))
+  ipcMain.handle(INVOKE.setConfig, (_e, patch: DeepPartial<Config>): Config => {
+    const next = setConfig(patch)
+    // Media keys are global; re-register as soon as the toggle changes rather
+    // than waiting for a restart.
+    if (patch.shortcuts?.globalMediaKeys !== undefined) {
+      applyGlobalShortcuts(next.shortcuts.globalMediaKeys)
+    }
+    return next
+  })
 
   ipcMain.handle(INVOKE.scanLibrary, async (e): Promise<Track[]> => {
     const sender = e.sender

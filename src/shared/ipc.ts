@@ -16,6 +16,8 @@ import type {
   TwitchStatus
 } from './types'
 
+export type TransportAction = 'toggle' | 'restart'
+
 /** Renderer -> main, expects a reply (ipcRenderer.invoke). */
 export const INVOKE = {
   scanLibrary: 'library:scan',
@@ -46,7 +48,8 @@ export const EVENT = {
   chatEvent: 'chat:event',
   twitchStatus: 'twitch:status',
   scanProgress: 'library:scanProgress',
-  nowPlaying: 'player:nowPlaying'
+  nowPlaying: 'player:nowPlaying',
+  transport: 'player:transport'
 } as const
 
 /** Unsubscribe handle returned by every onX subscription. */
@@ -90,4 +93,6 @@ export type BardApi = {
   onScanProgress: (cb: (p: ScanProgress) => void) => Unsubscribe
   /** The queue item now playing, carrying requester info. */
   onNowPlaying: (cb: (i: QueueItem | null) => void) => Unsubscribe
+  /** Transport commands originating outside the renderer (tray, media keys). */
+  onTransport: (cb: (a: TransportAction) => void) => Unsubscribe
 }

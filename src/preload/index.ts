@@ -50,7 +50,8 @@ const api: BardApi = {
   onChatEvent: (cb) => subscribe(EVENT.chatEvent, cb),
   onTwitchStatus: (cb) => subscribe(EVENT.twitchStatus, cb),
   onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb),
-  onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb)
+  onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb),
+  onTransport: (cb) => subscribe(EVENT.transport, cb)
 }
 
 if (process.contextIsolated) {

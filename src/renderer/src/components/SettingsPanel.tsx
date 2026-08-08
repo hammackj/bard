@@ -156,6 +156,29 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
           </p>
         </Group>
 
+        <Group title="Shortcuts & window">
+          <Row label="Global media keys">
+            <input
+              type="checkbox"
+              checked={config.shortcuts.globalMediaKeys}
+              onChange={(e) => void patch({ shortcuts: { globalMediaKeys: e.target.checked } })}
+              className="accent-cyan"
+            />
+          </Row>
+          <p className="text-s1 text-muted">
+            Takes Play/Pause, Next and Previous system-wide. Off by default, since other players
+            stop receiving them while Bard holds them.
+          </p>
+          <Row label="Close hides to tray">
+            <input
+              type="checkbox"
+              checked={config.window.closeToTray}
+              onChange={(e) => void patch({ window: { closeToTray: e.target.checked } })}
+              className="accent-cyan"
+            />
+          </Row>
+        </Group>
+
         <Group title="Overlay">
           <Row label="Browser source URL">
             <span className="flex items-center gap-2">

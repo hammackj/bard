@@ -8,6 +8,7 @@ import { QueuePanel } from './components/QueuePanel'
 import { ChatLog } from './components/ChatLog'
 import { SettingsPanel } from './components/SettingsPanel'
 import { FirstRun } from './components/FirstRun'
+import { ShortcutsOverlay } from './components/ShortcutsOverlay'
 import { maybeRunSelfTest } from './audio/selftest'
 
 function App(): React.JSX.Element {
@@ -15,9 +16,19 @@ function App(): React.JSX.Element {
   const [current, setCurrent] = useState<QueueItem | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const scanned = useRef(false)
 
   const { state, toggle, seek, setVolume } = useAudio(s.config?.audio.volume ?? 0.8)
+
+  // Held in refs so the transport subscription binds once instead of on every
+  // callback identity change.
+  const toggleRef = useRef(toggle)
+  const seekRef = useRef(seek)
+  const stateRef = useRef(state)
+  toggleRef.current = toggle
+  seekRef.current = seek
+  stateRef.current = state
 
   const runScan = useCallback(async () => {
     useStore.getState().setScanning(true)
@@ -37,7 +48,11 @@ function App(): React.JSX.Element {
       window.bard.onChatEvent(useStore.getState().pushChat),
       window.bard.onTwitchStatus(useStore.getState().setTwitch),
       window.bard.onScanProgress(useStore.getState().setScanProgress),
-      window.bard.onNowPlaying(setCurrent)
+      window.bard.onNowPlaying(setCurrent),
+      window.bard.onTransport((action) => {
+        if (action === 'toggle') void toggleRef.current()
+        else if (action === 'restart') seekRef.current(0)
+      })
     ]
     return () => offs.forEach((off) => off())
   }, [])
@@ -69,16 +84,32 @@ function App(): React.JSX.Element {
       } else if (e.code === 'Space' && !typing) {
         e.preventDefault()
         void toggle()
+      } else if (e.key === 'ArrowRight' && !typing) {
+        e.preventDefault()
+        seek(Math.min(stateRef.current.duration, stateRef.current.position + 5))
+      } else if (e.key === 'ArrowLeft' && !typing) {
+        e.preventDefault()
+        seek(Math.max(0, stateRef.current.position - 5))
+      } else if (e.key === 'ArrowUp' && !typing) {
+        e.preventDefault()
+        setVolume(Math.min(1, stateRef.current.volume + 0.05))
+      } else if (e.key === 'ArrowDown' && !typing) {
+        e.preventDefault()
+        setVolume(Math.max(0, stateRef.current.volume - 0.05))
+      } else if (e.key === '?' && !typing) {
+        e.preventDefault()
+        setShortcutsOpen((v) => !v)
       } else if (e.key === ',' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault()
         setSettingsOpen((v) => !v)
       } else if (e.key === 'Escape') {
         setSettingsOpen(false)
+        setShortcutsOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [toggle])
+  }, [toggle, seek, setVolume])
 
   const chooseFolder = async (): Promise<void> => {
     await window.bard.addLibraryPath()
@@ -174,6 +205,7 @@ function App(): React.JSX.Element {
         onClose={() => setSettingsOpen(false)}
         overlayUrl={overlayUrl}
       />
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   )
 }
