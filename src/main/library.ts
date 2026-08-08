@@ -1,21 +1,26 @@
 import fg from 'fast-glob'
-import Fuse from 'fuse.js'
 import { createHash } from 'node:crypto'
 import { basename, extname, resolve } from 'node:path'
 import { parseFile } from 'music-metadata'
 import type { ScanProgress, Track } from '../shared/types'
 import { ensureArtworkDir, hasArtwork, saveArtwork } from './artwork'
+import { createMatcher, searchTextFor, type Matcher } from '../shared/match'
+import {
+  byPathOrder,
+  nextInAlbum as nextInAlbumOf,
+  pickRandom,
+  randomAlbumStart as randomAlbumStartOf,
+  tracksInAlbum as tracksInAlbumOf,
+  albumNames as albumNamesOf
+} from '../shared/playlist'
 
 export const AUDIO_EXTENSIONS = ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'opus'] as const
 
 /** Parsing many files at once exhausts file handles; a small pool is plenty. */
 const PARSE_CONCURRENCY = 8
 
-/** Fuse scores run 0 (perfect) to 1 (nothing). Above this we treat it as no match. */
-const MATCH_THRESHOLD = 0.4
-
 let tracks: Track[] = []
-let index: Fuse<Track> | null = null
+let matcher: Matcher | null = null
 const byId = new Map<string, Track>()
 
 export function trackId(path: string): string {
@@ -104,7 +109,7 @@ async function readTrack(path: string): Promise<Track | null> {
       album,
       durationSec: meta.format.duration ?? 0,
       hasArtwork: artwork,
-      searchText: `${title} ${artist} ${album}`.toLowerCase()
+      searchText: searchTextFor(title, artist, album)
     }
   } catch {
     // An unreadable or malformed file should not abort the whole scan; fall
@@ -127,76 +132,35 @@ function clean(v: string | undefined): string | undefined {
   return t ? t : undefined
 }
 
-function byPathOrder(a: Track, b: Track): number {
-  return a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' })
-}
-
 function setTracks(next: Track[]): void {
   tracks = next
   byId.clear()
   for (const t of next) byId.set(t.id, t)
-  index = new Fuse(next, {
-    keys: ['searchText'],
-    threshold: MATCH_THRESHOLD,
-    includeScore: true,
-    ignoreLocation: true
-  })
+  matcher = createMatcher(next)
 }
 
-/** Tracks of one album, in release order (path order carries the track number). */
+/** Tracks of one album, in release order. */
 export function tracksInAlbum(album: string): Track[] {
-  return tracks.filter((t) => t.album === album).sort(byPathOrder)
+  return tracksInAlbumOf(tracks, album)
 }
 
 export function albumNames(): string[] {
-  return [...new Set(tracks.map((t) => t.album))].sort()
+  return albumNamesOf(tracks)
 }
 
-/**
- * A random track, avoiding anything in `exclude`.
- *
- * Pure random replays the same track uncomfortably often on a small library --
- * with 585 tracks there is a better-than-even chance of a repeat inside 30
- * picks. Excluding a recent window is what makes shuffle feel shuffled. If the
- * window has swallowed the whole library, it is ignored rather than returning
- * nothing.
- */
 export function randomTrack(exclude: ReadonlySet<string> = new Set()): Track | null {
-  if (tracks.length === 0) return null
-  const pool = tracks.filter((t) => !exclude.has(t.id))
-  const from = pool.length > 0 ? pool : tracks
-  return from[Math.floor(Math.random() * from.length)]
+  return pickRandom(tracks, exclude)
 }
 
-/** The next track on the same album, or null at the end of the album. */
 export function nextInAlbum(track: Track): Track | null {
-  const album = tracksInAlbum(track.album)
-  const i = album.findIndex((t) => t.id === track.id)
-  if (i === -1 || i + 1 >= album.length) return null
-  return album[i + 1]
+  return nextInAlbumOf(tracks, track)
 }
 
-/** First track of a random album other than `notThis`. */
 export function randomAlbumStart(notThis?: string): Track | null {
-  const names = albumNames().filter((a) => a !== notThis)
-  const pick = names.length ? names : albumNames()
-  if (!pick.length) return null
-  const album = tracksInAlbum(pick[Math.floor(Math.random() * pick.length)])
-  return album[0] ?? null
+  return randomAlbumStartOf(tracks, notThis)
 }
 
-/**
- * Best match for a chat request, or null.
- *
- * Returning null on a weak match is deliberate: a viewer typing "!sr lofi"
- * should get a "not found" reply rather than whichever track happened to score
- * least badly.
- */
+/** Best match for a chat request, or null. See shared/match for the threshold. */
 export function matchRequest(query: string): Track | null {
-  const q = query.trim()
-  if (!q || !index) return null
-  const [best] = index.search(q, { limit: 1 })
-  if (!best) return null
-  if (best.score !== undefined && best.score > MATCH_THRESHOLD) return null
-  return best.item
+  return matcher ? matcher(query) : null
 }

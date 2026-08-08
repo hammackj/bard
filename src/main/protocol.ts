@@ -1,6 +1,6 @@
 import { protocol, net } from 'electron'
 import { pathToFileURL } from 'node:url'
-import { resolve, relative, isAbsolute, sep } from 'node:path'
+export { isInside, makeIsAllowed } from '../shared/paths'
 
 /**
  * The renderer is served from http://localhost:5173 in dev, so it cannot load
@@ -76,23 +76,3 @@ export function handleScheme(isAllowed: (path: string) => boolean): void {
   })
 }
 
-/**
- * True when `target` resolves to something at or beneath `root`.
- *
- * Compares resolved paths segment-wise rather than with startsWith, so
- * /music-secrets does not read as being inside /music.
- */
-export function isInside(root: string, target: string): boolean {
-  const rel = relative(resolve(root), resolve(target))
-  return rel !== '' && !rel.startsWith('..' + sep) && rel !== '..' && !isAbsolute(rel)
-}
-
-/** Builds the guard passed to handleScheme from the configured library roots. */
-export function makeIsAllowed(getRoots: () => string[]) {
-  return (filePath: string): boolean => {
-    if (!filePath) return false
-    const roots = getRoots()
-    if (roots.length === 0) return false
-    return roots.some((root) => isInside(root, filePath))
-  }
-}

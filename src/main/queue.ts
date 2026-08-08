@@ -12,6 +12,7 @@ import {
   randomAlbumStart,
   randomTrack
 } from './library'
+import { shuffled } from '../shared/playlist'
 import { setNowPlaying, setQueueLength } from './nowplaying'
 
 /**
@@ -84,12 +85,7 @@ export function fillQueue(count?: number): number {
 /** Fisher-Yates over the pending queue; what is already playing is untouched. */
 export function shuffleQueue(): void {
   if (queue.length < 2) return
-  const next = [...queue]
-  for (let i = next.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[next[i], next[j]] = [next[j], next[i]]
-  }
-  queue = next
+  queue = shuffled(queue)
   emitQueue()
   emitChat('sys', 'Queue shuffled')
 }
