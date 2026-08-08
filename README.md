@@ -160,7 +160,10 @@ npm run build:win      # NSIS installer
 npm run build:mac      # dmg (arm64 + x64)
 ```
 
-Output lands in `dist/`.
+Output lands in `dist/`. `build:linux` also refreshes `dist/linux-unpacked`,
+which the desktop launcher points at, so one command keeps the shortcut, the
+AppImage and the deb in step. All of them type-check first, so a broken build
+cannot be packaged.
 
 macOS builds are **unsigned**. Gatekeeper will refuse to open them on first
 launch; right-click the app and choose **Open** to get the override prompt.
