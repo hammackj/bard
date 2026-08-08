@@ -100,6 +100,22 @@ export type ShortcutConfig = {
   globalMediaKeys: boolean
 }
 
+/**
+ * What happens when the queue runs dry.
+ *  off     -- silence; the streamer or chat must queue something
+ *  shuffle -- a random track, avoiding the recent window
+ *  album   -- carry on through the current album, then roll to another
+ */
+export type AutoFillMode = 'off' | 'shuffle' | 'album'
+
+export type PlaybackConfig = {
+  autoFill: AutoFillMode
+  /** How many recently played tracks shuffle refuses to repeat. */
+  avoidRepeat: number
+  /** How many tracks the "fill queue" action adds. */
+  fillCount: number
+}
+
 export type WindowConfig = {
   /** Close hides to the tray instead of quitting. */
   closeToTray: boolean
@@ -113,6 +129,7 @@ export type Config = {
   overlay: OverlayConfig
   shortcuts: ShortcutConfig
   window: WindowConfig
+  playback: PlaybackConfig
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -128,7 +145,8 @@ export const DEFAULT_CONFIG: Config = {
   audio: { volume: 0.8, outputDeviceId: 'default' },
   overlay: { port: 4747, writeNowPlayingJson: true },
   shortcuts: { globalMediaKeys: false },
-  window: { closeToTray: true }
+  window: { closeToTray: true },
+  playback: { autoFill: 'off', avoidRepeat: 50, fillCount: 10 }
 }
 
 /** Recursive partial, for config patches coming over IPC. */

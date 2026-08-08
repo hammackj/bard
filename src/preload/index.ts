@@ -34,6 +34,8 @@ const api: BardApi = {
   reorderQueue: (from, to) => ipcRenderer.invoke(INVOKE.reorderQueue, from, to),
   skip: () => ipcRenderer.invoke(INVOKE.skip),
   clearQueue: () => ipcRenderer.invoke(INVOKE.clearQueue),
+  shuffleQueue: () => ipcRenderer.invoke(INVOKE.shuffleQueue),
+  fillQueue: (count) => ipcRenderer.invoke(INVOKE.fillQueue, count),
 
   reportProgress: (p) => ipcRenderer.send(SEND.reportProgress, p),
   reportEnded: () => ipcRenderer.send(SEND.reportEnded),

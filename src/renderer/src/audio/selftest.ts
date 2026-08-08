@@ -66,6 +66,34 @@ export async function maybeRunSelfTest(): Promise<void> {
     `[selftest] after skip playing="${engine.getCurrentTrack()?.title}" expected="${b.title}"`
   )
 
+  // Queue tools: fill, shuffle, and auto-fill when the queue runs dry.
+  await window.bard.clearQueue()
+  await window.bard.fillQueue(6)
+  await wait(600)
+  const filled = useStore.getState().queue
+  console.log(`[selftest] fillQueue(6) -> queue=${filled.length}`)
+  const uniq = new Set(filled.map((q) => q.track.id)).size
+  console.log(`[selftest] fill produced ${uniq} distinct of ${filled.length}`)
+
+  const before = useStore.getState().queue.map((q) => q.id)
+  await window.bard.shuffleQueue()
+  await wait(400)
+  const after = useStore.getState().queue.map((q) => q.id)
+  const moved = before.filter((id, i) => after[i] !== id).length
+  console.log(`[selftest] shuffle moved ${moved}/${before.length} items`)
+
+  // Auto-fill: with a mode set, an empty queue should still produce a track.
+  const mode = useStore.getState().config?.playback.autoFill
+  await window.bard.clearQueue()
+  await wait(300)
+  await window.bard.skip()
+  await wait(1200)
+  const kept = engine.getCurrentTrack()
+  console.log(
+    `[selftest] autoFill=${mode} after emptying queue -> ` +
+      (kept ? `still playing "${kept.title}"` : 'stopped')
+  )
+
   engine.pause()
   await window.bard.clearQueue()
   if (silent) {

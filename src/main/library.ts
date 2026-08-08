@@ -143,6 +143,48 @@ function setTracks(next: Track[]): void {
   })
 }
 
+/** Tracks of one album, in release order (path order carries the track number). */
+export function tracksInAlbum(album: string): Track[] {
+  return tracks.filter((t) => t.album === album).sort(byPathOrder)
+}
+
+export function albumNames(): string[] {
+  return [...new Set(tracks.map((t) => t.album))].sort()
+}
+
+/**
+ * A random track, avoiding anything in `exclude`.
+ *
+ * Pure random replays the same track uncomfortably often on a small library --
+ * with 585 tracks there is a better-than-even chance of a repeat inside 30
+ * picks. Excluding a recent window is what makes shuffle feel shuffled. If the
+ * window has swallowed the whole library, it is ignored rather than returning
+ * nothing.
+ */
+export function randomTrack(exclude: ReadonlySet<string> = new Set()): Track | null {
+  if (tracks.length === 0) return null
+  const pool = tracks.filter((t) => !exclude.has(t.id))
+  const from = pool.length > 0 ? pool : tracks
+  return from[Math.floor(Math.random() * from.length)]
+}
+
+/** The next track on the same album, or null at the end of the album. */
+export function nextInAlbum(track: Track): Track | null {
+  const album = tracksInAlbum(track.album)
+  const i = album.findIndex((t) => t.id === track.id)
+  if (i === -1 || i + 1 >= album.length) return null
+  return album[i + 1]
+}
+
+/** First track of a random album other than `notThis`. */
+export function randomAlbumStart(notThis?: string): Track | null {
+  const names = albumNames().filter((a) => a !== notThis)
+  const pick = names.length ? names : albumNames()
+  if (!pick.length) return null
+  const album = tracksInAlbum(pick[Math.floor(Math.random() * pick.length)])
+  return album[0] ?? null
+}
+
 /**
  * Best match for a chat request, or null.
  *

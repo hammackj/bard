@@ -154,7 +154,12 @@ function App(): React.JSX.Element {
               duration={state.duration}
               playing={state.playing}
               volume={state.volume}
-              onToggle={() => void toggle()}
+              onToggle={() => {
+                // With nothing loaded, Play should start something rather than
+                // no-op: skip() runs playNext, which honours the auto-fill mode.
+                if (!state.track) void window.bard.skip()
+                else void toggle()
+              }}
               onSkip={() => void window.bard.skip()}
               onSeek={seek}
               onVolume={(v) => {

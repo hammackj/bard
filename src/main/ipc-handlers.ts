@@ -9,7 +9,9 @@ import {
   onTrackEnded,
   removeFromQueue,
   reorderQueue,
-  skip
+  skip,
+  shuffleQueue,
+  fillQueue
 } from './queue'
 import { connectTwitch, disconnectTwitch } from './twitch'
 import { setProgress } from './nowplaying'
@@ -83,6 +85,10 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(INVOKE.skip, (): void => skip())
   ipcMain.handle(INVOKE.clearQueue, (): void => clearQueue())
+  ipcMain.handle(INVOKE.shuffleQueue, (): void => shuffleQueue())
+  ipcMain.handle(INVOKE.fillQueue, (_e, count?: number): void => {
+    fillQueue(count)
+  })
 
   ipcMain.handle(INVOKE.connectTwitch, (_e, ch: string): void => {
     connectTwitch(ch || getConfig().twitch.channel)

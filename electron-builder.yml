@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: bard
+appId: io.github.hammackj.bard
+productName: Bard
 directories:
   buildResources: build
 files:
@@ -9,8 +9,20 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!docs/*'
+  - '!scripts/*'
+  - '!tests/*'
 asarUnpack:
   - resources/**
+# The overlay server reads these from disk at runtime, so they must stay
+# outside the asar rather than being bundled into it.
+extraResources:
+  - from: resources/overlay
+    to: overlay
+  - from: resources/fonts
+    to: fonts
+  - from: resources/icon.png
+    to: icon.png
 win:
   executableName: bard
 nsis:
@@ -21,23 +33,31 @@ nsis:
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    # Only the microphone entry is truthful for Bard: it is required to read
+    # output device names via enumerateDevices. Nothing is ever recorded.
+    - NSMicrophoneUsageDescription: Bard reads your audio output device names so you can send music to a specific device. Nothing is recorded.
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
-  category: Utility
+  maintainer: hammackj <172781+hammackj@users.noreply.github.com>
+  category: AudioVideo;Audio;Player
+  synopsis: Local music player with Twitch song requests for streamers
+  description: >-
+    Bard plays music from your own library and takes song requests from Twitch
+    chat, restricted to tracks you already have. It serves a live OBS overlay
+    and can route audio to a dedicated output device.
+  desktop:
+    entry:
+      Name: Bard
+      Comment: Local music player with Twitch song requests
+      Categories: AudioVideo;Audio;Player;
+      Keywords: music;player;twitch;stream;obs;
+      StartupWMClass: Bard
+      Terminal: 'false'
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates

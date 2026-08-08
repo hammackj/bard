@@ -171,10 +171,26 @@ export async function setOutputDevice(deviceId: string): Promise<void> {
  * which would leave the device picker full of unnamed rows. One getUserMedia
  * call unlocks them; the stream is stopped immediately and nothing is recorded.
  */
+let labelsUnlocked = false
+
 export async function unlockDeviceLabels(): Promise<void> {
+  // Opening a capture stream makes the audio pipeline renegotiate, which is
+  // audible as a short blip in playback. Doing it once per session -- and only
+  // when the device list is actually wanted -- keeps that from happening every
+  // time the settings panel opens.
+  if (labelsUnlocked) return
+  if (navigator.mediaDevices.enumerateDevices) {
+    const existing = await navigator.mediaDevices.enumerateDevices()
+    // Labels are already populated (permission persisted from a prior run).
+    if (existing.some((d) => d.kind === 'audiooutput' && d.label)) {
+      labelsUnlocked = true
+      return
+    }
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     for (const t of stream.getTracks()) t.stop()
+    labelsUnlocked = true
   } catch {
     // Denied -- the picker still works, the labels just stay generic.
   }

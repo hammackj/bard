@@ -28,6 +28,8 @@ export const INVOKE = {
   reorderQueue: 'queue:reorder',
   skip: 'queue:skip',
   clearQueue: 'queue:clear',
+  shuffleQueue: 'queue:shuffle',
+  fillQueue: 'queue:fill',
   connectTwitch: 'twitch:connect',
   disconnectTwitch: 'twitch:disconnect',
   getConfig: 'config:get',
@@ -69,6 +71,10 @@ export type BardApi = {
   reorderQueue: (from: number, to: number) => Promise<void>
   skip: () => Promise<void>
   clearQueue: () => Promise<void>
+  /** Reorders the pending queue at random. */
+  shuffleQueue: () => Promise<void>
+  /** Appends `count` tracks chosen by the current auto-fill mode. */
+  fillQueue: (count?: number) => Promise<void>
 
   // playback reporting (renderer -> main)
   reportProgress: (p: PlaybackProgress) => void

@@ -35,9 +35,33 @@ export function QueuePanel(): React.JSX.Element {
 
   return (
     <section className="flex max-h-[38vh] flex-col border-t border-edge">
-      <header className="flex items-center justify-between px-4 pt-[13px] pb-[11px] text-s1 font-semibold tracking-[.13em] text-muted uppercase">
+      <header className="flex items-center gap-3 px-4 pt-[13px] pb-[11px] text-s1 font-semibold tracking-[.13em] text-muted uppercase">
         <span>Queue</span>
         <span className="mono text-text">{queue.length}</span>
+        <span className="ml-auto flex items-center gap-3 normal-case">
+          <button
+            className="tracking-normal hover:text-text disabled:opacity-40"
+            onClick={() => void window.bard.shuffleQueue()}
+            disabled={queue.length < 2}
+            title="Shuffle the pending queue"
+          >
+            Shuffle
+          </button>
+          <button
+            className="tracking-normal hover:text-text"
+            onClick={() => void window.bard.fillQueue()}
+            title="Add random tracks from the library"
+          >
+            Fill
+          </button>
+          <button
+            className="tracking-normal hover:text-rose disabled:opacity-40"
+            onClick={() => void window.bard.clearQueue()}
+            disabled={queue.length === 0}
+          >
+            Clear
+          </button>
+        </span>
       </header>
 
       <div className="overflow-y-auto px-2 pb-2">

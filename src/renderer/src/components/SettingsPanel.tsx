@@ -10,6 +10,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
   const setConfig = useStore((s) => s.setConfig)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [copied, setCopied] = useState(false)
+  const [deviceError, setDeviceError] = useState<string | null>(null)
 
   const patch = async (p: DeepPartial<Config>): Promise<void> => {
     setConfig(await window.bard.setConfig(p))
@@ -17,13 +18,17 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
 
   useEffect(() => {
     if (!open) return
-    void (async () => {
-      // One getUserMedia call is what makes enumerateDevices return real
-      // labels; without it every option reads as an empty string.
-      await engine.unlockDeviceLabels()
-      setDevices(await engine.listOutputDevices())
-    })()
+    // Enumerate without unlocking: this needs no permission and causes no
+    // audio glitch. Labels may be blank until the picker is opened.
+    void engine.listOutputDevices().then(setDevices)
   }, [open])
+
+  // Deferred until the user actually opens the picker, because unlocking the
+  // labels opens a capture stream and that is audible as a blip.
+  const revealDevices = async (): Promise<void> => {
+    await engine.unlockDeviceLabels()
+    setDevices(await engine.listOutputDevices())
+  }
 
   if (!open || !config) return null
 
@@ -136,9 +141,19 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
           <Row label="Output device">
             <select
               value={config.audio.outputDeviceId}
+              onFocus={() => void revealDevices()}
               onChange={async (e) => {
-                await engine.setOutputDevice(e.target.value)
-                void patch({ audio: { outputDeviceId: e.target.value } })
+                const id = e.target.value
+                setDeviceError(null)
+                // Persist first. Applying can reject (device unplugged, sink
+                // refused), and doing it the other way round left the select
+                // snapping back to the old value with no explanation.
+                await patch({ audio: { outputDeviceId: id } })
+                try {
+                  await engine.setOutputDevice(id)
+                } catch (err) {
+                  setDeviceError((err as Error).message || 'could not switch device')
+                }
               }}
               className="max-w-72 border border-edge bg-panel px-2 py-1 text-s2"
             >
@@ -150,9 +165,43 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               ))}
             </select>
           </Row>
+          {deviceError && <p className="text-s1 text-rose">Output device: {deviceError}</p>}
           <p className="text-s1 text-muted">
-            Bard asks for microphone access only to read your output device names. Nothing is
-            recorded.
+            Device names stay blank until you open the picker. Reading them needs microphone
+            permission; Bard asks only for that, records nothing, and closes the stream
+            immediately.
+          </p>
+        </Group>
+
+        <Group title="Playback">
+          <Row label="When the queue runs out">
+            <select
+              value={config.playback.autoFill}
+              onChange={(e) =>
+                void patch({
+                  playback: { autoFill: e.target.value as Config['playback']['autoFill'] }
+                })
+              }
+              className="border border-edge bg-panel px-2 py-1 text-s2"
+            >
+              <option value="off">Stop</option>
+              <option value="shuffle">Keep playing — shuffle</option>
+              <option value="album">Keep playing — finish the album</option>
+            </select>
+          </Row>
+          <NumberRow
+            label="Don't repeat the last N tracks"
+            value={config.playback.avoidRepeat}
+            onChange={(v) => void patch({ playback: { avoidRepeat: v } })}
+          />
+          <NumberRow
+            label="Tracks added by Fill"
+            value={config.playback.fillCount}
+            onChange={(v) => void patch({ playback: { fillCount: v } })}
+          />
+          <p className="text-s1 text-muted">
+            Shuffle avoids anything played recently, so a small library does not loop back on
+            itself. Album mode plays through the current record, then rolls to another.
           </p>
         </Group>
 

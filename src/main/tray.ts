@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { EVENT } from '../shared/ipc'
 import type { QueueItem } from '../shared/types'
 import { getQueue, skip } from './queue'
+import { toggleTrayPopup, destroyTrayPopup } from './trayPopup'
 
 let tray: Tray | null = null
 let current: QueueItem | null = null
@@ -36,7 +37,8 @@ export function createTray(onQuit: () => void): void {
   const image = nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 })
   tray = new Tray(image)
   tray.setToolTip('Bard')
-  tray.on('click', showWindow)
+  // Left click shows the now-playing preview; the window is one menu item away.
+  tray.on('click', () => toggleTrayPopup(tray?.getBounds()))
 
   rebuildMenu(onQuit)
 }
@@ -60,6 +62,8 @@ function rebuildMenu(onQuit: () => void): void {
         enabled: false
       },
       { type: 'separator' },
+      { label: 'Now playing preview', click: () => toggleTrayPopup(tray?.getBounds()) },
+      { type: 'separator' },
       { label: playing ? 'Pause' : 'Play', click: () => send('toggle') },
       { label: 'Skip', click: () => skip(), enabled: getQueue().length > 0 },
       { type: 'separator' },
@@ -70,6 +74,7 @@ function rebuildMenu(onQuit: () => void): void {
 }
 
 export function destroyTray(): void {
+  destroyTrayPopup()
   tray?.destroy()
   tray = null
 }
