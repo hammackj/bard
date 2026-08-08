@@ -1,9 +1,17 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { EVENT, INVOKE } from '../shared/ipc'
+import { EVENT, INVOKE, SEND } from '../shared/ipc'
 import { getConfig, setConfig } from './config'
 import { scanLibrary } from './library'
 import { getArtwork } from './artwork'
-import type { Config, DeepPartial, ScanProgress, Track } from '../shared/types'
+import {
+  clearQueue,
+  enqueueTrack,
+  onTrackEnded,
+  removeFromQueue,
+  reorderQueue,
+  skip
+} from './queue'
+import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
 
 /**
  * Registers the handlers that exist so far. Channels in BardApi without a
@@ -48,5 +56,25 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(INVOKE.getArtwork, (_e, trackId: string): Promise<string | null> => {
     return getArtwork(trackId)
+  })
+
+  // Queue intents. Main owns the state; these return void and the renderer
+  // re-renders from the onQueueChanged broadcast rather than a return value.
+  ipcMain.handle(INVOKE.enqueue, (_e, trackId: string, requester?: string): void => {
+    enqueueTrack(trackId, requester)
+  })
+  ipcMain.handle(INVOKE.removeFromQueue, (_e, queueItemId: string): void => {
+    removeFromQueue(queueItemId)
+  })
+  ipcMain.handle(INVOKE.reorderQueue, (_e, from: number, to: number): void => {
+    reorderQueue(from, to)
+  })
+  ipcMain.handle(INVOKE.skip, (): void => skip())
+  ipcMain.handle(INVOKE.clearQueue, (): void => clearQueue())
+
+  // Playback reporting from the renderer.
+  ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())
+  ipcMain.on(SEND.reportProgress, (_e, _p: PlaybackProgress): void => {
+    // Phase 8 forwards this to the overlay and nowplaying.json.
   })
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Config, Track } from '@shared/types'
+import type { Config, QueueItem, Track } from '@shared/types'
 import { useAudio } from './audio/useAudio'
 import * as engine from './audio/engine'
 
@@ -10,6 +10,7 @@ import * as engine from './audio/engine'
 function App(): React.JSX.Element {
   const [config, setConfig] = useState<Config | null>(null)
   const [tracks, setTracks] = useState<Track[]>([])
+  const [queue, setQueue] = useState<QueueItem[]>([])
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState('default')
   const [scanning, setScanning] = useState(false)
@@ -66,33 +67,42 @@ function App(): React.JSX.Element {
     if (selfTested.current || tracks.length === 0) return
     selfTested.current = true
     void (async () => {
-      const t = tracks[0]
-      const ctx = engine.getAnalyser().context as AudioContext & {
-        setSinkId?: unknown
-      }
+      const ctx = engine.getAnalyser().context as AudioContext & { setSinkId?: unknown }
       console.log(`[selftest] AudioContext.setSinkId available: ${typeof ctx.setSinkId}`)
       engine.setVolume(0)
-      try {
-        await engine.play(t)
-      } catch (e) {
-        console.error(`[selftest] play failed: ${(e as Error).message}`)
-        return
-      }
-      await new Promise((r) => setTimeout(r, 2500))
+
+      // Drive the queue rather than the engine directly: enqueue should
+      // auto-start the first item, and skip should advance to the second.
+      const [a, b] = tracks
+      await window.bard.clearQueue()
+      await window.bard.enqueue(a.id, 'selftest_user')
+      await window.bard.enqueue(b.id, 'selftest_user')
+      await new Promise((r) => setTimeout(r, 2000))
+
       const p = engine.getPosition()
       // The analyser sits after the gain node, so at zero gain it reads flat by
       // construction. Whether the visualiser lights up can only be confirmed
-      // with audible playback -- that is a manual check, not something to
-      // assert here.
+      // with audible playback -- a manual check, not something to assert here.
       console.log(
-        `[selftest] "${t.title}" url=${engine.trackUrl(t.path).slice(0, 46)}… ` +
-          `pos=${p.position.toFixed(2)}s dur=${p.duration.toFixed(2)}s ` +
-          `playing=${p.playing} ctx=${ctx.state} (muted run: analyser reads flat)`
+        `[selftest] after enqueue: playing="${engine.getCurrentTrack()?.title}" ` +
+          `expected="${a.title}" pos=${p.position.toFixed(2)}s ctx=${ctx.state}`
       )
+
+      await window.bard.skip()
+      await new Promise((r) => setTimeout(r, 1200))
+      console.log(
+        `[selftest] after skip:    playing="${engine.getCurrentTrack()?.title}" ` +
+          `expected="${b.title}"`
+      )
+
       engine.pause()
+      await window.bard.clearQueue()
       engine.setVolume(0.8)
     })()
   }, [tracks])
+
+  // Queue state is owned by main; the renderer only mirrors the broadcast.
+  useEffect(() => window.bard.onQueueChanged(setQueue), [])
 
   // Scope draws straight from the analyser, never through React state.
   useEffect(() => {
@@ -124,7 +134,7 @@ function App(): React.JSX.Element {
   return (
     <main style={S.page}>
       <h1 style={S.h1}>Bard</h1>
-      <p style={S.sub}>Phase 5 — audio engine and output routing</p>
+      <p style={S.sub}>Phase 6 — queue, cooldowns, block list</p>
 
       <div style={S.row}>
         <button style={S.btn} onClick={runScan} disabled={scanning}>
@@ -185,10 +195,33 @@ function App(): React.JSX.Element {
         </div>
       </div>
 
+      <div style={S.row}>
+        <strong style={S.muted}>Queue ({queue.length})</strong>
+        <button style={S.btn} onClick={() => void window.bard.skip()}>
+          Skip
+        </button>
+        <button style={S.btn} onClick={() => void window.bard.clearQueue()}>
+          Clear
+        </button>
+      </div>
+      <ol style={S.list}>
+        {queue.map((q) => (
+          <li key={q.id} style={S.item}>
+            <span>
+              {q.track.title}
+              {q.requestedBy ? ` · ${q.requestedBy}` : ''}
+            </span>
+            <button style={S.link} onClick={() => void window.bard.removeFromQueue(q.id)}>
+              remove
+            </button>
+          </li>
+        ))}
+      </ol>
+
       <ul style={S.list}>
         {tracks.slice(0, 60).map((t) => (
           <li key={t.id} style={S.item} onDoubleClick={() => void play(t)}>
-            <button style={S.link} onClick={() => void play(t)}>
+            <button style={S.link} onClick={() => void window.bard.enqueue(t.id)}>
               {t.title}
             </button>
             <span style={S.dur}>{fmt(t.durationSec)}</span>
