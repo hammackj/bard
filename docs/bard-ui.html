@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bard — interface mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#020617;        /* slate-950  — app background   */
+  --panel:#0F172A;      /* slate-900  — panel surfaces   */
+  --edge:#1E293B;       /* slate-800  — 1px dividers     */
+  --text:#F1F5F9;       /* slate-100  — primary text     */
+  --muted:#94A3B8;      /* slate-400  — metadata         */
+  --cyan:#22D3EE;       /* cyan-400   — strokes + accents on dark */
+  --cyan-deep:#0891B2;  /* cyan-600   — hammackj.com theme-color, solid fills */
+  --green:#34D399;      /* emerald-400 — request accepted */
+  --rose:#FB7185;       /* rose-400    — request rejected */
+
+  --s1:11px; --s2:13px; --s3:15px; --s4:20px; --s5:34px;
+  --ui:"Public Sans",system-ui,sans-serif;
+  --display:"Fraunces",Georgia,serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--ui);
+  font-size:var(--s3);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+/* warm candle falloff from the centre-left, keeps it from reading as flat dark-mode */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(120% 90% at 38% 42%, rgba(8,145,178,.09), transparent 62%);
+}
+
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:1.5px solid var(--cyan);outline-offset:2px}
+
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+
+/* ── shell ─────────────────────────────────────────── */
+.app{position:relative;z-index:1;height:100vh;display:grid;grid-template-rows:34px 1fr;}
+
+.titlebar{
+  display:flex;align-items:center;gap:10px;padding:0 14px;
+  border-bottom:1px solid var(--edge);
+  -webkit-app-region:drag;
+}
+.dots{display:flex;gap:7px}
+.dots i{width:11px;height:11px;border-radius:50%;background:var(--edge)}
+.wordmark{
+  font-family:var(--display);font-weight:600;font-size:var(--s2);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  margin-left:6px;
+}
+
+.cols{display:grid;grid-template-columns:280px minmax(0,1fr) 320px;min-height:0}
+.col{min-height:0;display:flex;flex-direction:column}
+.col + .col{border-left:1px solid var(--edge)}
+
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:13px 16px 11px;
+  font-size:var(--s1);letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted);font-weight:600;
+}
+
+/* ── library ───────────────────────────────────────── */
+.search{padding:0 12px 10px}
+.search input{
+  width:100%;background:var(--panel);border:1px solid var(--edge);
+  color:var(--text);font:inherit;font-size:var(--s2);
+  padding:7px 10px;border-radius:2px;
+}
+.search input::placeholder{color:var(--muted)}
+.search input:focus{outline:none;border-color:var(--cyan)}
+
+.tracklist{flex:1;overflow-y:auto;padding:0 6px}
+.track{
+  display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline;
+  padding:7px 10px;border-radius:2px;cursor:default;
+}
+.track:hover{background:var(--panel)}
+.track.sel{background:var(--panel);box-shadow:inset 2px 0 0 var(--cyan)}
+.track .t{font-size:var(--s2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.track .a{font-size:var(--s1);color:var(--muted);display:block;margin-top:1px}
+.track .d{font-size:var(--s1);color:var(--muted)}
+
+.col-foot{
+  padding:9px 16px;border-top:1px solid var(--edge);
+  font-size:var(--s1);color:var(--muted);
+  display:flex;justify-content:space-between;
+}
+
+/* ── centre / now playing ──────────────────────────── */
+.center{display:grid;grid-template-rows:1fr auto;min-height:0}
+.stage{
+  min-height:0;padding:34px 40px 22px;
+  display:flex;flex-direction:column;justify-content:center;gap:26px;
+}
+.meta{display:flex;gap:26px;align-items:flex-end}
+
+.art{
+  width:168px;height:168px;flex:none;border:1px solid var(--edge);
+  background:var(--panel);display:block;
+}
+.meta .txt{min-width:0;padding-bottom:4px}
+.eyebrow{
+  font-size:var(--s1);letter-spacing:.15em;text-transform:uppercase;
+  color:var(--cyan);font-weight:600;margin-bottom:9px;
+}
+.title{
+  font-family:var(--display);font-size:var(--s5);font-weight:600;
+  line-height:1.06;letter-spacing:-.015em;
+  font-variation-settings:"opsz" 120,"SOFT" 0,"WONK" 1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.artist{font-size:var(--s4);color:var(--text);margin-top:7px;font-weight:400}
+.album{font-size:var(--s2);color:var(--muted);margin-top:4px}
+.reqby{font-size:var(--s2);color:var(--muted);margin-top:12px}
+.reqby b{color:var(--cyan);font-weight:500}
+
+/* the string */
+.stringwrap{cursor:pointer;padding:2px 0}
+#string{display:block;width:100%;height:44px;overflow:visible}
+#behind{filter:drop-shadow(0 0 4px rgba(34,211,238,.45))}
+#head{filter:drop-shadow(0 0 5px rgba(34,211,238,.6))}
+.times{display:flex;justify-content:space-between;font-size:var(--s1);color:var(--muted);margin-top:-2px}
+
+.transport{display:flex;align-items:center;gap:22px}
+.transport .keys{display:flex;align-items:center;gap:18px}
+.tbtn{color:var(--muted);line-height:0;padding:4px;border-radius:2px}
+.tbtn:hover{color:var(--text)}
+.tbtn.play{color:var(--text)}
+.tbtn.play:hover{color:var(--cyan)}
+.vol{display:flex;align-items:center;gap:9px;margin-left:auto;color:var(--muted)}
+.vol input{
+  -webkit-appearance:none;appearance:none;width:96px;height:1px;background:var(--edge);
+}
+.vol input::-webkit-slider-thumb{
+  -webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:var(--cyan);
+}
+.vol input::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:50%;background:var(--cyan)}
+
+/* queue */
+.queue{border-top:1px solid var(--edge);display:flex;flex-direction:column;max-height:38vh}
+.qcount{font-family:var(--mono);color:var(--text)}
+.qlist{overflow-y:auto;padding:0 8px 8px}
+.qrow{
+  display:grid;grid-template-columns:22px 1fr auto auto;gap:12px;align-items:baseline;
+  padding:7px 8px;border-radius:2px;
+}
+.qrow:hover{background:var(--panel)}
+.qrow .n{font-family:var(--mono);font-size:var(--s1);color:var(--muted)}
+.qrow .t{font-size:var(--s2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .who{font-size:var(--s1);color:var(--cyan)}
+.qrow .d{font-family:var(--mono);font-size:var(--s1);color:var(--muted)}
+.grip{color:var(--edge)}
+.qrow:hover .grip{color:var(--muted)}
+
+/* ── right column ──────────────────────────────────── */
+.chat{flex:1;min-height:0;display:flex;flex-direction:column}
+.chatlog{
+  flex:1;overflow-y:auto;padding:0 14px 12px;
+  font-family:var(--mono);font-size:var(--s2);line-height:1.65;
+}
+.line{display:grid;grid-template-columns:26px 1fr;gap:8px}
+.line .p{font-size:var(--s1);letter-spacing:.04em;padding-top:1px}
+.p.sys{color:var(--muted)} .p.req{color:var(--cyan)}
+.p.ok{color:var(--green)}  .p.no{color:var(--rose)}
+.line .m{color:var(--text);word-break:break-word}
+.line.dim .m{color:var(--muted)}
+.line .u{color:var(--muted)}
+
+.settings{border-top:1px solid var(--edge)}
+.srow{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:8px 16px;font-size:var(--s2);
+}
+.srow .k{color:var(--muted)}
+.srow .v{font-family:var(--mono);font-size:var(--s2);display:flex;align-items:center;gap:7px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.copy{font-family:var(--ui);font-size:var(--s1);color:var(--muted);border-bottom:1px solid var(--edge)}
+.copy:hover{color:var(--cyan);border-color:var(--cyan)}
+.settings .more{
+  display:block;width:100%;text-align:left;padding:9px 16px 12px;
+  font-size:var(--s1);letter-spacing:.13em;text-transform:uppercase;color:var(--muted);font-weight:600;
+}
+.settings .more:hover{color:var(--text)}
+
+::-webkit-scrollbar{width:9px}
+::-webkit-scrollbar-thumb{background:var(--edge);border:3px solid var(--ink)}
+::-webkit-scrollbar-track{background:transparent}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+@media (max-width:900px){
+  .cols{grid-template-columns:1fr;overflow-y:auto}
+  .col + .col{border-left:0;border-top:1px solid var(--edge)}
+  .tracklist,.chatlog{max-height:240px}
+  .stage{padding:24px 20px}
+  .meta{flex-direction:column;align-items:flex-start;gap:18px}
+  .title{white-space:normal}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <span class="wordmark">Bard</span>
+  </div>
+
+  <div class="cols">
+
+    <!-- LIBRARY -->
+    <section class="col">
+      <div class="panel-head"><span>Library</span><span>3 folders</span></div>
+      <div class="search"><input placeholder="Filter tracks…" aria-label="Filter tracks"></div>
+      <div class="tracklist" id="tracklist"></div>
+      <div class="col-foot"><span>1,284 tracks</span><span>Enter to queue</span></div>
+    </section>
+
+    <!-- NOW PLAYING -->
+    <section class="col center">
+      <div class="stage">
+        <div class="meta">
+          <svg class="art" viewBox="0 0 168 168" aria-label="Album art">
+            <rect width="168" height="168" fill="#0F172A"/>
+            <g fill="none" stroke="#0891B2" stroke-opacity=".75">
+              <circle cx="84" cy="84" r="46"/><circle cx="84" cy="84" r="34"/>
+              <circle cx="84" cy="84" r="22"/><circle cx="84" cy="84" r="10"/>
+            </g>
+            <g stroke="#0891B2" stroke-opacity=".45">
+              <path d="M84 26v116M26 84h116M43 43l82 82M125 43l-82 82"/>
+            </g>
+            <circle cx="84" cy="84" r="3" fill="#22D3EE"/>
+          </svg>
+          <div class="txt">
+            <div class="eyebrow">Now playing</div>
+            <div class="title" id="np-title">Nightfall on the Kilometre</div>
+            <div class="artist" id="np-artist">Kilobyte Choir</div>
+            <div class="album" id="np-album">Amber EP · 2024 · FLAC 44.1 kHz</div>
+            <div class="reqby" id="np-req">Requested by <b>jonas_vk</b></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="stringwrap" id="stringwrap">
+            <svg id="string" viewBox="0 0 1000 44" preserveAspectRatio="none">
+              <defs><clipPath id="played"><rect id="clip" x="0" y="0" width="0" height="44"/></clipPath></defs>
+              <path id="ahead" fill="none" stroke="#1E293B" stroke-width="1.25" vector-effect="non-scaling-stroke"/>
+              <path id="behind" fill="none" stroke="#22D3EE" stroke-width="1.5" vector-effect="non-scaling-stroke" clip-path="url(#played)"/>
+              <circle id="head" r="3.5" fill="#22D3EE"/>
+            </svg>
+          </div>
+          <div class="times"><span class="mono" id="t-pos">1:27</span><span class="mono" id="t-dur">3:34</span></div>
+        </div>
+
+        <div class="transport">
+          <div class="keys">
+            <button class="tbtn" aria-label="Previous">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 6h2v12H7zm3 6 8-6v12z"/></svg>
+            </button>
+            <button class="tbtn play" id="playbtn" aria-label="Pause">
+              <svg id="icon-pause" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3.2v14H7zm6.8 0H17v14h-3.2z"/></svg>
+              <svg id="icon-play" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M8 5l11 7-11 7z"/></svg>
+            </button>
+            <button class="tbtn" id="skip" aria-label="Skip">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15 6h2v12h-2zM6 6l8 6-8 6z"/></svg>
+            </button>
+          </div>
+          <div class="vol">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            <input type="range" min="0" max="100" value="78" aria-label="Volume">
+            <span class="mono" style="font-size:var(--s1)">78</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="queue">
+        <div class="panel-head"><span>Queue</span><span class="qcount">4</span></div>
+        <div class="qlist" id="qlist"></div>
+      </div>
+    </section>
+
+    <!-- CHAT + SETTINGS -->
+    <section class="col">
+      <div class="chat">
+        <div class="panel-head"><span>Chat</span><span>#kilobyte</span></div>
+        <div class="chatlog" id="chatlog"></div>
+      </div>
+      <div class="settings">
+        <div class="panel-head" style="padding-bottom:4px"><span>Status</span></div>
+        <div class="srow"><span class="k">Twitch</span><span class="v"><i class="dot"></i>connected</span></div>
+        <div class="srow"><span class="k">Overlay</span><span class="v">127.0.0.1:4747 <button class="copy">Copy</button></span></div>
+        <div class="srow"><span class="k">Output</span><span class="v">Stream Mix (VB-Cable)</span></div>
+        <div class="srow"><span class="k">Cooldown</span><span class="v">120s · max 2</span></div>
+        <button class="more">Open settings →</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+// ── sample data ──────────────────────────────────────
+const LIB = [
+  ["Nightfall on the Kilometre","Kilobyte Choir","3:34",1],
+  ["Slow Tide","Marisol Vane","3:02"],
+  ["Amber Rain","Kilobyte Choir","4:15"],
+  ["Paper Lantern","Hollow Field","2:48"],
+  ["Cassette Winter","Marisol Vane","5:07"],
+  ["Low Orbit","Duskwater","3:51"],
+  ["The Long Way Round","Hollow Field","4:32"],
+  ["Salt & Static","Duskwater","3:19"],
+  ["Foxglove","Marisol Vane","2:56"],
+  ["Quiet Machines","Kilobyte Choir","6:11"],
+  ["Ivory Coast Radio","Peel & Thistle","3:44"],
+  ["Weathervane","Hollow Field","4:02"],
+  ["Blue Hour","Duskwater","3:27"],
+];
+document.getElementById('tracklist').innerHTML = LIB.map(([t,a,d,sel])=>`
+  <div class="track ${sel?'sel':''}">
+    <span><span class="t">${t}</span><span class="a">${a}</span></span>
+    <span class="d">${d}</span>
+  </div>`).join('');
+
+const Q = [
+  ["Slow Tide","jonas_vk","3:02"],
+  ["Amber Rain","mira.wav","4:15"],
+  ["Paper Lantern","dave_below","2:48"],
+  ["Low Orbit","mira.wav","3:51"],
+];
+document.getElementById('qlist').innerHTML = Q.map(([t,w,d],i)=>`
+  <div class="qrow">
+    <span class="n">${i+1}</span>
+    <span class="t">${t}</span>
+    <span class="who">${w}</span>
+    <span class="d">${d}</span>
+  </div>`).join('');
+
+const CHAT = [
+  ["sys","Connected to #kilobyte",1],
+  ["req","<span class='u'>dave_below</span> !sr paper lantern"],
+  ["ok","Queued — Paper Lantern"],
+  ["req","<span class='u'>mira.wav</span> !sr low orbit"],
+  ["ok","Queued — Low Orbit"],
+  ["req","<span class='u'>mira.wav</span> !sr foxglove"],
+  ["no","Cooldown — 74s left",1],
+  ["req","<span class='u'>t_rexy</span> !sr never gonna give"],
+  ["no","Not in library",1],
+  ["req","<span class='u'>jonas_vk</span> !sr slow tide"],
+  ["ok","Queued — Slow Tide"],
+];
+document.getElementById('chatlog').innerHTML = CHAT.map(([p,m,dim])=>`
+  <div class="line ${dim?'dim':''}"><span class="p ${p}">${p==='no'?' no':p}</span><span class="m">${m}</span></div>`
+).join('');
+
+// ── the string ───────────────────────────────────────
+const W=1000,H=44,MID=H/2,N=90;
+const ahead=document.getElementById('ahead'), behind=document.getElementById('behind'),
+      head=document.getElementById('head'), clip=document.getElementById('clip'),
+      pos=document.getElementById('t-pos');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let playing=true, amp=0, target=8.5, p=0.406, dur=214, t=0;
+
+function build(){
+  t+=0.06;
+  amp += (target-amp)*0.045;              // damps to flat on pause
+  const pts=[];
+  for(let i=0;i<=N;i++){
+    const x=i/N;
+    const env=Math.sin(Math.PI*x);        // pinned at both ends, like a real string
+    const y=MID - env*amp*(
+      Math.sin(x*13+t*3.1)*0.62 +
+      Math.sin(x*29-t*4.7)*0.26 +
+      Math.sin(x*47+t*2.3)*0.12
+    )*(1+0.35*Math.sin(t*1.7));
+    pts.push([x*W,y]);
+  }
+  const d='M'+pts.map(([x,y])=>x.toFixed(1)+' '+y.toFixed(2)).join('L');
+  ahead.setAttribute('d',d); behind.setAttribute('d',d);
+  clip.setAttribute('width',(p*W).toFixed(1));
+  const hp=pts[Math.min(N,Math.round(p*N))];
+  head.setAttribute('cx',hp[0]); head.setAttribute('cy',hp[1]);
+}
+
+function fmt(s){s=Math.max(0,s|0);return (s/60|0)+':'+String(s%60).padStart(2,'0')}
+
+let last=performance.now();
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if(playing){ p=Math.min(1,p+dt/dur); pos.textContent=fmt(p*dur); }
+  build();
+  requestAnimationFrame(loop);
+}
+if(reduce){ target=0; amp=0; build(); }
+requestAnimationFrame(loop);
+
+// ── interactions ─────────────────────────────────────
+const pauseIcon=document.getElementById('icon-pause'), playIcon=document.getElementById('icon-play');
+document.getElementById('playbtn').addEventListener('click',e=>{
+  playing=!playing;
+  target = playing && !reduce ? 8.5 : 0;
+  pauseIcon.style.display = playing?'':'none';
+  playIcon.style.display  = playing?'none':'';
+  e.currentTarget.setAttribute('aria-label', playing?'Pause':'Play');
+});
+document.getElementById('stringwrap').addEventListener('click',e=>{
+  const r=e.currentTarget.getBoundingClientRect();
+  p=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width));
+  pos.textContent=fmt(p*dur);
+});
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space' && e.target.tagName!=='INPUT'){e.preventDefault();document.getElementById('playbtn').click();}
+});
+</script>
+</body>
+</html>
