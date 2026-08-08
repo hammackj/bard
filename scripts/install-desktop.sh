@@ -5,13 +5,23 @@
 # Packaged installers (AppImage/deb) ship their own launcher; this exists so a
 # locally built or unpacked binary shows up in the application menu too.
 #
-#   ./scripts/install-desktop.sh [path-to-bard-binary]
+#   ./scripts/install-desktop.sh [path-to-bard-binary] [--desktop]
 #
 # With no argument it uses dist/linux-unpacked/bard.
+# --desktop also drops a copy on the desktop itself.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-target="${1:-$repo_root/dist/linux-unpacked/bard}"
+
+want_desktop=0
+target=""
+for arg in "$@"; do
+  case "$arg" in
+    --desktop) want_desktop=1 ;;
+    *) target="$arg" ;;
+  esac
+done
+target="${target:-$repo_root/dist/linux-unpacked/bard}"
 
 if [[ ! -x "$target" ]]; then
   echo "error: no executable at $target" >&2
@@ -59,6 +69,27 @@ chmod 644 "$desktop_file"
 # Best effort: these are absent on some systems and their failure is harmless.
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps_dir" || true
 command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -qtf "$icons_dir" || true
+
+if [[ "$want_desktop" == 1 ]]; then
+  # Respect a relocated or localised desktop folder rather than assuming ~/Desktop.
+  desktop_dir="$HOME/Desktop"
+  if [[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" ]]; then
+    # shellcheck disable=SC1091
+    eval "$(grep -E '^XDG_DESKTOP_DIR=' "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" || true)"
+    [[ -n "${XDG_DESKTOP_DIR:-}" ]] && desktop_dir="$XDG_DESKTOP_DIR"
+  fi
+
+  if [[ -d "$desktop_dir" ]]; then
+    install -m 755 "$desktop_file" "$desktop_dir/bard.desktop"
+    # KDE and GNOME both refuse to launch a desktop file they do not consider
+    # trusted; the executable bit is what marks it so on KDE. GNOME
+    # additionally wants this attribute, and setting it is harmless elsewhere.
+    gio set "$desktop_dir/bard.desktop" metadata::trusted true 2>/dev/null || true
+    echo "desktop shortcut   : $desktop_dir/bard.desktop"
+  else
+    echo "warning: no desktop directory at $desktop_dir; skipped" >&2
+  fi
+fi
 
 echo "installed launcher : $desktop_file"
 echo "        pointing at: $target"
