@@ -1,3 +1,5 @@
+// MUST be first: pins userData before any module reads a path from it.
+import './userData'
 import { app, shell, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { writeFile } from 'node:fs/promises'
@@ -11,6 +13,7 @@ import { nowPlayingPath, onNowPlayingChange } from './nowplaying'
 import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
+import { setMainWindow } from './windows'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -42,6 +45,8 @@ function createWindow(): void {
   })
 
   // Show only once painted, or the dark UI is preceded by a white flash.
+  setMainWindow(mainWindow)
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })

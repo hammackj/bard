@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { BrowserWindow } from 'electron'
 import { EVENT } from '../shared/ipc'
 import { evaluateRequest, describeVerdict, normalizeUser } from '../shared/requests'
 import type { RequestVerdict } from '../shared/requests'
 import type { ChatEvent, ChatEventKind, QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
+import { sendToMain } from './windows'
 import {
   getTrackById,
   matchRequest,
@@ -91,9 +91,7 @@ export function shuffleQueue(): void {
 }
 
 function broadcast(channel: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(channel, payload)
-  }
+  sendToMain(channel, payload)
 }
 
 function emitQueue(): void {

@@ -1,6 +1,6 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
-import { EVENT, INVOKE, SEND } from '../shared/ipc'
-import { getConfig, setConfig } from './config'
+import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
+import { EVENT, INVOKE, SEND, type AppPaths } from '../shared/ipc'
+import { getConfig, setConfig, configPath } from './config'
 import { scanLibrary } from './library'
 import { getArtwork } from './artwork'
 import {
@@ -14,7 +14,8 @@ import {
   fillQueue
 } from './queue'
 import { connectTwitch, disconnectTwitch } from './twitch'
-import { setProgress } from './nowplaying'
+import { setProgress, nowPlayingPath } from './nowplaying'
+import { artworkDir } from './artwork'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
 import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
@@ -95,6 +96,20 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectTwitch())
   ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
+
+  ipcMain.handle(INVOKE.getPaths, (): AppPaths => ({
+    config: configPath(),
+    configDir: app.getPath('userData'),
+    artwork: artworkDir(),
+    nowPlaying: nowPlayingPath(),
+    logs: app.getPath('logs')
+  }))
+  ipcMain.handle(INVOKE.revealPath, async (_e, target: string): Promise<void> => {
+    // Guard against being handed something outside our own directories.
+    const roots = [app.getPath('userData'), ...getConfig().libraryPaths]
+    if (!roots.some((r) => target === r || target.startsWith(r))) return
+    await shell.openPath(target)
+  })
 
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())

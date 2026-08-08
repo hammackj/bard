@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DeepPartial, Config } from '@shared/types'
+import type { AppPaths } from '@shared/ipc'
 import { useStore } from '../state/store'
 import * as engine from '../audio/engine'
 
@@ -11,6 +12,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [copied, setCopied] = useState(false)
   const [deviceError, setDeviceError] = useState<string | null>(null)
+  const [paths, setPaths] = useState<AppPaths | null>(null)
 
   const patch = async (p: DeepPartial<Config>): Promise<void> => {
     setConfig(await window.bard.setConfig(p))
@@ -21,6 +23,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
     // Enumerate without unlocking: this needs no permission and causes no
     // audio glitch. Labels may be blank until the picker is opened.
     void engine.listOutputDevices().then(setDevices)
+    void window.bard.getPaths().then(setPaths)
   }, [open])
 
   // Deferred until the user actually opens the picker, because unlocking the
@@ -218,6 +221,36 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             Takes Play/Pause, Next and Previous system-wide. Off by default, since other players
             stop receiving them while Bard holds them.
           </p>
+          <Row label="Tray preview corner">
+            <select
+              value={config.window.trayPopupCorner}
+              onChange={(e) =>
+                void patch({
+                  window: {
+                    trayPopupCorner: e.target
+                      .value as Config['window']['trayPopupCorner']
+                  }
+                })
+              }
+              className="border border-edge bg-panel px-2 py-1 text-s2"
+            >
+              <option value="bottom-right">Bottom right</option>
+              <option value="bottom-left">Bottom left</option>
+              <option value="top-right">Top right</option>
+              <option value="top-left">Top left</option>
+              <option value="cursor">Near the cursor</option>
+            </select>
+          </Row>
+          <NumberRow
+            label="Preview hides after (seconds, 0 = never)"
+            value={config.window.trayPopupSeconds}
+            onChange={(v) => void patch({ window: { trayPopupSeconds: v } })}
+          />
+          <p className="text-s1 text-muted">
+            Left-click the tray icon to restore the window; middle-click, or use the tray menu,
+            for the preview. On Wayland the compositor places windows itself and ignores the
+            corner setting.
+          </p>
           <Row label="Close hides to tray">
             <input
               type="checkbox"
@@ -226,6 +259,24 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               className="accent-cyan"
             />
           </Row>
+        </Group>
+
+        <Group title="Files">
+          {paths ? (
+            <>
+              <PathRow label="Settings" value={paths.config} />
+              <PathRow label="Album art cache" value={paths.artwork} />
+              <PathRow label="nowplaying.json" value={paths.nowPlaying} />
+              <button
+                className="mt-2 border border-edge px-3 py-1.5 text-s2 text-muted hover:text-text"
+                onClick={() => void window.bard.revealPath(paths.configDir)}
+              >
+                Open config folder
+              </button>
+            </>
+          ) : (
+            <p className="text-s2 text-muted">Loading…</p>
+          )}
         </Group>
 
         <Group title="Overlay">
@@ -286,6 +337,21 @@ function Row({
     <div className="flex items-center justify-between gap-4 py-1">
       <span className="text-s2 text-muted">{label}</span>
       {children}
+    </div>
+  )
+}
+
+function PathRow({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1">
+      <span className="flex-none text-s2 text-muted">{label}</span>
+      <span
+        className="mono min-w-0 truncate text-right text-s1 text-text"
+        title={value}
+        dir="rtl"
+      >
+        {value}
+      </span>
     </div>
   )
 }

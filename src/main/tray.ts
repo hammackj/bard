@@ -1,9 +1,10 @@
-import { Tray, Menu, BrowserWindow, nativeImage, app } from 'electron'
+import { Tray, Menu, nativeImage, app } from 'electron'
 import { join } from 'node:path'
 import { EVENT } from '../shared/ipc'
 import type { QueueItem } from '../shared/types'
 import { getQueue, skip } from './queue'
 import { toggleTrayPopup, destroyTrayPopup } from './trayPopup'
+import { showMainWindow, sendToMain } from './windows'
 
 let tray: Tray | null = null
 let current: QueueItem | null = null
@@ -16,17 +17,11 @@ function iconPath(): string {
 }
 
 function send(action: 'toggle' | 'restart'): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(EVENT.transport, action)
-  }
+  sendToMain(EVENT.transport, action)
 }
 
 function showWindow(): void {
-  const win = BrowserWindow.getAllWindows()[0]
-  if (!win) return
-  if (!win.isVisible()) win.show()
-  if (win.isMinimized()) win.restore()
-  win.focus()
+  showMainWindow()
 }
 
 export function createTray(onQuit: () => void): void {
@@ -37,8 +32,11 @@ export function createTray(onQuit: () => void): void {
   const image = nativeImage.createFromPath(iconPath()).resize({ width: 22, height: 22 })
   tray = new Tray(image)
   tray.setToolTip('Bard')
-  // Left click shows the now-playing preview; the window is one menu item away.
-  tray.on('click', () => toggleTrayPopup(tray?.getBounds()))
+  // Left click restores the window -- that is what a tray icon is expected to
+  // do, and routing it to the preview instead left no way back to the app.
+  tray.on('click', showWindow)
+  tray.on('double-click', showWindow)
+  tray.on('middle-click', () => toggleTrayPopup(tray?.getBounds()))
 
   rebuildMenu(onQuit)
 }
@@ -62,12 +60,12 @@ function rebuildMenu(onQuit: () => void): void {
         enabled: false
       },
       { type: 'separator' },
+      { label: 'Show Bard', click: showWindow },
       { label: 'Now playing preview', click: () => toggleTrayPopup(tray?.getBounds()) },
       { type: 'separator' },
       { label: playing ? 'Pause' : 'Play', click: () => send('toggle') },
       { label: 'Skip', click: () => skip(), enabled: getQueue().length > 0 },
       { type: 'separator' },
-      { label: 'Show Bard', click: showWindow },
       { label: 'Quit', click: onQuit }
     ])
   )

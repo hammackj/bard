@@ -18,6 +18,14 @@ import type {
 
 export type TransportAction = 'toggle' | 'restart'
 
+export type AppPaths = {
+  config: string
+  configDir: string
+  artwork: string
+  nowPlaying: string
+  logs: string
+}
+
 /** Renderer -> main, expects a reply (ipcRenderer.invoke). */
 export const INVOKE = {
   scanLibrary: 'library:scan',
@@ -34,7 +42,9 @@ export const INVOKE = {
   disconnectTwitch: 'twitch:disconnect',
   getConfig: 'config:get',
   setConfig: 'config:set',
-  getOverlayUrl: 'overlay:url'
+  getOverlayUrl: 'overlay:url',
+  getPaths: 'app:paths',
+  revealPath: 'app:revealPath'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -90,6 +100,11 @@ export type BardApi = {
 
   /** URL of the running overlay server, or null when it failed to bind. */
   getOverlayUrl: () => Promise<string | null>
+
+  /** Where config, artwork cache and nowplaying.json live on disk. */
+  getPaths: () => Promise<AppPaths>
+  /** Opens a folder in the system file manager. */
+  revealPath: (path: string) => Promise<void>
 
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe

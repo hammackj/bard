@@ -1,6 +1,7 @@
-import { globalShortcut, BrowserWindow } from 'electron'
+import { globalShortcut } from 'electron'
 import { EVENT } from '../shared/ipc'
 import { skip } from './queue'
+import { sendToMain } from './windows'
 
 /**
  * System-wide media keys.
@@ -18,9 +19,7 @@ const BINDINGS: Array<[string, () => void]> = [
 ]
 
 function broadcast(action: 'toggle' | 'restart'): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(EVENT.transport, action)
-  }
+  sendToMain(EVENT.transport, action)
 }
 
 export function applyGlobalShortcuts(enabled: boolean): { registered: string[]; failed: string[] } {

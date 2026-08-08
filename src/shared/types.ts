@@ -116,9 +116,23 @@ export type PlaybackConfig = {
   fillCount: number
 }
 
+export type TrayPopupCorner =
+  | 'bottom-right'
+  | 'bottom-left'
+  | 'top-right'
+  | 'top-left'
+  | 'cursor'
+
 export type WindowConfig = {
   /** Close hides to the tray instead of quitting. */
   closeToTray: boolean
+  /**
+   * Where the tray preview appears. Honoured on X11, Windows and macOS;
+   * Wayland compositors place windows themselves and ignore it.
+   */
+  trayPopupCorner: TrayPopupCorner
+  /** Seconds before the preview hides itself. 0 keeps it until dismissed. */
+  trayPopupSeconds: number
 }
 
 export type Config = {
@@ -145,7 +159,7 @@ export const DEFAULT_CONFIG: Config = {
   audio: { volume: 0.8, outputDeviceId: 'default' },
   overlay: { port: 4747, writeNowPlayingJson: true },
   shortcuts: { globalMediaKeys: false },
-  window: { closeToTray: true },
+  window: { closeToTray: true, trayPopupCorner: 'bottom-right', trayPopupSeconds: 8 },
   playback: { autoFill: 'off', avoidRepeat: 50, fillCount: 10 }
 }
 

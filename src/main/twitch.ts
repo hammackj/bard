@@ -1,5 +1,4 @@
 import WebSocket from 'ws'
-import { BrowserWindow } from 'electron'
 import { EVENT } from '../shared/ipc'
 import {
   anonNick,
@@ -11,6 +10,7 @@ import {
 } from '../shared/irc'
 import type { TwitchStatus } from '../shared/types'
 import { getConfig } from './config'
+import { sendToMain } from './windows'
 import { emitChat, getNowPlaying, getQueue, requestFromChat } from './queue'
 
 const IRC_URL = 'wss://irc-ws.chat.twitch.tv:443'
@@ -26,10 +26,8 @@ let healthyTimer: NodeJS.Timeout | null = null
 let deliberateClose = false
 let status: TwitchStatus = 'disconnected'
 
-function broadcast(ch: string, payload: unknown): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) win.webContents.send(ch, payload)
-  }
+function broadcast(channel: string, payload: unknown): void {
+  sendToMain(channel, payload)
 }
 
 function setStatus(next: TwitchStatus): void {

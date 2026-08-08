@@ -46,6 +46,8 @@ const api: BardApi = {
   getConfig: () => ipcRenderer.invoke(INVOKE.getConfig),
   setConfig: (patch) => ipcRenderer.invoke(INVOKE.setConfig, patch),
   getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
+  getPaths: () => ipcRenderer.invoke(INVOKE.getPaths),
+  revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),
