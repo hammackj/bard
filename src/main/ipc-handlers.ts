@@ -12,6 +12,7 @@ import {
   skip
 } from './queue'
 import { connectTwitch, disconnectTwitch } from './twitch'
+import { setProgress } from './nowplaying'
 import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
 
 /**
@@ -80,7 +81,7 @@ export function registerIpcHandlers(): void {
 
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())
-  ipcMain.on(SEND.reportProgress, (_e, _p: PlaybackProgress): void => {
-    // Phase 8 forwards this to the overlay and nowplaying.json.
+  ipcMain.on(SEND.reportProgress, (_e, p: PlaybackProgress): void => {
+    setProgress(p)
   })
 }

@@ -2,9 +2,11 @@ import { app, shell, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { getLibraryPaths, configPath } from './config'
+import { getLibraryPaths, configPath, getConfig } from './config'
 import { registerScheme, handleScheme, makeIsAllowed } from './protocol'
 import { registerIpcHandlers } from './ipc-handlers'
+import { startOverlay, stopOverlay, getOverlayUrl } from './overlay'
+import { nowPlayingPath } from './nowplaying'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -74,9 +76,21 @@ app.whenReady().then(() => {
 
   console.log('[bard] config:', configPath())
 
+  void startOverlay(getConfig().overlay.port).then((port) => {
+    console.log(
+      port
+        ? `[bard] overlay: ${getOverlayUrl()}  (nowplaying: ${nowPlayingPath()})`
+        : '[bard] overlay: FAILED to bind a port'
+    )
+  })
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  void stopOverlay()
 })
 
 app.on('window-all-closed', () => {

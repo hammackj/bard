@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bard — now playing</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <!-- Hidden until the first event arrives, so OBS never shows an empty card. -->
+    <div class="card" id="card" hidden>
+      <img class="art" id="art" alt="" />
+      <div class="txt">
+        <div class="eyebrow" id="eyebrow">Now playing</div>
+        <div class="title" id="title"></div>
+        <div class="artist" id="artist"></div>
+        <div class="album" id="album"></div>
+        <div class="req" id="req" hidden>
+          requested by <b id="reqname"></b>
+        </div>
+      </div>
+      <div class="bar">
+        <div class="fill" id="fill"></div>
+      </div>
+      <div class="times">
+        <span id="pos">0:00</span>
+        <span id="dur">0:00</span>
+      </div>
+    </div>
+    <script src="overlay.js"></script>
+  </body>
+</html>

@@ -6,6 +6,7 @@ import type { RequestVerdict } from '../shared/requests'
 import type { ChatEvent, ChatEventKind, QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
 import { getTrackById, matchRequest } from './library'
+import { setNowPlaying, setQueueLength } from './nowplaying'
 
 /**
  * The queue lives here and nowhere else.
@@ -27,6 +28,7 @@ function broadcast(channel: string, payload: unknown): void {
 
 function emitQueue(): void {
   broadcast(EVENT.queueChanged, queue)
+  setQueueLength(queue.length)
 }
 
 export function emitChat(kind: ChatEventKind, message: string, user?: string): ChatEvent {
@@ -124,11 +126,13 @@ export function playNext(): QueueItem | null {
   const [next, ...rest] = queue
   if (!next) {
     nowPlaying = null
+    setNowPlaying(null)
     return null
   }
   queue = rest
   nowPlaying = next
   emitQueue()
+  setNowPlaying(next)
   broadcast(EVENT.playTrack, next.track)
   return next
 }
@@ -149,5 +153,6 @@ export function getLastRequestAt(): Readonly<Record<string, number>> {
 
 export function playTrackNow(track: Track): void {
   nowPlaying = { id: randomUUID(), track, addedAt: Date.now() }
+  setNowPlaying(nowPlaying)
   broadcast(EVENT.playTrack, track)
 }
