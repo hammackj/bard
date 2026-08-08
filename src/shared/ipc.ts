@@ -29,7 +29,8 @@ export const INVOKE = {
   connectTwitch: 'twitch:connect',
   disconnectTwitch: 'twitch:disconnect',
   getConfig: 'config:get',
-  setConfig: 'config:set'
+  setConfig: 'config:set',
+  getOverlayUrl: 'overlay:url'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -44,7 +45,8 @@ export const EVENT = {
   playTrack: 'player:play',
   chatEvent: 'chat:event',
   twitchStatus: 'twitch:status',
-  scanProgress: 'library:scanProgress'
+  scanProgress: 'library:scanProgress',
+  nowPlaying: 'player:nowPlaying'
 } as const
 
 /** Unsubscribe handle returned by every onX subscription. */
@@ -77,10 +79,15 @@ export type BardApi = {
   getConfig: () => Promise<Config>
   setConfig: (patch: DeepPartial<Config>) => Promise<Config>
 
+  /** URL of the running overlay server, or null when it failed to bind. */
+  getOverlayUrl: () => Promise<string | null>
+
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
   onPlayTrack: (cb: (t: Track) => void) => Unsubscribe
   onChatEvent: (cb: (e: ChatEvent) => void) => Unsubscribe
   onTwitchStatus: (cb: (s: TwitchStatus) => void) => Unsubscribe
   onScanProgress: (cb: (p: ScanProgress) => void) => Unsubscribe
+  /** The queue item now playing, carrying requester info. */
+  onNowPlaying: (cb: (i: QueueItem | null) => void) => Unsubscribe
 }

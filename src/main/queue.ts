@@ -127,12 +127,14 @@ export function playNext(): QueueItem | null {
   if (!next) {
     nowPlaying = null
     setNowPlaying(null)
+    broadcast(EVENT.nowPlaying, null)
     return null
   }
   queue = rest
   nowPlaying = next
   emitQueue()
   setNowPlaying(next)
+  broadcast(EVENT.nowPlaying, next)
   broadcast(EVENT.playTrack, next.track)
   return next
 }

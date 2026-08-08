@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 /**
  * Dependencies are externalized by default, which emits `require('pkg')` into a
@@ -41,6 +42,6 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react()]
+    plugins: [react(), tailwindcss()]
   }
 })

@@ -1,0 +1,150 @@
+@import 'tailwindcss';
+
+/*
+ * Sources declared explicitly rather than relying on auto-detection, which
+ * resolves against the Vite root -- and electron-vite moves that to
+ * src/renderer. Being explicit means a future config change cannot silently
+ * empty the stylesheet. Paths are relative to this file.
+ */
+@source "../**/*.{ts,tsx}";
+@source "../../index.html";
+
+/*
+ * Self-hosted fonts -- the app must work offline, so no CDN links.
+ * Latin subsets only; all three are variable, and Fraunces keeps its
+ * opsz/SOFT/WONK axes so the display face can be tuned per the mockup.
+ * Source: Google Fonts, all under the SIL Open Font License.
+ */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../../../../resources/fonts/Fraunces-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../../../../resources/fonts/PublicSans-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('../../../../resources/fonts/JetBrainsMono-latin.woff2') format('woff2');
+}
+
+/*
+ * Bard matches hammackj.com -- cool slate, cyan accent, anchored on #0891B2.
+ *
+ * Two cyans doing different jobs: cyan-600 is the brand value but sits too
+ * dark for hairlines and small text on slate-950, so cyan-400 carries those.
+ * cyan-600 is for solid fills where the surface area makes it read correctly.
+ */
+@theme {
+  --color-ink: #020617;
+  --color-panel: #0f172a;
+  --color-edge: #1e293b;
+  --color-text: #f1f5f9;
+  --color-muted: #94a3b8;
+  --color-cyan: #22d3ee;
+  --color-cyan-deep: #0891b2;
+  --color-green: #34d399;
+  --color-rose: #fb7185;
+
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-ui: 'Public Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Five sizes, no improvising. */
+  --text-s1: 11px;
+  --text-s2: 13px;
+  --text-s3: 15px;
+  --text-s4: 20px;
+  --text-s5: 34px;
+}
+
+/*
+ * No `* { margin: 0; padding: 0 }` reset here.
+ *
+ * Tailwind v4 emits utilities inside @layer utilities, and unlayered rules
+ * outrank every layer -- so a bare `*` reset silently defeats every padding
+ * and margin utility in the app while leaving colour, border and shadow
+ * utilities working. The result looks like a layout bug, not a CSS conflict.
+ * Preflight already normalises margin, padding and box-sizing.
+ */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--text-s3);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Warm falloff from the centre-left; keeps it from reading as flat dark mode. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(120% 90% at 38% 42%, rgba(8, 145, 178, 0.09), transparent 62%);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 1.5px solid var(--color-cyan);
+  outline-offset: 2px;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variation-settings:
+    'opsz' 120,
+    'SOFT' 0,
+    'WONK' 1;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-edge);
+  border: 3px solid var(--color-ink);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, session } from 'electron'
 import { join } from 'path'
+import { writeFile } from 'node:fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getLibraryPaths, configPath, getConfig } from './config'
@@ -41,6 +42,25 @@ function createWindow(): void {
   if (is.dev) {
     mainWindow.webContents.on('console-message', (e) => {
       console.log(`[renderer:${e.level}] ${e.message}`)
+    })
+  }
+
+  /**
+   * Dev-only window capture: BARD_SHOT=/path/to.png writes a PNG of this
+   * window and nothing else. Useful for checking layout without taking a
+   * screenshot of whatever else is on the developer's screen.
+   */
+  if (is.dev && process.env.BARD_SHOT) {
+    const target = process.env.BARD_SHOT
+    const delay = Number(process.env.BARD_SHOT_DELAY ?? 6000)
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        mainWindow.webContents
+          .capturePage()
+          .then((img) => writeFile(target, img.toPNG()))
+          .then(() => console.log(`[bard] captured window -> ${target}`))
+          .catch((e) => console.error('[bard] capture failed', e))
+      }, delay)
     })
   }
 

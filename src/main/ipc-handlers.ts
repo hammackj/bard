@@ -13,6 +13,7 @@ import {
 } from './queue'
 import { connectTwitch, disconnectTwitch } from './twitch'
 import { setProgress } from './nowplaying'
+import { getOverlayUrl } from './overlay'
 import type { Config, DeepPartial, PlaybackProgress, ScanProgress, Track } from '../shared/types'
 
 /**
@@ -78,6 +79,7 @@ export function registerIpcHandlers(): void {
     connectTwitch(ch || getConfig().twitch.channel)
   })
   ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectTwitch())
+  ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
 
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())

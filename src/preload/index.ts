@@ -43,12 +43,14 @@ const api: BardApi = {
 
   getConfig: () => ipcRenderer.invoke(INVOKE.getConfig),
   setConfig: (patch) => ipcRenderer.invoke(INVOKE.setConfig, patch),
+  getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),
   onChatEvent: (cb) => subscribe(EVENT.chatEvent, cb),
   onTwitchStatus: (cb) => subscribe(EVENT.twitchStatus, cb),
-  onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb)
+  onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb),
+  onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb)
 }
 
 if (process.contextIsolated) {
