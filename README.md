@@ -167,6 +167,24 @@ launch; right-click the app and choose **Open** to get the override prompt.
 Signing and notarisation need an Apple Developer identity, which is not
 configured here.
 
+### Pinning the tray preview (KDE/Wayland)
+
+Wayland compositors place windows themselves and ignore an application's
+request — verified: a request for (4700, 2660) lands at (0, 0). The corner
+setting in Bard therefore only takes effect on X11, Windows and macOS.
+
+On KDE the native fix is a KWin window rule:
+
+```bash
+./scripts/install-kwin-rule.sh --corner bottom-right --screen DP-3 --margin 70
+./scripts/install-kwin-rule.sh --remove   # undo
+```
+
+It matches on a substring of the window caption (exact caption matching turned
+out to be brittle), backs up `kwinrulesrc` before editing, and leaves any rules
+you already had alone. Raise `--margin` past the thickness of a panel that
+overlaps the chosen corner.
+
 ### Desktop launcher for a local build
 
 Packaged installers register their own launcher. For a locally built binary:

@@ -34,9 +34,10 @@ function build(): BrowserWindow | null {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    // Some compositors place a utility surface more sensibly than a plain one,
-    // and it keeps the preview out of the window switcher.
-    type: process.platform === 'linux' ? 'toolbar' : undefined,
+    // Deliberately a normal window: KWin treats toolbar/utility surfaces
+    // specially and window rules apply to them far less predictably, and a
+    // rule is the only way to place this on Wayland. skipTaskbar already keeps
+    // it out of the task manager.
     title: 'Bard — now playing',
     backgroundColor: '#00000000',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
@@ -126,6 +127,10 @@ export function toggleTrayPopup(trayBounds?: Rectangle): void {
   // Position again after showing: some window managers only honour a move once
   // the surface exists.
   position(popup, trayBounds)
+  if (process.env.BARD_POPUP_DEBUG) {
+    const [x, y] = popup.getPosition()
+    console.log(`[bard] preview placed at ${x},${y}`)
+  }
   popup.setAlwaysOnTop(true, 'screen-saver')
   armAutoHide()
 }

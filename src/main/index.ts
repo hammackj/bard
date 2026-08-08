@@ -14,6 +14,7 @@ import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
 import { setMainWindow } from './windows'
+import { toggleTrayPopup } from './trayPopup'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -129,6 +130,12 @@ app.whenReady().then(() => {
   })
 
   createTray(quitApp)
+
+  // Dev aid: BARD_POPUP_TEST=1 shows the preview shortly after start, so its
+  // placement can be checked without clicking the tray.
+  if (is.dev && process.env.BARD_POPUP_TEST) {
+    setTimeout(() => toggleTrayPopup(), 4000)
+  }
   const shortcuts = applyGlobalShortcuts(getConfig().shortcuts.globalMediaKeys)
   if (shortcuts.failed.length) {
     console.warn('[bard] media keys already taken:', shortcuts.failed.join(', '))
