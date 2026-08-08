@@ -114,6 +114,19 @@ function armAutoHide(): void {
   hideTimer = setTimeout(() => popup?.hide(), seconds * 1000)
 }
 
+/**
+ * Builds the preview up front, hidden.
+ *
+ * A KWin rule matches on the window caption, and the caption only exists once
+ * the page has loaded -- so on the very first show the rule had nothing to
+ * match and the compositor centred the window, while every later show landed
+ * correctly. Creating it early means the title is in place long before it is
+ * first displayed.
+ */
+export function warmTrayPopup(): void {
+  if (!popup) popup = build()
+}
+
 export function toggleTrayPopup(trayBounds?: Rectangle): void {
   if (popup && popup.isVisible()) {
     popup.hide()

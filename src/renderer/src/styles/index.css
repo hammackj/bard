@@ -11,53 +11,50 @@
 
 /*
  * Self-hosted fonts -- the app must work offline, so no CDN links.
- * Latin subsets only; all three are variable, and Fraunces keeps its
- * opsz/SOFT/WONK axes so the display face can be tuned per the mockup.
- * Source: Google Fonts, all under the SIL Open Font License.
+ * Latin subsets only, both variable. These are the faces hammackj.com uses,
+ * so the app and the site read as one brand.
+ * Source: Google Fonts, both under the SIL Open Font License.
  */
 @font-face {
-  font-family: 'Fraunces';
+  font-family: 'Inter';
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url('../../../../resources/fonts/Fraunces-latin.woff2') format('woff2');
+  src: url('../../../../resources/fonts/Inter-latin.woff2') format('woff2');
 }
 @font-face {
-  font-family: 'Public Sans';
+  font-family: 'Fira Code';
   font-style: normal;
-  font-weight: 100 900;
+  font-weight: 300 700;
   font-display: swap;
-  src: url('../../../../resources/fonts/PublicSans-latin.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 100 800;
-  font-display: swap;
-  src: url('../../../../resources/fonts/JetBrainsMono-latin.woff2') format('woff2');
+  src: url('../../../../resources/fonts/FiraCode-latin.woff2') format('woff2');
 }
 
 /*
- * Bard matches hammackj.com -- cool slate, cyan accent, anchored on #0891B2.
+ * Palette taken from hammackj.com.
+ *
+ * The site's declared theme-color is #0891B2 and its greys are Tailwind's
+ * `gray` ramp -- not `slate`, which CLAUDE.md assumed. Per that document's own
+ * instruction the neutrals were swapped to gray at the same numeric stops.
  *
  * Two cyans doing different jobs: cyan-600 is the brand value but sits too
- * dark for hairlines and small text on slate-950, so cyan-400 carries those.
+ * dark for hairlines and small text on gray-950, so cyan-400 carries those.
  * cyan-600 is for solid fills where the surface area makes it read correctly.
  */
 @theme {
-  --color-ink: #020617;
-  --color-panel: #0f172a;
-  --color-edge: #1e293b;
-  --color-text: #f1f5f9;
-  --color-muted: #94a3b8;
-  --color-cyan: #22d3ee;
-  --color-cyan-deep: #0891b2;
+  --color-ink: #030712; /* gray-950  — app background */
+  --color-panel: #111827; /* gray-900  — panel surfaces */
+  --color-edge: #1f2937; /* gray-800  — 1px dividers */
+  --color-text: #f3f4f6; /* gray-100  — primary text */
+  --color-muted: #9ca3af; /* gray-400  — metadata */
+  --color-cyan: #22d3ee; /* cyan-400  — strokes and accents on dark */
+  --color-cyan-deep: #0891b2; /* cyan-600  — the site's theme-color */
   --color-green: #34d399;
   --color-rose: #fb7185;
 
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-ui: 'Public Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: 'Inter', system-ui, sans-serif;
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Fira Code', ui-monospace, monospace;
 
   /* Five sizes, no improvising. */
   --text-s1: 11px;
@@ -77,67 +74,80 @@
  * Preflight already normalises margin, padding and box-sizing.
  */
 
-html,
-body,
-#root {
-  height: 100%;
+/*
+ * Everything below is layered deliberately.
+ *
+ * Tailwind v4 emits utilities inside @layer utilities, and an unlayered rule
+ * outranks every layer. A bare `button { background: none }` therefore beats
+ * bg-* on every button in the app -- the class is applied, the colour simply
+ * never paints, which looks like a state bug rather than a CSS one. The same
+ * trap already cost us a `* { padding: 0 }` reset that silently disabled every
+ * spacing utility. Base resets belong in @layer base, shared classes in
+ * @layer components, and both must lose to utilities.
+ */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-ink);
+    color: var(--color-text);
+    font-family: var(--font-ui);
+    font-size: var(--text-s3);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Warm falloff from the centre-left; keeps it from reading as flat dark mode. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(120% 90% at 38% 42%, rgba(8, 145, 178, 0.09), transparent 62%);
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 1.5px solid var(--color-cyan);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-edge);
+    border: 3px solid var(--color-ink);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
 
-body {
-  background: var(--color-ink);
-  color: var(--color-text);
-  font-family: var(--font-ui);
-  font-size: var(--text-s3);
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-}
+@layer components {
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
 
-/* Warm falloff from the centre-left; keeps it from reading as flat dark mode. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(120% 90% at 38% 42%, rgba(8, 145, 178, 0.09), transparent 62%);
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-:focus-visible {
-  outline: 1.5px solid var(--color-cyan);
-  outline-offset: 2px;
-}
-
-.mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
-.display {
-  font-family: var(--font-display);
-  font-variation-settings:
-    'opsz' 120,
-    'SOFT' 0,
-    'WONK' 1;
-}
-
-::-webkit-scrollbar {
-  width: 9px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-edge);
-  border: 3px solid var(--color-ink);
-}
-::-webkit-scrollbar-track {
-  background: transparent;
+  /* Track titles. Inter at tight tracking rather than a separate display face. */
+  .display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

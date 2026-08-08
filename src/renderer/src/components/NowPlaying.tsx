@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import type { QueueItem, Track } from '@shared/types'
 import { StringBar } from './StringBar'
 import { fmtTime } from '../lib/format'
+import { useStore } from '../state/store'
+import type { AutoFillMode } from '@shared/types'
 
 type Props = {
   track: Track | null
@@ -96,6 +98,8 @@ export function NowPlaying(props: Props): React.JSX.Element {
           </button>
         </div>
 
+        <PlaybackMode />
+
         <label className="ml-auto flex items-center gap-[9px] text-muted">
           <VolumeIcon />
           <input
@@ -111,6 +115,43 @@ export function NowPlaying(props: Props): React.JSX.Element {
           <span className="mono text-s1">{Math.round(volume * 100)}</span>
         </label>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Auto-fill mode, sitting in the transport rather than buried in settings --
+ * "what plays when the queue empties" is a playback control, and nobody goes
+ * hunting through a settings dialog mid-stream to change it.
+ */
+function PlaybackMode(): React.JSX.Element {
+  const mode = useStore((s) => s.config?.playback.autoFill ?? 'off')
+  const setConfig = useStore((s) => s.setConfig)
+
+  const choose = async (next: AutoFillMode): Promise<void> => {
+    setConfig(await window.bard.setConfig({ playback: { autoFill: next } }))
+  }
+
+  const options: Array<[AutoFillMode, string, string]> = [
+    ['off', 'Off', 'Stop when the queue runs out'],
+    ['shuffle', 'Shuffle', 'Keep playing — random, avoiding recent tracks'],
+    ['album', 'Album', 'Keep playing — finish the album, then another']
+  ]
+
+  return (
+    <div className="ml-6 flex items-center gap-1 border border-edge p-0.5" role="group">
+      {options.map(([value, label, title]) => (
+        <button
+          key={value}
+          title={title}
+          onClick={() => void choose(value)}
+          className={`px-2 py-0.5 text-s1 ${
+            mode === value ? 'bg-cyan-deep text-text' : 'text-muted hover:text-text'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   )
 }

@@ -14,7 +14,7 @@ import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
 import { setMainWindow } from './windows'
-import { toggleTrayPopup } from './trayPopup'
+import { toggleTrayPopup, warmTrayPopup } from './trayPopup'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -130,6 +130,9 @@ app.whenReady().then(() => {
   })
 
   createTray(quitApp)
+  // Give the preview a caption before it is ever shown, so a compositor rule
+  // matching on title applies to the first show as well as later ones.
+  warmTrayPopup()
 
   // Dev aid: BARD_POPUP_TEST=1 shows the preview shortly after start, so its
   // placement can be checked without clicking the tray.

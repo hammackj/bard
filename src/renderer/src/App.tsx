@@ -9,6 +9,7 @@ import { ChatLog } from './components/ChatLog'
 import { SettingsPanel } from './components/SettingsPanel'
 import { FirstRun } from './components/FirstRun'
 import { ShortcutsOverlay } from './components/ShortcutsOverlay'
+import { AvatarMenu } from './components/AvatarMenu'
 import { maybeRunSelfTest } from './audio/selftest'
 
 function App(): React.JSX.Element {
@@ -17,6 +18,8 @@ function App(): React.JSX.Element {
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(true)
   const scanned = useRef(false)
 
   const { state, toggle, seek, setVolume } = useAudio(s.config?.audio.volume ?? 0.8)
@@ -80,7 +83,11 @@ function App(): React.JSX.Element {
       const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
       if (e.key === '/' && !typing) {
         e.preventDefault()
-        document.querySelector<HTMLInputElement>('[data-library-filter]')?.focus()
+        setLibraryOpen(true)
+        setTimeout(
+          () => document.querySelector<HTMLInputElement>('[data-library-filter]')?.focus(),
+          0
+        )
       } else if (e.code === 'Space' && !typing) {
         e.preventDefault()
         void toggle()
@@ -127,23 +134,52 @@ function App(): React.JSX.Element {
   return (
     <div className="relative z-[1] grid h-screen grid-rows-[34px_1fr]">
       <div
-        className="flex items-center gap-2.5 border-b border-edge px-3.5"
+        className="flex items-center gap-3 border-b border-edge px-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <div className="flex gap-[7px]">
-          <i className="size-[11px] rounded-full bg-edge" />
-          <i className="size-[11px] rounded-full bg-edge" />
-          <i className="size-[11px] rounded-full bg-edge" />
-        </div>
-        <span className="display ml-1.5 text-s2 font-semibold tracking-[.14em] text-muted uppercase">
+        <span style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <DockToggle
+            side="left"
+            open={libraryOpen}
+            label="library"
+            onClick={() => setLibraryOpen((v) => !v)}
+          />
+        </span>
+        <span className="display text-s2 font-semibold tracking-[.18em] text-muted uppercase">
           Bard
+        </span>
+        <span className="ml-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <DockToggle
+            side="right"
+            open={chatOpen}
+            label="chat"
+            onClick={() => setChatOpen((v) => !v)}
+          />
         </span>
       </div>
 
-      <div className="grid min-h-0 grid-cols-[280px_minmax(0,1fr)_320px]">
-        <LibraryPanel onEnqueue={enqueue} onPlayNow={playNow} />
+      <div
+        className="grid min-h-0"
+        style={{
+          gridTemplateColumns: `${libraryOpen ? '280px' : '0px'} minmax(0,1fr) ${
+            chatOpen ? '320px' : '0px'
+          }`
+        }}
+      >
+        <aside
+          className={`min-h-0 flex-col overflow-hidden border-r border-edge ${
+            libraryOpen ? 'flex' : 'hidden'
+          }`}
+        >
+          <LibraryPanel onEnqueue={enqueue} onPlayNow={playNow} />
+          <AvatarMenu
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onRescan={() => void runScan()}
+          />
+        </aside>
 
-        <section className="grid min-h-0 grid-rows-[1fr_auto] border-l border-edge">
+        <section className="grid min-h-0 grid-rows-[1fr_auto]">
           {noLibrary ? (
             <FirstRun onChoose={chooseFolder} />
           ) : (
@@ -171,38 +207,19 @@ function App(): React.JSX.Element {
           <QueuePanel />
         </section>
 
-        <section className="flex min-h-0 flex-col border-l border-edge">
+        <aside
+          className={`min-h-0 flex-col overflow-hidden border-l border-edge ${
+            chatOpen ? 'flex' : 'hidden'
+          }`}
+        >
           <ChatLog />
-          <div className="border-t border-edge">
-            <header className="px-4 pt-[13px] pb-1 text-s1 font-semibold tracking-[.13em] text-muted uppercase">
-              Status
-            </header>
-            <StatusRow label="Twitch">
-              <span className="flex items-center gap-[7px]">
-                <i
-                  className={`size-1.5 flex-none rounded-full ${
-                    s.twitch === 'connected'
-                      ? 'bg-green'
-                      : s.twitch === 'error'
-                        ? 'bg-rose'
-                        : 'bg-muted'
-                  }`}
-                />
-                {s.twitch}
-              </span>
-            </StatusRow>
-            <StatusRow label="Overlay">{overlayUrl?.replace('http://', '') ?? 'off'}</StatusRow>
-            <StatusRow label="Cooldown">
-              {s.config ? `${s.config.requests.cooldownSeconds}s · max ${s.config.requests.maxPerUserInQueue}` : '—'}
-            </StatusRow>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="block w-full px-4 pt-[9px] pb-3 text-left text-s1 font-semibold tracking-[.13em] text-muted uppercase hover:text-text"
-            >
-              Open settings →
-            </button>
+          <div className="flex items-center justify-between gap-2 border-t border-edge px-4 py-2 text-s1">
+            <span className="text-muted">Overlay</span>
+            <span className="mono min-w-0 truncate text-right">
+              {overlayUrl?.replace('http://', '') ?? 'off'}
+            </span>
           </div>
-        </section>
+        </aside>
       </div>
 
       <SettingsPanel
@@ -215,18 +232,42 @@ function App(): React.JSX.Element {
   )
 }
 
-function StatusRow({
+
+/** Chevron that folds the dock on its side of the window away. */
+function DockToggle({
+  side,
+  open,
   label,
-  children
+  onClick
 }: {
+  side: 'left' | 'right'
+  open: boolean
   label: string
-  children: React.ReactNode
+  onClick: () => void
 }): React.JSX.Element {
+  const pointsLeft = side === 'left' ? open : !open
   return (
-    <div className="flex items-center justify-between gap-2.5 px-4 py-2 text-s2">
-      <span className="flex-none text-muted">{label}</span>
-      <span className="mono min-w-0 truncate text-right text-s1">{children}</span>
-    </div>
+    <button
+      onClick={onClick}
+      aria-label={`${open ? 'Hide' : 'Show'} ${label}`}
+      title={`${open ? 'Hide' : 'Show'} ${label} panel`}
+      className="rounded-sm px-1 py-0.5 text-muted hover:bg-panel hover:text-text"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <rect x="3" y="4.5" width="18" height="15" strokeWidth="1.5" opacity=".55" />
+        <path
+          d={side === 'left' ? 'M9 4.5v15' : 'M15 4.5v15'}
+          strokeWidth="1.5"
+          opacity={open ? 1 : 0.35}
+        />
+        <path
+          d={pointsLeft ? 'M13.6 9.8 11.4 12l2.2 2.2' : 'M10.4 9.8 12.6 12l-2.2 2.2'}
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
   )
 }
 
