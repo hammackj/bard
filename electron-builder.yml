@@ -44,7 +44,12 @@ linux:
     - AppImage
     - deb
   maintainer: hammackj <172781+hammackj@users.noreply.github.com>
+  # A directory of <size>x<size>.png, so every panel size is shipped exactly
+  # rather than downscaled from one 1024px source.
+  icon: build/icons
   category: AudioVideo;Audio;Player
+  # Links running windows to the .desktop entry, so the taskbar shows our icon.
+  syncDesktopName: true
   synopsis: Local music player with Twitch song requests for streamers
   description: >-
     Bard plays music from your own library and takes song requests from Twitch

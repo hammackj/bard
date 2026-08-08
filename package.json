@@ -1,10 +1,10 @@
 {
   "name": "bard",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "Local music player with Twitch song requests for streamers",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "hammackj <172781+hammackj@users.noreply.github.com>",
+  "homepage": "https://github.com/hammackj/bard",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -68,5 +68,7 @@
     "electron@39.8.10": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true
-  }
+  },
+  "productName": "Bard",
+  "desktopName": "bard.desktop"
 }
