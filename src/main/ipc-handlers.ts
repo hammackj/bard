@@ -13,11 +13,23 @@ import {
   shuffleQueue,
   fillQueue
 } from './queue'
-import { connectTwitch, disconnectTwitch } from './twitch'
+import { connectChat, disconnectChat } from './chat/manager'
 import { setProgress, nowPlayingPath } from './nowplaying'
 import { artworkDir } from './artwork'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
+import { getChatStatus } from './chat/manager'
+import {
+  startDeviceFlow,
+  getValidToken,
+  TWITCH_TOKEN_NAME,
+  type DevicePrompt
+} from './auth/twitchDevice'
+import { clearToken, encryptionAvailable } from './auth/tokens'
+import type { TwitchAuthState } from '../shared/ipc'
+
+/** Progress of an in-flight device authorisation, polled by the renderer. */
+let authState: TwitchAuthState = { state: 'idle' }
 import { addBlock, removeBlock } from '../shared/requests'
 import type {
   Config,
@@ -112,11 +124,46 @@ export function registerIpcHandlers(): void {
     fillQueue(count)
   })
 
-  ipcMain.handle(INVOKE.connectTwitch, (_e, ch: string): void => {
-    connectTwitch(ch || getConfig().twitch.channel)
+  ipcMain.handle(INVOKE.connectTwitch, async (_e, ch: string): Promise<void> => {
+    if (ch) setConfig({ twitch: { channel: ch } })
+    await connectChat('twitch')
   })
-  ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectTwitch())
+  ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectChat('twitch'))
+
+  ipcMain.handle(INVOKE.twitchAuthStart, async (e): Promise<DevicePrompt> => {
+    const { clientId } = getConfig().twitch
+    const handle = await startDeviceFlow(clientId)
+    // Resolve in the background; the renderer polls twitchAuthState.
+    void handle.completed
+      .then(async (token) => {
+        authState = { state: 'authorized', login: token.login }
+        // Reconnect so the live connection picks up the new identity.
+        await connectChat('twitch')
+      })
+      .catch((err: Error) => {
+        authState = { state: 'error', message: err.message }
+      })
+    authState = { state: 'pending' }
+    if (!e.sender.isDestroyed()) e.sender.send(EVENT.twitchStatus, getChatStatus('twitch'))
+    return handle.prompt
+  })
+
+  ipcMain.handle(INVOKE.twitchAuthState, async (): Promise<TwitchAuthState> => {
+    if (authState.state === 'idle') {
+      const token = await getValidToken(getConfig().twitch.clientId)
+      if (token) return { state: 'authorized', login: token.login }
+    }
+    return authState
+  })
+
+  ipcMain.handle(INVOKE.twitchSignOut, async (): Promise<void> => {
+    await clearToken(TWITCH_TOKEN_NAME)
+    authState = { state: 'idle' }
+    await connectChat('twitch')
+  })
   ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
+
+  ipcMain.handle(INVOKE.secureStorageAvailable, (): boolean => encryptionAvailable())
 
   ipcMain.handle(INVOKE.getPaths, (): AppPaths => ({
     config: configPath(),

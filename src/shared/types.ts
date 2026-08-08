@@ -104,6 +104,14 @@ export type TwitchConfig = {
   channel: string
   enabled: boolean
   commandPrefix: string
+  /**
+   * Client ID of an application registered at dev.twitch.tv.
+   * Public clients only -- Device Code Flow forbids a client secret, so there
+   * is nothing confidential to ship in the bundle.
+   */
+  clientId: string
+  /** Post replies in chat. Requires an authorised bot token. */
+  replyInChat: boolean
 }
 
 export type AudioConfig = {
@@ -173,7 +181,7 @@ export type Config = {
 
 export const DEFAULT_CONFIG: Config = {
   libraryPaths: [],
-  twitch: { channel: '', enabled: false, commandPrefix: '!sr' },
+  twitch: { channel: '', enabled: false, commandPrefix: '!sr', clientId: '', replyInChat: false },
   requests: {
     cooldownSeconds: 120,
     maxQueueLength: 20,

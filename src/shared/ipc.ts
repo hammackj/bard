@@ -19,6 +19,18 @@ import type {
 
 export type TransportAction = 'toggle' | 'restart'
 
+export type TwitchDevicePrompt = {
+  userCode: string
+  verificationUri: string
+  expiresAt: number
+}
+
+export type TwitchAuthState =
+  | { state: 'idle' }
+  | { state: 'pending' }
+  | { state: 'authorized'; login?: string }
+  | { state: 'error'; message: string }
+
 export type AppPaths = {
   config: string
   configDir: string
@@ -47,7 +59,11 @@ export const INVOKE = {
   getPaths: 'app:paths',
   revealPath: 'app:revealPath',
   blockUser: 'requests:block',
-  unblockUser: 'requests:unblock'
+  unblockUser: 'requests:unblock',
+  twitchAuthStart: 'twitch:authStart',
+  twitchAuthState: 'twitch:authState',
+  twitchSignOut: 'twitch:signOut',
+  secureStorageAvailable: 'app:secureStorage'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -112,6 +128,13 @@ export type BardApi = {
   /** Blocks a requester from using commands. Returns the updated config. */
   blockUser: (r: Requester) => Promise<Config>
   unblockUser: (r: Requester) => Promise<Config>
+
+  /** Begins Twitch device authorisation; resolves with the code to enter. */
+  twitchAuthStart: () => Promise<TwitchDevicePrompt>
+  twitchAuthState: () => Promise<TwitchAuthState>
+  twitchSignOut: () => Promise<void>
+  /** False when no OS keyring is available to encrypt tokens at rest. */
+  secureStorageAvailable: () => Promise<boolean>
 
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe

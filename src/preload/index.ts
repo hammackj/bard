@@ -50,6 +50,10 @@ const api: BardApi = {
   revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
   blockUser: (r) => ipcRenderer.invoke(INVOKE.blockUser, r),
   unblockUser: (r) => ipcRenderer.invoke(INVOKE.unblockUser, r),
+  twitchAuthStart: () => ipcRenderer.invoke(INVOKE.twitchAuthStart),
+  twitchAuthState: () => ipcRenderer.invoke(INVOKE.twitchAuthState),
+  twitchSignOut: () => ipcRenderer.invoke(INVOKE.twitchSignOut),
+  secureStorageAvailable: () => ipcRenderer.invoke(INVOKE.secureStorageAvailable),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),

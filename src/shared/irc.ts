@@ -113,20 +113,8 @@ export function displayName(tags: Record<string, string>, fallbackNick: string |
   return dn || fallbackNick || 'unknown'
 }
 
-/**
- * Splits "!sr some song" into its command and argument.
- * Returns null when the line does not start with a bang command.
- */
-export function parseCommand(text: string): { command: string; arg: string } | null {
-  const trimmed = text.trim()
-  if (!trimmed.startsWith('!')) return null
-  const sp = trimmed.search(/\s/)
-  if (sp === -1) return { command: trimmed.toLowerCase(), arg: '' }
-  return {
-    command: trimmed.slice(0, sp).toLowerCase(),
-    arg: trimmed.slice(sp + 1).trim()
-  }
-}
+/** Command parsing now lives in shared/commands.ts -- both platforms use it. */
+export { parseCommand } from './commands'
 
 /** Anonymous read-only login. Twitch documents justinfan as the anon convention. */
 export function anonNick(rand: () => number = Math.random): string {

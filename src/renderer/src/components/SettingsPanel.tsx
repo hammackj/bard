@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ChatPlatform, DeepPartial, Config } from '@shared/types'
-import type { AppPaths } from '@shared/ipc'
+import type { AppPaths, TwitchAuthState, TwitchDevicePrompt } from '@shared/ipc'
 import { useStore } from '../state/store'
 import * as engine from '../audio/engine'
 
@@ -96,6 +96,15 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               </button>
             </span>
           </Row>
+          <Row label="Client ID">
+            <input
+              defaultValue={config.twitch.clientId}
+              placeholder="from dev.twitch.tv/console/apps"
+              onBlur={(e) => void patch({ twitch: { clientId: e.target.value.trim() } })}
+              className="mono w-64 border border-edge bg-panel px-2 py-1 text-s1"
+            />
+          </Row>
+          <TwitchAuth clientId={config.twitch.clientId} />
           <Row label="Command prefix">
             <input
               defaultValue={config.twitch.commandPrefix}
@@ -335,6 +344,111 @@ function Row({
  * the line that provoked it. This list is for review and for unblocking, plus
  * adding someone pre-emptively before they have said anything.
  */
+/**
+ * Device Code Flow: the user opens a URL and types a short code. Nothing
+ * confidential ships in the app, and there is no redirect server to run.
+ */
+function TwitchAuth({ clientId }: { clientId: string }): React.JSX.Element {
+  const [state, setState] = useState<TwitchAuthState>({ state: 'idle' })
+  const [prompt, setPrompt] = useState<TwitchDevicePrompt | null>(null)
+  const [secure, setSecure] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void window.bard.twitchAuthState().then(setState)
+    void window.bard.secureStorageAvailable().then(setSecure)
+  }, [])
+
+  // While a code is outstanding, poll until it is approved or fails.
+  useEffect(() => {
+    if (state.state !== 'pending') return
+    const t = setInterval(() => {
+      void window.bard.twitchAuthState().then((next) => {
+        setState(next)
+        if (next.state !== 'pending') setPrompt(null)
+      })
+    }, 2000)
+    return () => clearInterval(t)
+  }, [state.state])
+
+  const start = async (): Promise<void> => {
+    try {
+      setPrompt(await window.bard.twitchAuthStart())
+      setState({ state: 'pending' })
+    } catch (e) {
+      setState({ state: 'error', message: (e as Error).message })
+    }
+  }
+
+  return (
+    <>
+      <Row label="Bot account">
+        {state.state === 'authorized' ? (
+          <span className="flex items-center gap-2">
+            <span className="text-s2 text-green">{state.login ?? 'authorised'}</span>
+            <button
+              className="text-s1 text-muted hover:text-rose"
+              onClick={async () => {
+                await window.bard.twitchSignOut()
+                setState({ state: 'idle' })
+              }}
+            >
+              Sign out
+            </button>
+          </span>
+        ) : (
+          <button
+            className="bg-cyan-deep px-3 py-1 text-s2 disabled:opacity-40"
+            disabled={!clientId || state.state === 'pending'}
+            onClick={() => void start()}
+          >
+            {state.state === 'pending' ? 'Waiting…' : 'Connect bot account'}
+          </button>
+        )}
+      </Row>
+
+      {prompt && (
+        <div className="border border-cyan-deep bg-panel px-3 py-2.5">
+          <p className="text-s2">
+            Open{' '}
+            <span className="mono text-cyan">{prompt.verificationUri}</span> and enter:
+          </p>
+          <p className="mono mt-1 text-s4 tracking-[.2em] text-text">{prompt.userCode}</p>
+          <p className="mt-1 text-s1 text-muted">
+            Sign in as the bot account, not your main one.
+          </p>
+        </div>
+      )}
+
+      {state.state === 'error' && (
+        <p className="text-s1 text-rose">Authorisation failed: {state.message}</p>
+      )}
+
+      {!clientId && (
+        <p className="text-s1 text-muted">
+          Register a public application at dev.twitch.tv/console/apps and paste its Client ID
+          above. Device Code Flow needs no client secret.
+        </p>
+      )}
+
+      {secure === false && (
+        <p className="text-s1 text-rose">
+          No OS keyring available, so the token cannot be encrypted at rest. It is kept in memory
+          for this session only and you will need to reconnect next launch.
+        </p>
+      )}
+
+      <Row label="Reply in chat">
+        <input
+          type="checkbox"
+          checked={useStore.getState().config?.twitch.replyInChat ?? false}
+          onChange={(e) => void window.bard.setConfig({ twitch: { replyInChat: e.target.checked } }).then(useStore.getState().setConfig)}
+          className="accent-cyan"
+        />
+      </Row>
+    </>
+  )
+}
+
 function BlockList(): React.JSX.Element {
   const blocked = useStore((s) => s.config?.requests.blockedUsers ?? [])
   const setConfig = useStore((s) => s.setConfig)
