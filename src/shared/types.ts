@@ -6,6 +6,67 @@
  * bundles this file too.
  */
 
+export type Track = {
+  /** Stable hash of the absolute path. */
+  id: string
+  path: string
+  /** Tag title, else the filename without extension. */
+  title: string
+  artist: string
+  album: string
+  durationSec: number
+  hasArtwork: boolean
+  /** Lowercased "title artist album" -- what Fuse indexes. */
+  searchText: string
+}
+
+export type QueueItem = {
+  /** Identifies this queue entry, not the track -- the same track may be queued twice. */
+  id: string
+  track: Track
+  /** Twitch username, or undefined when the streamer queued it from the UI. */
+  requestedBy?: string
+  addedAt: number
+}
+
+/** Prefixes match the chat log's 3-char gutter: sys / req / ok / no. */
+export type ChatEventKind = 'sys' | 'req' | 'ok' | 'no'
+
+export type ChatEvent = {
+  id: string
+  kind: ChatEventKind
+  message: string
+  user?: string
+  at: number
+}
+
+export type TwitchStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
+
+export type NowPlaying = {
+  title: string
+  artist: string
+  album: string
+  durationSec: number
+  positionSec: number
+  requestedBy?: string
+  isPlaying: boolean
+  artUrl: string | null
+  queueLength: number
+  updatedAt: string
+}
+
+export type PlaybackProgress = {
+  position: number
+  duration: number
+  playing: boolean
+}
+
+export type ScanProgress = {
+  scanned: number
+  total: number
+  currentPath: string
+}
+
 export type RequestConfig = {
   cooldownSeconds: number
   maxQueueLength: number

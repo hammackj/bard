@@ -23,7 +23,16 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    // No externalization here. The window runs with sandbox: true, and a
+    // sandboxed preload cannot resolve anything out of node_modules -- an
+    // emitted require('@electron-toolkit/preload') fails with "module not
+    // found" and the whole bridge silently never attaches. Everything except
+    // `electron` itself has to be bundled in.
+    resolve: {
+      alias: {
+        '@shared': resolve('src/shared')
+      }
+    }
   },
   renderer: {
     resolve: {

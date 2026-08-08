@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { getLibraryPaths, configPath } from './config'
 import { registerScheme, handleScheme, makeIsAllowed } from './protocol'
+import { registerIpcHandlers } from './ipc-handlers'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -32,6 +33,15 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  // Renderer console output otherwise only exists inside devtools. Mirroring it
+  // to the terminal in dev makes the renderer debuggable from the same place as
+  // the main process.
+  if (is.dev) {
+    mainWindow.webContents.on('console-message', (e) => {
+      console.log(`[renderer:${e.level}] ${e.message}`)
+    })
+  }
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -54,6 +64,7 @@ app.whenReady().then(() => {
   })
 
   handleScheme(makeIsAllowed(getLibraryPaths))
+  registerIpcHandlers()
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
