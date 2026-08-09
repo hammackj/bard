@@ -72,39 +72,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
         </Group>
 
         <Group title="Twitch">
-          <Row label="Channel">
-            <input
-              defaultValue={config.twitch.channel}
-              placeholder="channel name"
-              onBlur={(e) => void patch({ twitch: { channel: e.target.value.trim() } })}
-              className="border border-edge bg-panel px-2 py-1 text-s2"
-            />
-          </Row>
-          <Row label="Connection">
-            <span className="flex gap-2">
-              <button
-                className="bg-cyan-deep px-3 py-1 text-s2"
-                onClick={() => void window.bard.connectTwitch(config.twitch.channel)}
-              >
-                Connect
-              </button>
-              <button
-                className="border border-edge px-3 py-1 text-s2 text-muted"
-                onClick={() => void window.bard.disconnectTwitch()}
-              >
-                Disconnect
-              </button>
-            </span>
-          </Row>
-          <Row label="Client ID">
-            <input
-              defaultValue={config.twitch.clientId}
-              placeholder="from dev.twitch.tv/console/apps"
-              onBlur={(e) => void patch({ twitch: { clientId: e.target.value.trim() } })}
-              className="mono w-64 border border-edge bg-panel px-2 py-1 text-s1"
-            />
-          </Row>
-          <TwitchAuth clientId={config.twitch.clientId} />
+          <TwitchConnection config={config} patch={patch} />
           <Row label="Command prefix">
             <input
               defaultValue={config.twitch.commandPrefix}
@@ -348,7 +316,113 @@ function Row({
  * Device Code Flow: the user opens a URL and types a short code. Nothing
  * confidential ships in the app, and there is no redirect server to run.
  */
+/**
+ * Channel + connection.
+ *
+ * The inputs are controlled and Connect uses the live field value. Previously
+ * the field was uncontrolled and Connect read the store, so typing a channel
+ * and clicking straight through sent the *previous* value -- usually empty --
+ * and the connection silently did nothing.
+ */
+function TwitchConnection({
+  config,
+  patch
+}: {
+  config: Config
+  patch: (p: DeepPartial<Config>) => Promise<void>
+}): React.JSX.Element {
+  const status = useStore((s) => s.twitch)
+  const [channel, setChannel] = useState(config.twitch.channel)
+  const [clientId, setClientId] = useState(config.twitch.clientId)
+  const [showId, setShowId] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const connect = async (): Promise<void> => {
+    const name = channel.trim()
+    setError(null)
+    if (!name) {
+      setError('Enter a channel name first')
+      return
+    }
+    setBusy(true)
+    try {
+      await patch({ twitch: { channel: name } })
+      await window.bard.connectTwitch(name)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const dot =
+    status === 'connected' ? 'bg-green' : status === 'error' ? 'bg-rose' : 'bg-muted'
+
+  return (
+    <>
+      <Row label="Channel">
+        <input
+          value={channel}
+          placeholder="channel name"
+          onChange={(e) => setChannel(e.target.value)}
+          onBlur={() => void patch({ twitch: { channel: channel.trim() } })}
+          onKeyDown={(e) => e.key === 'Enter' && void connect()}
+          className="w-48 border border-edge bg-panel px-2 py-1 text-s2"
+        />
+      </Row>
+
+      <Row label="Connection">
+        <span className="flex items-center gap-2">
+          <span className="mono flex items-center gap-1.5 text-s1 text-muted">
+            <i className={`size-1.5 rounded-full ${dot}`} />
+            {status}
+          </span>
+          <button
+            className="bg-cyan-deep px-3 py-1 text-s2 disabled:opacity-40"
+            disabled={busy}
+            onClick={() => void connect()}
+          >
+            {busy ? 'Connecting…' : 'Connect'}
+          </button>
+          <button
+            className="border border-edge px-3 py-1 text-s2 text-muted"
+            onClick={() => void window.bard.disconnectTwitch()}
+          >
+            Disconnect
+          </button>
+        </span>
+      </Row>
+      {error && <p className="text-s1 text-rose">{error}</p>}
+
+      <Row label="Client ID">
+        <span className="flex items-center gap-2">
+          <input
+            // Not secret in the OAuth sense -- public clients publish it -- but
+            // masked so it does not sit on screen during a stream.
+            type={showId ? 'text' : 'password'}
+            value={clientId}
+            placeholder="from dev.twitch.tv/console/apps"
+            onChange={(e) => setClientId(e.target.value)}
+            onBlur={() => void patch({ twitch: { clientId: clientId.trim() } })}
+            className="mono w-56 border border-edge bg-panel px-2 py-1 text-s1"
+          />
+          <button
+            className="text-s1 text-muted hover:text-text"
+            onClick={() => setShowId((v) => !v)}
+          >
+            {showId ? 'Hide' : 'Show'}
+          </button>
+        </span>
+      </Row>
+
+      <TwitchAuth clientId={clientId.trim()} />
+    </>
+  )
+}
+
 function TwitchAuth({ clientId }: { clientId: string }): React.JSX.Element {
+  const channel = useStore((s) => s.config?.twitch.channel ?? '')
   const [state, setState] = useState<TwitchAuthState>({ state: 'idle' })
   const [prompt, setPrompt] = useState<TwitchDevicePrompt | null>(null)
   const [secure, setSecure] = useState<boolean | null>(null)
@@ -369,6 +443,13 @@ function TwitchAuth({ clientId }: { clientId: string }): React.JSX.Element {
     }, 2000)
     return () => clearInterval(t)
   }, [state.state])
+
+  // Authorising your own account is allowed, but the consequence is worth
+  // stating: every reply is then attributed to you, not a bot.
+  const ownAccount =
+    state.state === 'authorized' &&
+    !!state.login &&
+    state.login.toLowerCase() === channel.trim().toLowerCase()
 
   const start = async (): Promise<void> => {
     try {
@@ -410,7 +491,13 @@ function TwitchAuth({ clientId }: { clientId: string }): React.JSX.Element {
         <div className="border border-cyan-deep bg-panel px-3 py-2.5">
           <p className="text-s2">
             Open{' '}
-            <span className="mono text-cyan">{prompt.verificationUri}</span> and enter:
+            <button
+              className="mono text-cyan underline underline-offset-2 hover:text-text"
+              onClick={() => void window.bard.openExternal(prompt.verificationUri)}
+            >
+              {prompt.verificationUri}
+            </button>{' '}
+            and enter:
           </p>
           <p className="mono mt-1 text-s4 tracking-[.2em] text-text">{prompt.userCode}</p>
           <p className="mt-1 text-s1 text-muted">
@@ -423,10 +510,25 @@ function TwitchAuth({ clientId }: { clientId: string }): React.JSX.Element {
         <p className="text-s1 text-rose">Authorisation failed: {state.message}</p>
       )}
 
+      {state.state === 'authorized' && ownAccount && (
+        <p className="text-s1 text-muted">
+          Replies will appear in chat as <b className="text-text">{state.login}</b>, because that
+          is the account you authorised — the name cannot be changed independently. To have them
+          come from a bot, make a second Twitch account with the name you want, sign out above,
+          then authorise again in a private window.
+        </p>
+      )}
+
       {!clientId && (
         <p className="text-s1 text-muted">
-          Register a public application at dev.twitch.tv/console/apps and paste its Client ID
-          above. Device Code Flow needs no client secret.
+          Register a public application at{' '}
+          <button
+            className="text-cyan underline underline-offset-2 hover:text-text"
+            onClick={() => void window.bard.openExternal('https://dev.twitch.tv/console/apps')}
+          >
+            dev.twitch.tv/console/apps
+          </button>{' '}
+          and paste its Client ID above. Device Code Flow needs no client secret.
         </p>
       )}
 

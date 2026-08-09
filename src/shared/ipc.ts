@@ -63,7 +63,8 @@ export const INVOKE = {
   twitchAuthStart: 'twitch:authStart',
   twitchAuthState: 'twitch:authState',
   twitchSignOut: 'twitch:signOut',
-  secureStorageAvailable: 'app:secureStorage'
+  secureStorageAvailable: 'app:secureStorage',
+  openExternal: 'app:openExternal'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -135,6 +136,8 @@ export type BardApi = {
   twitchSignOut: () => Promise<void>
   /** False when no OS keyring is available to encrypt tokens at rest. */
   secureStorageAvailable: () => Promise<boolean>
+  /** Opens an allowlisted https URL in the system browser. */
+  openExternal: (url: string) => Promise<boolean>
 
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe

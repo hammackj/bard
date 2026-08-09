@@ -54,6 +54,7 @@ const api: BardApi = {
   twitchAuthState: () => ipcRenderer.invoke(INVOKE.twitchAuthState),
   twitchSignOut: () => ipcRenderer.invoke(INVOKE.twitchSignOut),
   secureStorageAvailable: () => ipcRenderer.invoke(INVOKE.secureStorageAvailable),
+  openExternal: (url) => ipcRenderer.invoke(INVOKE.openExternal, url),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),

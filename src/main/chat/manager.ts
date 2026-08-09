@@ -40,6 +40,12 @@ export function canSend(platform: ChatPlatform = 'twitch'): boolean {
 }
 
 export async function connectChat(platform: ChatPlatform = 'twitch'): Promise<void> {
+  // Returning quietly on a missing channel made Connect look like a dead
+  // button. Say so instead.
+  if (platform === 'twitch' && !getConfig().twitch.channel.trim()) {
+    emitChat('no', 'No channel set — enter one above first')
+    throw new Error('No Twitch channel configured')
+  }
   await source(platform).connect({
     onMessage: (m) => handleMessage(platform, m),
     onStatus: (s) => sendToMain(EVENT.twitchStatus, s),

@@ -163,6 +163,28 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
 
+  /**
+   * Opens a URL in the system browser.
+   *
+   * Allowlisted by host rather than passing anything the renderer asks for:
+   * shell.openExternal will happily launch non-http schemes, and a renderer
+   * bug should not become "open arbitrary things on the desktop".
+   */
+  ipcMain.handle(INVOKE.openExternal, async (_e, url: string): Promise<boolean> => {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch {
+      return false
+    }
+    if (parsed.protocol !== 'https:') return false
+    const allowed = ['twitch.tv', 'google.com', 'youtube.com']
+    const host = parsed.hostname.toLowerCase()
+    if (!allowed.some((d) => host === d || host.endsWith(`.${d}`))) return false
+    await shell.openExternal(parsed.toString())
+    return true
+  })
+
   ipcMain.handle(INVOKE.secureStorageAvailable, (): boolean => encryptionAvailable())
 
   ipcMain.handle(INVOKE.getPaths, (): AppPaths => ({

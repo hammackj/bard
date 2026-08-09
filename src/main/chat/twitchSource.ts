@@ -48,22 +48,36 @@ export class TwitchSource implements ChatSource {
     this.channel = name
     this.deliberateClose = false
     this.attempt = 0
+    // Calling connect() twice should replace the connection, not add one.
     await this.open()
   }
 
   disconnect(): void {
     this.deliberateClose = true
     this.clearTimers()
-    if (this.ws) {
-      this.ws.removeAllListeners()
-      try {
-        this.ws.close()
-      } catch {
-        /* already closing */
-      }
-      this.ws = null
-    }
+    this.teardownSocket()
     this.setStatus('disconnected')
+  }
+
+  /**
+   * Closes the current socket and detaches its listeners.
+   *
+   * Load-bearing: opening a second socket while the first was still attached
+   * meant every chat line was handled twice. The visible symptom was Bard
+   * replying twice to each command, the second reply contradicting the first
+   * ("queued X" then "X is already queued"), because the duplicate ran the
+   * whole request pipeline again.
+   */
+  private teardownSocket(): void {
+    const socket = this.ws
+    this.ws = null
+    if (!socket) return
+    socket.removeAllListeners()
+    try {
+      socket.close()
+    } catch {
+      /* already closing */
+    }
   }
 
   async say(text: string): Promise<boolean> {
@@ -91,6 +105,9 @@ export class TwitchSource implements ChatSource {
 
   private async open(): Promise<void> {
     this.clearTimers()
+    // Never stack sockets: a reconnect, a re-Connect click and the reconnect
+    // after authorisation all land here.
+    this.teardownSocket()
     this.setStatus('connecting')
 
     // Resolved per connection: the streamer may authorise between attempts.
