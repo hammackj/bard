@@ -6,30 +6,6 @@
  * bundles this file too.
  */
 
-/** Chat platforms Bard can take requests from. */
-export type ChatPlatform = 'twitch' | 'youtube'
-
-/**
- * Who asked for something.
- *
- * `id` is the platform's stable user id where it provides one. Display names
- * can be changed at will, so anything that must survive a rename -- blocks
- * above all -- keys on the id and treats the name as a label.
- */
-export type Requester = {
-  platform: ChatPlatform
-  id?: string
-  name: string
-}
-
-export type BlockedUser = {
-  platform: ChatPlatform
-  id?: string
-  /** Name at the time of blocking; the fallback match when there is no id. */
-  name: string
-  at: number
-}
-
 export type Track = {
   /** Stable hash of the absolute path. */
   id: string
@@ -48,24 +24,8 @@ export type QueueItem = {
   /** Identifies this queue entry, not the track -- the same track may be queued twice. */
   id: string
   track: Track
-  /** Absent when the streamer queued it themselves from the UI. */
-  requester?: Requester
   addedAt: number
 }
-
-/** Prefixes match the chat log's 3-char gutter: sys / req / ok / no. */
-export type ChatEventKind = 'sys' | 'req' | 'ok' | 'no'
-
-export type ChatEvent = {
-  id: string
-  kind: ChatEventKind
-  message: string
-  /** Carried so the log can offer "block" on the line that provoked it. */
-  requester?: Requester
-  at: number
-}
-
-export type TwitchStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
 export type NowPlaying = {
   title: string
@@ -73,7 +33,6 @@ export type NowPlaying = {
   album: string
   durationSec: number
   positionSec: number
-  requestedBy?: string
   isPlaying: boolean
   artUrl: string | null
   queueLength: number
@@ -90,28 +49,6 @@ export type ScanProgress = {
   scanned: number
   total: number
   currentPath: string
-}
-
-export type RequestConfig = {
-  cooldownSeconds: number
-  maxQueueLength: number
-  maxPerUserInQueue: number
-  blockedUsers: BlockedUser[]
-  blockedTracks: string[]
-}
-
-export type TwitchConfig = {
-  channel: string
-  enabled: boolean
-  commandPrefix: string
-  /**
-   * Client ID of an application registered at dev.twitch.tv.
-   * Public clients only -- Device Code Flow forbids a client secret, so there
-   * is nothing confidential to ship in the bundle.
-   */
-  clientId: string
-  /** Post replies in chat. Requires an authorised bot token. */
-  replyInChat: boolean
 }
 
 export type AudioConfig = {
@@ -147,6 +84,8 @@ export type PlaybackConfig = {
   avoidRepeat: number
   /** How many tracks the "fill queue" action adds. */
   fillCount: number
+  /** Upper bound on the queue, so Fill cannot run away with the library. */
+  maxQueueLength: number
 }
 
 export type TrayPopupCorner =
@@ -170,8 +109,6 @@ export type WindowConfig = {
 
 export type Config = {
   libraryPaths: string[]
-  twitch: TwitchConfig
-  requests: RequestConfig
   audio: AudioConfig
   overlay: OverlayConfig
   shortcuts: ShortcutConfig
@@ -181,19 +118,11 @@ export type Config = {
 
 export const DEFAULT_CONFIG: Config = {
   libraryPaths: [],
-  twitch: { channel: '', enabled: false, commandPrefix: '!sr', clientId: '', replyInChat: false },
-  requests: {
-    cooldownSeconds: 120,
-    maxQueueLength: 20,
-    maxPerUserInQueue: 2,
-    blockedUsers: [],
-    blockedTracks: []
-  },
   audio: { volume: 0.8, outputDeviceId: 'default' },
   overlay: { port: 4747, writeNowPlayingJson: true },
   shortcuts: { globalMediaKeys: false },
   window: { closeToTray: true, trayPopupCorner: 'bottom-right', trayPopupSeconds: 8 },
-  playback: { autoFill: 'off', avoidRepeat: 50, fillCount: 10 }
+  playback: { autoFill: 'off', avoidRepeat: 50, fillCount: 10, maxQueueLength: 200 }
 }
 
 /** Recursive partial, for config patches coming over IPC. */

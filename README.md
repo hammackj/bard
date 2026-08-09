@@ -1,39 +1,35 @@
 # Bard
 
-A desktop music player for streamers. It plays music from your own library and
-takes song requests from Twitch chat — restricted to tracks you already have.
+A local music player for a curated, copyright-free library. Think a deliberately
+dumb Spotify: it plays the files you own, and nothing else.
 
 ![Bard](resources/icon.svg)
 
 ## Why it works this way
 
-**Chat can only request tracks already in your library.** Nothing is fetched
-from the internet, nothing streams from YouTube, and there is no search box
-pointed at the outside world. You curate every file that can possibly play.
+**Bard only ever plays files you added.** Nothing is fetched from the internet,
+nothing streams from a third party, and there is no search box pointed at the
+outside world. That is the whole design: a player you can leave running over a
+stream without wondering whether the next track is licensed.
 
-That is the whole copyright-control decision. A request bot that can pull
-arbitrary audio is a DMCA strike waiting to happen; one that can only play
-files you deliberately added is not. If a viewer asks for something you do not
-have, they get "not in library" and nothing plays.
+It was briefly a song-request bot as well. That was removed. With a library of
+several hundred instrumental tracks, nobody in chat knows a title to ask for,
+and listing them is not possible inside a chat message — the feature could not
+do the job it existed for. The player, the queue and the overlay stand on their
+own.
 
-The same reasoning shapes two other choices:
+The overlay server binds to `127.0.0.1`, never `0.0.0.0`. It is for your OBS
+instance on this machine; exposing it would put your library, and its artwork,
+on the network.
 
-- **The overlay server binds to `127.0.0.1`, never `0.0.0.0`.** It is for your
-  OBS instance on this machine. Exposing it to the network would put your
-  library — and its artwork — on the LAN.
-- **Twitch is read-only and anonymous.** Bard connects as a `justinfan` guest.
-  There is no OAuth, no token stored on disk, and nothing for a viewer to
-  capture off a screen share. It cannot reply in chat, and that is deliberate.
-
-If your library is licensed music (StreamBeats and similar), check the licence
-terms — most royalty-free catalogues permit use *within* your stream but forbid
+If your library is licensed music (StreamBeats and similar), check the terms —
+most royalty-free catalogues permit use *within* your stream but forbid
 redistributing the audio separately. Keeping the overlay on localhost is part
 of staying inside that line.
 
 ## Features
 
 - Plays MP3, FLAC, WAV, OGG, M4A and Opus from folders you choose
-- Twitch song requests with per-user cooldowns, queue limits and a block list
 - **Routes audio to a specific output device**, so music can go to a dedicated
   stream mix instead of your monitors
 - Live OBS overlay over server-sent events, plus `nowplaying.json` for
@@ -115,53 +111,6 @@ microphone permission, because that is what unlocks labels in
 stream immediately. It is deferred until you open the picker because opening a
 capture stream makes the audio pipeline renegotiate, which is audible.
 
-### Taking requests
-
-Settings → Twitch, enter your channel name, and press **Connect**. That much
-works anonymously, with no account and no token.
-
-#### Replying in chat (optional)
-
-To have Bard answer `!queue` and `!song` in chat, register an application at
-[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps):
-
-| Field | Value |
-| --- | --- |
-| OAuth Redirect URL | `https://localhost` |
-| Category | Chat Bot |
-| Client Type | **Public** |
-
-Two things the form gets fussy about:
-
-- **The console enforces HTTPS.** A bare `http://localhost` is rejected; use
-  `https://localhost`, or `http://localhost:3000` if you prefer Twitch's own
-  example. Device Code Flow never calls the URL, so the value is inert.
-- **Client Type must be Public.** A confidential client is issued a secret, and
-  Twitch refuses Device Code Flow for those — the failure surfaces as a
-  grant-type error that does not obviously point back at this setting.
-
-Paste the **Client ID** into Settings → Twitch and press *Connect bot account*.
-Do not generate a client secret; there is nowhere to put one and DCF forbids
-it. Sign out of Twitch or use a private window first, or the browser will
-authorise whichever account you are already logged in as rather than the bot. Viewers
-request with:
-
-```
-!sr ambient gold
-```
-
-`!queue` and `!song` are recognised and logged, but Bard cannot reply — the
-connection is read-only.
-
-Matching is deliberately conservative. It tolerates typos (`ambent gold`
-finds `Ambient Gold`) but refuses vague queries: `!sr lofi` returns "not in
-library" rather than starting whichever track scored least badly.
-
-Requests are rejected, in this order, for: blocked user, full queue, per-user
-limit, cooldown, no match, blocked track, already queued. A rejected request
-does **not** consume the requester's cooldown, so a typo does not cost them two
-minutes. Broadcaster and moderators bypass cooldown and the per-user cap.
-
 ## Shortcuts
 
 | Key | Action |
@@ -231,7 +180,7 @@ XDG directories.
 ```
 src/
   shared/     types, the IPC contract, and the pure logic the tests cover
-  main/       library scanning, queue, twitch, overlay server, config
+  main/       library scanning, queue, overlay server, config, tray
   preload/    the contextBridge surface — the only path into the renderer
   renderer/   React UI and the audio engine
 resources/
@@ -241,8 +190,8 @@ resources/
 
 Some deliberate structure worth knowing before changing things:
 
-- **The queue lives in the main process.** Chat requests and UI clicks mutate
-  one source of truth; the renderer sends intents and renders what comes back.
+- **The queue lives in the main process.** The renderer sends intents and
+  renders what comes back, so there is one source of truth for what plays next.
 - **Audio lives in the renderer**, because `setSinkId` and the Web Audio API
   only exist there. Output routing sets the sink on the *AudioContext*, not the
   media element — once an element feeds a `MediaElementAudioSourceNode`, its

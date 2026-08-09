@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { QueueItem, Track } from '@shared/types'
+import type { Track } from '@shared/types'
 import { StringBar } from './StringBar'
 import { fmtTime } from '../lib/format'
 import { useStore } from '../state/store'
@@ -7,7 +7,6 @@ import type { AutoFillMode } from '@shared/types'
 
 type Props = {
   track: Track | null
-  current: QueueItem | null
   position: number
   duration: number
   playing: boolean
@@ -19,7 +18,7 @@ type Props = {
 }
 
 export function NowPlaying(props: Props): React.JSX.Element {
-  const { track, current, position, duration, playing, volume } = props
+  const { track, position, duration, playing, volume } = props
   const [art, setArt] = useState<string | null>(null)
 
   // Artwork is fetched by id rather than carried on the Track, so a large
@@ -58,11 +57,6 @@ export function NowPlaying(props: Props): React.JSX.Element {
           </div>
           <div className="mt-[7px] truncate text-s4">{track?.artist ?? ''}</div>
           <div className="mt-1 truncate text-s2 text-muted">{track?.album ?? ''}</div>
-          {current?.requester && (
-            <div className="mt-3 text-s2 text-muted">
-              Requested by <b className="font-medium text-cyan">{current.requester.name}</b>
-            </div>
-          )}
         </div>
       </div>
 

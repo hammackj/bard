@@ -10,9 +10,9 @@ type Props = {
 /**
  * Account-style menu pinned to the bottom of the library dock.
  *
- * Everything that is not moment-to-moment playback lives behind it, which is
- * what keeps the rest of the window to the three things a streamer actually
- * glances at: what is playing, what is next, and what chat said.
+ * Everything that is not moment-to-moment playback lives behind it, keeping
+ * the window itself to the two things that matter while listening: what is
+ * playing and what is next.
  */
 export function AvatarMenu({
   onOpenSettings,
@@ -20,8 +20,6 @@ export function AvatarMenu({
   onRescan
 }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const twitch = useStore((s) => s.twitch)
-  const channel = useStore((s) => s.config?.twitch.channel ?? '')
   const trackCount = useStore((s) => s.tracks.length)
   const wrap = useRef<HTMLDivElement | null>(null)
 
@@ -42,21 +40,11 @@ export function AvatarMenu({
     }
   }, [open])
 
-  const dot =
-    twitch === 'connected' ? 'bg-green' : twitch === 'error' ? 'bg-rose' : 'bg-muted'
 
   return (
     <div ref={wrap} className="relative border-t border-edge">
       {open && (
         <div className="absolute bottom-full left-2 z-30 mb-2 w-60 border border-edge bg-panel py-1 shadow-2xl">
-          <div className="border-b border-edge px-3 pt-2 pb-2.5">
-            <div className="truncate text-s2 text-text">{channel || 'No channel set'}</div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-s1 text-muted">
-              <i className={`size-1.5 rounded-full ${dot}`} />
-              Twitch {twitch}
-            </div>
-          </div>
-
           <MenuItem
             label="Settings"
             hint="Ctrl ,"
@@ -92,16 +80,13 @@ export function AvatarMenu({
           open ? 'bg-panel' : ''
         }`}
       >
-        <span className="relative flex-none">
+        <span className="flex-none">
           <Avatar />
-          <i
-            className={`absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-ink ${dot}`}
-          />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-s2 text-text">Bard</span>
           <span className="block truncate text-s1 text-muted">
-            {channel ? `#${channel}` : 'Not connected'}
+            {trackCount.toLocaleString()} tracks
           </span>
         </span>
         <span className="flex-none text-s1 text-muted">{open ? '▾' : '▴'}</span>
@@ -115,17 +100,18 @@ function Avatar(): React.JSX.Element {
   return (
     <svg viewBox="0 0 512 512" className="block size-7 rounded-full border border-edge">
       <rect width="512" height="512" fill="var(--color-panel)" />
-      <path
-        d="M96 336 Q256 112 416 336"
+      <circle
+        cx="256"
+        cy="256"
+        r="150"
         fill="none"
-        stroke="var(--color-cyan)"
+        stroke="var(--color-cyan-deep)"
         strokeWidth="34"
-        strokeLinecap="round"
       />
-      <circle cx="96" cy="336" r="26" fill="var(--color-cyan-deep)" />
-      <circle cx="416" cy="336" r="26" fill="var(--color-cyan-deep)" />
-      <circle cx="256" cy="194" r="60" fill="var(--color-panel)" />
-      <circle cx="256" cy="194" r="38" fill="var(--color-cyan)" />
+      <g stroke="var(--color-cyan)" strokeWidth="34" strokeLinecap="round">
+        <path d="M256 34v58M256 420v58M34 256h58M420 256h58" />
+      </g>
+      <circle cx="256" cy="256" r="62" fill="var(--color-cyan)" />
     </svg>
   )
 }

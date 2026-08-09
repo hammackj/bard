@@ -101,20 +101,6 @@ export async function maybeRunSelfTest(): Promise<void> {
   }
   engine.setVolume(previousVolume)
 
-  // Exercise the real chat path: connect anonymously to a busy public channel
-  // and confirm messages arrive as chat events. This covers the whole chain --
-  // source, manager, command router, chat log.
-  const chatBefore = useStore.getState().chat.length
-  console.log('[selftest] connecting to chat…')
-  await window.bard.connectTwitch('kaicenat')
-  await wait(12000)
-  const events = useStore.getState().chat.length - chatBefore
-  const connected = useStore
-    .getState()
-    .chat.some((e) => e.message.toLowerCase().includes('connected to #'))
-  console.log(`[selftest] chat events=${events} sawConnectNotice=${connected}`)
-  await window.bard.disconnectTwitch()
-  console.log('[selftest] chat disconnected')
 }
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))

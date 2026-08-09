@@ -41,7 +41,6 @@ export function snapshot(): NowPlaying {
     album: current?.track.album ?? '',
     durationSec: progress.duration || current?.track.durationSec || 0,
     positionSec: progress.position,
-    requestedBy: current?.requester?.name,
     isPlaying: progress.playing,
     artUrl: current?.track.hasArtwork
       ? `http://127.0.0.1:${port}/art/${current.track.id}`

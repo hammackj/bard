@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { QueueItem, Track } from '@shared/types'
+import type { Track } from '@shared/types'
 import { useAudio } from './audio/useAudio'
 import { useStore } from './state/store'
 import { LibraryPanel } from './components/LibraryPanel'
 import { NowPlaying } from './components/NowPlaying'
 import { QueuePanel } from './components/QueuePanel'
-import { ChatLog } from './components/ChatLog'
 import { SettingsPanel } from './components/SettingsPanel'
 import { FirstRun } from './components/FirstRun'
 import { ShortcutsOverlay } from './components/ShortcutsOverlay'
@@ -14,12 +13,11 @@ import { maybeRunSelfTest } from './audio/selftest'
 
 function App(): React.JSX.Element {
   const s = useStore()
-  const [current, setCurrent] = useState<QueueItem | null>(null)
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(true)
-  const [chatOpen, setChatOpen] = useState(true)
+  const [queueOpen, setQueueOpen] = useState(true)
   const scanned = useRef(false)
 
   const { state, toggle, seek, setVolume } = useAudio(s.config?.audio.volume ?? 0.8)
@@ -48,10 +46,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const offs = [
       window.bard.onQueueChanged(useStore.getState().setQueue),
-      window.bard.onChatEvent(useStore.getState().pushChat),
-      window.bard.onTwitchStatus(useStore.getState().setTwitch),
       window.bard.onScanProgress(useStore.getState().setScanProgress),
-      window.bard.onNowPlaying(setCurrent),
       window.bard.onTransport((action) => {
         if (action === 'toggle') void toggleRef.current()
         else if (action === 'restart') seekRef.current(0)
@@ -69,9 +64,6 @@ function App(): React.JSX.Element {
         scanned.current = true
         await runScan()
         await maybeRunSelfTest()
-      }
-      if (cfg.twitch.enabled && cfg.twitch.channel) {
-        void window.bard.connectTwitch(cfg.twitch.channel)
       }
     })()
   }, [runScan])
@@ -151,9 +143,9 @@ function App(): React.JSX.Element {
         <span className="ml-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <DockToggle
             side="right"
-            open={chatOpen}
-            label="chat"
-            onClick={() => setChatOpen((v) => !v)}
+            open={queueOpen}
+            label="queue"
+            onClick={() => setQueueOpen((v) => !v)}
           />
         </span>
       </div>
@@ -162,7 +154,7 @@ function App(): React.JSX.Element {
         className="grid min-h-0"
         style={{
           gridTemplateColumns: `${libraryOpen ? '280px' : '0px'} minmax(0,1fr) ${
-            chatOpen ? '320px' : '0px'
+            queueOpen ? '320px' : '0px'
           }`
         }}
       >
@@ -179,13 +171,12 @@ function App(): React.JSX.Element {
           />
         </aside>
 
-        <section className="grid min-h-0 grid-rows-[1fr_auto]">
+        <section className="grid min-h-0 grid-rows-[1fr]">
           {noLibrary ? (
             <FirstRun onChoose={chooseFolder} />
           ) : (
             <NowPlaying
               track={state.track}
-              current={current}
               position={state.position}
               duration={state.duration}
               playing={state.playing}
@@ -204,15 +195,14 @@ function App(): React.JSX.Element {
               }}
             />
           )}
-          <QueuePanel />
         </section>
 
         <aside
           className={`min-h-0 flex-col overflow-hidden border-l border-edge ${
-            chatOpen ? 'flex' : 'hidden'
+            queueOpen ? 'flex' : 'hidden'
           }`}
         >
-          <ChatLog />
+          <QueuePanel />
           <div className="flex items-center justify-between gap-2 border-t border-edge px-4 py-2 text-s1">
             <span className="text-muted">Overlay</span>
             <span className="mono min-w-0 truncate text-right">

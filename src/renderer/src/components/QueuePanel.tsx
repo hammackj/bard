@@ -67,7 +67,7 @@ export function QueuePanel(): React.JSX.Element {
       <div className="overflow-y-auto px-2 pb-2">
         {queue.length === 0 ? (
           <p className="px-2 py-3 text-s2 text-muted">
-            Nothing queued. Pick a track, or wait for a request.
+            Nothing queued. Pick a track, or hit Fill.
           </p>
         ) : (
           <DndContext
@@ -97,7 +97,7 @@ function Row({ item, index }: { item: QueueItem; index: number }): React.JSX.Ele
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group grid grid-cols-[22px_1fr_auto_auto_auto] items-baseline gap-3 rounded-sm px-2 py-[7px] hover:bg-panel ${
+      className={`group grid grid-cols-[22px_1fr_auto_auto] items-baseline gap-3 rounded-sm px-2 py-[7px] hover:bg-panel ${
         isDragging ? 'relative z-10 bg-panel' : ''
       }`}
     >
@@ -110,21 +110,8 @@ function Row({ item, index }: { item: QueueItem; index: number }): React.JSX.Ele
         {index + 1}
       </span>
       <span className="truncate text-s2">{item.track.title}</span>
-      <span className="text-s1 text-cyan">{item.requester?.name ?? ''}</span>
       <span className="mono text-s1 text-muted">{fmtTime(item.track.durationSec)}</span>
       <span className="flex items-baseline gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-        {item.requester && (
-          <button
-            onClick={() => {
-              const r = item.requester!
-              void window.bard.blockUser(r).then(useStore.getState().setConfig)
-            }}
-            className="text-s1 text-muted hover:text-rose"
-            title={`Block ${item.requester.name}`}
-          >
-            block
-          </button>
-        )}
         <button
           onClick={() => void window.bard.removeFromQueue(item.id)}
           className="text-s1 text-muted hover:text-rose"

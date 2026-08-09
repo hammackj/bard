@@ -2,7 +2,7 @@ import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
 import { EVENT, INVOKE, SEND, type AppPaths } from '../shared/ipc'
 import { getConfig, setConfig, configPath } from './config'
 import { scanLibrary } from './library'
-import { getArtwork } from './artwork'
+import { getArtwork, artworkDir } from './artwork'
 import {
   clearQueue,
   enqueueTrack,
@@ -13,38 +13,17 @@ import {
   shuffleQueue,
   fillQueue
 } from './queue'
-import { connectChat, disconnectChat } from './chat/manager'
 import { setProgress, nowPlayingPath } from './nowplaying'
-import { artworkDir } from './artwork'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
-import { getChatStatus } from './chat/manager'
-import {
-  startDeviceFlow,
-  getValidToken,
-  TWITCH_TOKEN_NAME,
-  type DevicePrompt
-} from './auth/twitchDevice'
-import { clearToken, encryptionAvailable } from './auth/tokens'
-import type { TwitchAuthState } from '../shared/ipc'
-
-/** Progress of an in-flight device authorisation, polled by the renderer. */
-let authState: TwitchAuthState = { state: 'idle' }
-import { addBlock, removeBlock } from '../shared/requests'
 import type {
   Config,
   DeepPartial,
   PlaybackProgress,
-  Requester,
   ScanProgress,
   Track
 } from '../shared/types'
 
-/**
- * Registers the handlers that exist so far. Channels in BardApi without a
- * handler yet reject with "No handler registered", which is the behaviour we
- * want mid-build -- a loud failure rather than a silent undefined.
- */
 export function registerIpcHandlers(): void {
   ipcMain.handle(INVOKE.getConfig, (): Config => getConfig())
   ipcMain.handle(INVOKE.setConfig, (_e, patch: DeepPartial<Config>): Config => {
@@ -73,19 +52,16 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(INVOKE.addLibraryPath, async (e): Promise<string[]> => {
     const win = BrowserWindow.fromWebContents(e.sender)
+    const options = {
+      title: 'Add music folder',
+      properties: ['openDirectory', 'multiSelections', 'createDirectory'] as const
+    }
     const result = win
-      ? await dialog.showOpenDialog(win, {
-          title: 'Add music folder',
-          properties: ['openDirectory', 'multiSelections', 'createDirectory']
-        })
-      : await dialog.showOpenDialog({
-          title: 'Add music folder',
-          properties: ['openDirectory', 'multiSelections']
-        })
+      ? await dialog.showOpenDialog(win, { ...options, properties: [...options.properties] })
+      : await dialog.showOpenDialog({ ...options, properties: [...options.properties] })
     if (result.canceled || result.filePaths.length === 0) return getConfig().libraryPaths
 
-    const existing = getConfig().libraryPaths
-    const merged = [...new Set([...existing, ...result.filePaths])]
+    const merged = [...new Set([...getConfig().libraryPaths, ...result.filePaths])]
     return setConfig({ libraryPaths: merged }).libraryPaths
   })
 
@@ -95,21 +71,8 @@ export function registerIpcHandlers(): void {
 
   // Queue intents. Main owns the state; these return void and the renderer
   // re-renders from the onQueueChanged broadcast rather than a return value.
-  // Streamer adds from the UI carry no requester -- they are not rate-limited
-  // and there is nobody to attribute or block.
   ipcMain.handle(INVOKE.enqueue, (_e, trackId: string): void => {
     enqueueTrack(trackId)
-  })
-
-  ipcMain.handle(INVOKE.blockUser, (_e, r: Requester): Config => {
-    const cfg = getConfig()
-    return setConfig({
-      requests: { blockedUsers: addBlock(cfg.requests.blockedUsers, r, Date.now()) }
-    })
-  })
-  ipcMain.handle(INVOKE.unblockUser, (_e, r: Requester): Config => {
-    const cfg = getConfig()
-    return setConfig({ requests: { blockedUsers: removeBlock(cfg.requests.blockedUsers, r) } })
   })
   ipcMain.handle(INVOKE.removeFromQueue, (_e, queueItemId: string): void => {
     removeFromQueue(queueItemId)
@@ -124,49 +87,30 @@ export function registerIpcHandlers(): void {
     fillQueue(count)
   })
 
-  ipcMain.handle(INVOKE.connectTwitch, async (_e, ch: string): Promise<void> => {
-    if (ch) setConfig({ twitch: { channel: ch } })
-    await connectChat('twitch')
-  })
-  ipcMain.handle(INVOKE.disconnectTwitch, (): void => disconnectChat('twitch'))
-
-  ipcMain.handle(INVOKE.twitchAuthStart, async (e): Promise<DevicePrompt> => {
-    const { clientId } = getConfig().twitch
-    const handle = await startDeviceFlow(clientId)
-    // Resolve in the background; the renderer polls twitchAuthState.
-    void handle.completed
-      .then(async (token) => {
-        authState = { state: 'authorized', login: token.login }
-        // Reconnect so the live connection picks up the new identity.
-        await connectChat('twitch')
-      })
-      .catch((err: Error) => {
-        authState = { state: 'error', message: err.message }
-      })
-    authState = { state: 'pending' }
-    if (!e.sender.isDestroyed()) e.sender.send(EVENT.twitchStatus, getChatStatus('twitch'))
-    return handle.prompt
-  })
-
-  ipcMain.handle(INVOKE.twitchAuthState, async (): Promise<TwitchAuthState> => {
-    if (authState.state === 'idle') {
-      const token = await getValidToken(getConfig().twitch.clientId)
-      if (token) return { state: 'authorized', login: token.login }
-    }
-    return authState
-  })
-
-  ipcMain.handle(INVOKE.twitchSignOut, async (): Promise<void> => {
-    await clearToken(TWITCH_TOKEN_NAME)
-    authState = { state: 'idle' }
-    await connectChat('twitch')
-  })
   ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
+
+  ipcMain.handle(
+    INVOKE.getPaths,
+    (): AppPaths => ({
+      config: configPath(),
+      configDir: app.getPath('userData'),
+      artwork: artworkDir(),
+      nowPlaying: nowPlayingPath(),
+      logs: app.getPath('logs')
+    })
+  )
+
+  ipcMain.handle(INVOKE.revealPath, async (_e, target: string): Promise<void> => {
+    // Guard against being handed something outside our own directories.
+    const roots = [app.getPath('userData'), ...getConfig().libraryPaths]
+    if (!roots.some((r) => target === r || target.startsWith(r))) return
+    await shell.openPath(target)
+  })
 
   /**
    * Opens a URL in the system browser.
    *
-   * Allowlisted by host rather than passing anything the renderer asks for:
+   * Allowlisted rather than passing anything the renderer asks for:
    * shell.openExternal will happily launch non-http schemes, and a renderer
    * bug should not become "open arbitrary things on the desktop".
    */
@@ -178,27 +122,8 @@ export function registerIpcHandlers(): void {
       return false
     }
     if (parsed.protocol !== 'https:') return false
-    const allowed = ['twitch.tv', 'google.com', 'youtube.com']
-    const host = parsed.hostname.toLowerCase()
-    if (!allowed.some((d) => host === d || host.endsWith(`.${d}`))) return false
     await shell.openExternal(parsed.toString())
     return true
-  })
-
-  ipcMain.handle(INVOKE.secureStorageAvailable, (): boolean => encryptionAvailable())
-
-  ipcMain.handle(INVOKE.getPaths, (): AppPaths => ({
-    config: configPath(),
-    configDir: app.getPath('userData'),
-    artwork: artworkDir(),
-    nowPlaying: nowPlayingPath(),
-    logs: app.getPath('logs')
-  }))
-  ipcMain.handle(INVOKE.revealPath, async (_e, target: string): Promise<void> => {
-    // Guard against being handed something outside our own directories.
-    const roots = [app.getPath('userData'), ...getConfig().libraryPaths]
-    if (!roots.some((r) => target === r || target.startsWith(r))) return
-    await shell.openPath(target)
   })
 
   // Playback reporting from the renderer.

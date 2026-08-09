@@ -14,7 +14,6 @@ import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
 import { setMainWindow } from './windows'
-import { disconnectAll } from './chat/manager'
 import { toggleTrayPopup, warmTrayPopup } from './trayPopup'
 
 // Must run before app.whenReady().
@@ -154,7 +153,6 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
-  disconnectAll()
   quitting = true
   releaseGlobalShortcuts()
   destroyTray()

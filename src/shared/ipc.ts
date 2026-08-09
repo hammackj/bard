@@ -6,30 +6,15 @@
  * is a type error rather than a silent no-op at runtime.
  */
 import type {
-  ChatEvent,
-  Requester,
   Config,
   DeepPartial,
   PlaybackProgress,
   ScanProgress,
   QueueItem,
-  Track,
-  TwitchStatus
+  Track
 } from './types'
 
 export type TransportAction = 'toggle' | 'restart'
-
-export type TwitchDevicePrompt = {
-  userCode: string
-  verificationUri: string
-  expiresAt: number
-}
-
-export type TwitchAuthState =
-  | { state: 'idle' }
-  | { state: 'pending' }
-  | { state: 'authorized'; login?: string }
-  | { state: 'error'; message: string }
 
 export type AppPaths = {
   config: string
@@ -51,18 +36,11 @@ export const INVOKE = {
   clearQueue: 'queue:clear',
   shuffleQueue: 'queue:shuffle',
   fillQueue: 'queue:fill',
-  connectTwitch: 'twitch:connect',
-  disconnectTwitch: 'twitch:disconnect',
   getConfig: 'config:get',
   setConfig: 'config:set',
   getOverlayUrl: 'overlay:url',
   getPaths: 'app:paths',
   revealPath: 'app:revealPath',
-  blockUser: 'requests:block',
-  unblockUser: 'requests:unblock',
-  twitchAuthStart: 'twitch:authStart',
-  twitchAuthState: 'twitch:authState',
-  twitchSignOut: 'twitch:signOut',
   secureStorageAvailable: 'app:secureStorage',
   openExternal: 'app:openExternal'
 } as const
@@ -77,8 +55,6 @@ export const SEND = {
 export const EVENT = {
   queueChanged: 'queue:changed',
   playTrack: 'player:play',
-  chatEvent: 'chat:event',
-  twitchStatus: 'twitch:status',
   scanProgress: 'library:scanProgress',
   nowPlaying: 'player:nowPlaying',
   transport: 'player:transport'
@@ -110,10 +86,6 @@ export type BardApi = {
   reportProgress: (p: PlaybackProgress) => void
   reportEnded: () => void
 
-  // twitch
-  connectTwitch: (channel: string) => Promise<void>
-  disconnectTwitch: () => Promise<void>
-
   // config
   getConfig: () => Promise<Config>
   setConfig: (patch: DeepPartial<Config>) => Promise<Config>
@@ -126,14 +98,7 @@ export type BardApi = {
   /** Opens a folder in the system file manager. */
   revealPath: (path: string) => Promise<void>
 
-  /** Blocks a requester from using commands. Returns the updated config. */
-  blockUser: (r: Requester) => Promise<Config>
-  unblockUser: (r: Requester) => Promise<Config>
 
-  /** Begins Twitch device authorisation; resolves with the code to enter. */
-  twitchAuthStart: () => Promise<TwitchDevicePrompt>
-  twitchAuthState: () => Promise<TwitchAuthState>
-  twitchSignOut: () => Promise<void>
   /** False when no OS keyring is available to encrypt tokens at rest. */
   secureStorageAvailable: () => Promise<boolean>
   /** Opens an allowlisted https URL in the system browser. */
@@ -142,8 +107,6 @@ export type BardApi = {
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
   onPlayTrack: (cb: (t: Track) => void) => Unsubscribe
-  onChatEvent: (cb: (e: ChatEvent) => void) => Unsubscribe
-  onTwitchStatus: (cb: (s: TwitchStatus) => void) => Unsubscribe
   onScanProgress: (cb: (p: ScanProgress) => void) => Unsubscribe
   /** The queue item now playing, carrying requester info. */
   onNowPlaying: (cb: (i: QueueItem | null) => void) => Unsubscribe

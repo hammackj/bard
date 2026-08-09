@@ -1,31 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { EVENT } from '../shared/ipc'
-import { evaluateRequest, describeVerdict, requesterKey } from '../shared/requests'
-import type { RequestVerdict } from '../shared/requests'
-import type { ChatEvent, ChatEventKind, QueueItem, Requester, Track } from '../shared/types'
+import type { QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
-import {
-  getTrackById,
-  matchRequest,
-  nextInAlbum,
-  randomAlbumStart,
-  randomTrack
-} from './library'
+import { getTrackById, nextInAlbum, randomAlbumStart, randomTrack } from './library'
 import { shuffled } from '../shared/playlist'
 import { setNowPlaying, setQueueLength } from './nowplaying'
 
 /**
  * The queue lives here and nowhere else.
  *
- * Chat requests and UI actions both land in this module, so there is one source
- * of truth for what plays next -- the renderer sends intents and re-renders
- * whatever comes back.
+ * The renderer sends intents and re-renders whatever comes back, so there is
+ * one source of truth for what plays next.
  */
 
 let queue: QueueItem[] = []
 let nowPlaying: QueueItem | null = null
-const lastRequestAt: Record<string, number> = {}
 /** Recently played ids, newest last. Keeps shuffle from repeating itself. */
 let history: string[] = []
 
@@ -34,11 +24,28 @@ function remember(track: Track): void {
   history = [...history.filter((id) => id !== track.id), track.id].slice(-limit)
 }
 
+function broadcast(channel: string, payload: unknown): void {
+  sendToMain(channel, payload)
+}
+
+function emitQueue(): void {
+  broadcast(EVENT.queueChanged, queue)
+  setQueueLength(queue.length)
+}
+
+export function getQueue(): QueueItem[] {
+  return queue
+}
+
+export function getNowPlaying(): QueueItem | null {
+  return nowPlaying
+}
+
 /**
  * Picks the next track when the queue has run dry.
  *
  * Album mode carries on through the current album and rolls to another when it
- * ends, so a stream does not stop dead between records.
+ * ends, so playback does not stop dead between records.
  */
 function autoFillTrack(): Track | null {
   const mode = getConfig().playback.autoFill
@@ -56,11 +63,21 @@ function autoFillTrack(): Track | null {
   return randomTrack(new Set(history))
 }
 
+export function enqueueTrack(trackId: string): QueueItem | null {
+  const track = getTrackById(trackId)
+  if (!track) return null
+  const item: QueueItem = { id: randomUUID(), track, addedAt: Date.now() }
+  queue = [...queue, item]
+  emitQueue()
+  if (!nowPlaying) playNext()
+  return item
+}
+
 /** Appends `count` tracks chosen the same way auto-fill would. */
 export function fillQueue(count?: number): number {
   const cfg = getConfig()
   const want = Math.max(1, count ?? cfg.playback.fillCount)
-  const room = Math.max(0, cfg.requests.maxQueueLength - queue.length)
+  const room = Math.max(0, cfg.playback.maxQueueLength - queue.length)
   const n = Math.min(want, room)
   if (n === 0) return 0
 
@@ -77,7 +94,6 @@ export function fillQueue(count?: number): number {
   if (!added.length) return 0
   queue = [...queue, ...added]
   emitQueue()
-  emitChat('sys', `Added ${added.length} track${added.length === 1 ? '' : 's'}`)
   if (!nowPlaying) playNext()
   return added.length
 }
@@ -87,87 +103,6 @@ export function shuffleQueue(): void {
   if (queue.length < 2) return
   queue = shuffled(queue)
   emitQueue()
-  emitChat('sys', 'Queue shuffled')
-}
-
-function broadcast(channel: string, payload: unknown): void {
-  sendToMain(channel, payload)
-}
-
-function emitQueue(): void {
-  broadcast(EVENT.queueChanged, queue)
-  setQueueLength(queue.length)
-}
-
-export function emitChat(
-  kind: ChatEventKind,
-  message: string,
-  requester?: Requester
-): ChatEvent {
-  const event: ChatEvent = { id: randomUUID(), kind, message, requester, at: Date.now() }
-  broadcast(EVENT.chatEvent, event)
-  return event
-}
-
-export function getQueue(): QueueItem[] {
-  return queue
-}
-
-export function getNowPlaying(): QueueItem | null {
-  return nowPlaying
-}
-
-/**
- * Streamer-initiated add. Deliberately skips evaluateRequest -- the person
- * running the stream is never rate-limited on their own machine.
- */
-export function enqueueTrack(trackId: string, requester?: Requester): QueueItem | null {
-  const track = getTrackById(trackId)
-  if (!track) return null
-  const item: QueueItem = { id: randomUUID(), track, requester, addedAt: Date.now() }
-  queue = [...queue, item]
-  emitQueue()
-  if (!nowPlaying) playNext()
-  return item
-}
-
-/**
- * Chat-initiated request. Runs the full rule set and logs a chat event either
- * way. lastRequestAt is only touched when the request is accepted, so a
- * rejected request does not burn the requester's cooldown.
- */
-export function requestFromChat(
-  query: string,
-  requester: Requester,
-  privileged = false
-): RequestVerdict {
-  const verdict = evaluateRequest({
-    query,
-    requester,
-    now: Date.now(),
-    queue,
-    lastRequestAt,
-    config: getConfig().requests,
-    match: matchRequest,
-    privileged
-  })
-
-  if (verdict.ok) {
-    lastRequestAt[requesterKey(requester)] = Date.now()
-    const item: QueueItem = {
-      id: randomUUID(),
-      track: verdict.track,
-      requester,
-      addedAt: Date.now()
-    }
-    queue = [...queue, item]
-    emitQueue()
-    emitChat('ok', describeVerdict(verdict))
-    if (!nowPlaying) playNext()
-  } else {
-    emitChat('no', describeVerdict(verdict))
-  }
-  return verdict
 }
 
 export function removeFromQueue(queueItemId: string): void {
@@ -229,11 +164,6 @@ export function skip(): void {
 /** Called when the renderer reports the current track finished. */
 export function onTrackEnded(): void {
   playNext()
-}
-
-/** Test seam: lets a caller inspect cooldown bookkeeping. */
-export function getLastRequestAt(): Readonly<Record<string, number>> {
-  return lastRequestAt
 }
 
 export function playTrackNow(track: Track): void {

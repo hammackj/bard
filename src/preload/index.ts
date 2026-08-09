@@ -40,26 +40,17 @@ const api: BardApi = {
   reportProgress: (p) => ipcRenderer.send(SEND.reportProgress, p),
   reportEnded: () => ipcRenderer.send(SEND.reportEnded),
 
-  connectTwitch: (channel) => ipcRenderer.invoke(INVOKE.connectTwitch, channel),
-  disconnectTwitch: () => ipcRenderer.invoke(INVOKE.disconnectTwitch),
 
   getConfig: () => ipcRenderer.invoke(INVOKE.getConfig),
   setConfig: (patch) => ipcRenderer.invoke(INVOKE.setConfig, patch),
   getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
   getPaths: () => ipcRenderer.invoke(INVOKE.getPaths),
   revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
-  blockUser: (r) => ipcRenderer.invoke(INVOKE.blockUser, r),
-  unblockUser: (r) => ipcRenderer.invoke(INVOKE.unblockUser, r),
-  twitchAuthStart: () => ipcRenderer.invoke(INVOKE.twitchAuthStart),
-  twitchAuthState: () => ipcRenderer.invoke(INVOKE.twitchAuthState),
-  twitchSignOut: () => ipcRenderer.invoke(INVOKE.twitchSignOut),
   secureStorageAvailable: () => ipcRenderer.invoke(INVOKE.secureStorageAvailable),
   openExternal: (url) => ipcRenderer.invoke(INVOKE.openExternal, url),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),
-  onChatEvent: (cb) => subscribe(EVENT.chatEvent, cb),
-  onTwitchStatus: (cb) => subscribe(EVENT.twitchStatus, cb),
   onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb),
   onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb),
   onTransport: (cb) => subscribe(EVENT.transport, cb)
