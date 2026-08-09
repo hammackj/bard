@@ -371,8 +371,34 @@ export function onTrackEnded(): void {
   playNext()
 }
 
-export function playTrackNow(track: Track): void {
-  nowPlaying = { id: randomUUID(), track, addedAt: Date.now() }
-  setNowPlaying(nowPlaying)
+/**
+ * Plays a specific track immediately, leaving the pending queue intact.
+ *
+ * The renderer used to express this as enqueue-then-skip, which cannot work:
+ * enqueueTrack appends to the tail and skip() shifts the head, so the user got
+ * whatever was already queued and their choice was buried at the back. With
+ * endless on and an empty queue it was worse -- the enqueue started the right
+ * track, the top-up stuffed the queue in front of it, and the skip immediately
+ * abandoned it for filler.
+ *
+ * Deliberately does not consume the queue: "play this" is an interruption, and
+ * what was lined up should still be lined up afterwards.
+ */
+export function playNowById(trackId: string): QueueItem | null {
+  const track = getTrackById(trackId)
+  if (!track) return null
+
+  creditSkipIfUnplayed()
+  counted = false
+  position = 0
+
+  const item: QueueItem = { id: randomUUID(), track, addedAt: Date.now() }
+  nowPlaying = item
+  remember(track)
+  played = pushPlayed(played, item)
+  setNowPlaying(item)
+  broadcast(EVENT.nowPlaying, item)
   broadcast(EVENT.playTrack, track)
+  topUpEndless()
+  return item
 }

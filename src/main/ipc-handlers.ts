@@ -6,6 +6,7 @@ import { getArtwork, artworkDir } from './artwork'
 import {
   clearQueue,
   enqueueTrack,
+  playNowById,
   onTrackEnded,
   removeFromQueue,
   reorderQueue,
@@ -86,6 +87,9 @@ export function registerIpcHandlers(): void {
   // re-renders from the onQueueChanged broadcast rather than a return value.
   ipcMain.handle(INVOKE.enqueue, (_e, trackId: string): void => {
     enqueueTrack(trackId)
+  })
+  ipcMain.handle(INVOKE.playNow, (_e, trackId: string): void => {
+    playNowById(trackId)
   })
   ipcMain.handle(INVOKE.removeFromQueue, (_e, queueItemId: string): void => {
     removeFromQueue(queueItemId)

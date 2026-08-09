@@ -47,6 +47,7 @@ export const INVOKE = {
   addLibraryPath: 'library:addPath',
   getArtwork: 'library:artwork',
   enqueue: 'queue:enqueue',
+  playNow: 'queue:playNow',
   removeFromQueue: 'queue:remove',
   reorderQueue: 'queue:reorder',
   skip: 'queue:skip',
@@ -100,6 +101,8 @@ export type BardApi = {
 
   // queue -- the renderer sends intents, main owns the state
   enqueue: (trackId: string) => Promise<void>
+  /** Plays this track at once, leaving the pending queue as it was. */
+  playNow: (trackId: string) => Promise<void>
   removeFromQueue: (queueItemId: string) => Promise<void>
   reorderQueue: (from: number, to: number) => Promise<void>
   skip: () => Promise<void>

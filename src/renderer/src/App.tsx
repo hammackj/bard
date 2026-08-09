@@ -138,9 +138,7 @@ function App(): React.JSX.Element {
   }
 
   const enqueue = (t: Track): void => void window.bard.enqueue(t.id)
-  const playNow = (t: Track): void => {
-    void window.bard.enqueue(t.id).then(() => window.bard.skip())
-  }
+  const playNow = (t: Track): void => void window.bard.playNow(t.id)
 
   const noLibrary = (s.config?.libraryPaths.length ?? 0) === 0
 
