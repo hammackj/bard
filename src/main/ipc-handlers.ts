@@ -16,6 +16,7 @@ import {
   shuffleQueue,
   fillQueue,
   reportPosition,
+  isCurrentTrack,
   refreshEndless,
   dropClaimedFromQueue
 } from './queue'
@@ -146,6 +147,12 @@ export function registerIpcHandlers(): void {
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())
   ipcMain.on(SEND.reportProgress, (_e, p: PlaybackProgress): void => {
+    // Drop reports belonging to a track we have already moved on from. During a
+    // crossfade the renderer keeps playing the outgoing track for several more
+    // seconds; crediting those to the incoming one counted a full play for a
+    // track nobody heard, and left `position` stale enough that Previous read
+    // as "restart" and replayed the track that had just started.
+    if (!isCurrentTrack(p.trackId)) return
     setProgress(p)
     if (p.playing) reportPosition(p.position, p.duration)
   })

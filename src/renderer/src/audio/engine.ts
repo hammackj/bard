@@ -13,7 +13,18 @@ import { gainMultiplier } from '@shared/gain'
  */
 
 export type EngineEvents = {
-  onProgress?: (position: number, duration: number, playing: boolean) => void
+  /**
+   * `trackId` is whatever is loaded in the element right now. It lags the
+   * track main has selected for the length of a crossfade, which is the point:
+   * it lets main tell "this is my current track" from "this is the tail of the
+   * one before".
+   */
+  onProgress?: (
+    position: number,
+    duration: number,
+    playing: boolean,
+    trackId: string | null
+  ) => void
   onEnded?: () => void
   onError?: (message: string) => void
 }
@@ -44,14 +55,13 @@ function element(): HTMLAudioElement {
     // Volume is handled by the GainNode; leave the element wide open so the
     // gain ramp has full headroom to work with.
     el.volume = 1
-    el.addEventListener('timeupdate', () => {
-      events.onProgress?.(el!.currentTime, el!.duration || 0, !el!.paused)
-    })
+    const report = (playing: boolean): void => {
+      events.onProgress?.(el!.currentTime, el!.duration || 0, playing, currentTrack?.id ?? null)
+    }
+    el.addEventListener('timeupdate', () => report(!el!.paused))
     el.addEventListener('ended', () => events.onEnded?.())
-    el.addEventListener('play', () => events.onProgress?.(el!.currentTime, el!.duration || 0, true))
-    el.addEventListener('pause', () =>
-      events.onProgress?.(el!.currentTime, el!.duration || 0, false)
-    )
+    el.addEventListener('play', () => report(true))
+    el.addEventListener('pause', () => report(false))
     el.addEventListener('error', () => {
       const code = el?.error?.code
       events.onError?.(`audio element error${code ? ` (code ${code})` : ''}`)

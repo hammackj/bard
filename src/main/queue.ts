@@ -159,6 +159,19 @@ export function getNowPlaying(): QueueItem | null {
 }
 
 /**
+ * Whether a progress report describes the track that is actually current.
+ *
+ * A crossfade keeps the outgoing track playing -- and reporting -- for the
+ * length of the fade, by which time main has already selected the next one.
+ * Untagged reports (null) are accepted: there is nothing to disambiguate
+ * before a track has been loaded.
+ */
+export function isCurrentTrack(trackId: string | null): boolean {
+  if (trackId === null) return true
+  return nowPlaying?.track.id === trackId
+}
+
+/**
  * Picks the next track when the queue has run dry.
  *
  * Album mode carries on through the current album and rolls to another when it

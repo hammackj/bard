@@ -72,6 +72,13 @@ export type PlaybackProgress = {
   position: number
   duration: number
   playing: boolean
+  /**
+   * The track the audio element is actually playing, which during a crossfade
+   * is still the outgoing one -- main has already selected the next track by
+   * then, so an untagged report gets credited to the wrong track. Null before
+   * anything has been loaded.
+   */
+  trackId: string | null
 }
 
 export type ScanProgress = {
@@ -156,12 +163,7 @@ export type PlaybackConfig = {
   lovedWeight: number
 }
 
-export type TrayPopupCorner =
-  | 'bottom-right'
-  | 'bottom-left'
-  | 'top-right'
-  | 'top-left'
-  | 'cursor'
+export type TrayPopupCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'cursor'
 
 export type WindowConfig = {
   /** Close hides to the tray instead of quitting. */

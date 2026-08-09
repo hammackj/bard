@@ -17,7 +17,7 @@ type Listener = (snapshot: NowPlaying) => void
 
 let listeners: Listener[] = []
 let current: QueueItem | null = null
-let progress: PlaybackProgress = { position: 0, duration: 0, playing: false }
+let progress: PlaybackProgress = { position: 0, duration: 0, playing: false, trackId: null }
 let queueLength = 0
 let lastWritten = ''
 let writing: Promise<void> = Promise.resolve()
@@ -42,9 +42,7 @@ export function snapshot(): NowPlaying {
     durationSec: progress.duration || current?.track.durationSec || 0,
     positionSec: progress.position,
     isPlaying: progress.playing,
-    artUrl: current?.track.hasArtwork
-      ? `http://127.0.0.1:${port}/art/${current.track.id}`
-      : null,
+    artUrl: current?.track.hasArtwork ? `http://127.0.0.1:${port}/art/${current.track.id}` : null,
     queueLength,
     updatedAt: new Date().toISOString()
   }
@@ -58,7 +56,7 @@ function emit(): void {
 /** Track changed, or playback stopped entirely. */
 export function setNowPlaying(item: QueueItem | null): void {
   current = item
-  if (!item) progress = { position: 0, duration: 0, playing: false }
+  if (!item) progress = { position: 0, duration: 0, playing: false, trackId: null }
   emit()
   void writeFileIfInteresting(true)
 }

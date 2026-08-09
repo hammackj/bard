@@ -39,9 +39,9 @@ export function useAudio(initialVolume = 0.8): {
 
   useEffect(() => {
     engine.setEvents({
-      onProgress: (position, duration, playing) => {
+      onProgress: (position, duration, playing, trackId) => {
         setState((s) => ({ ...s, position, duration, playing }))
-        window.bard.reportProgress({ position, duration, playing })
+        window.bard.reportProgress({ position, duration, playing, trackId })
       },
       onEnded: () => {
         setState((s) => ({ ...s, playing: false }))
