@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { AppInfo } from '@shared/ipc'
 import { useStore } from '../state/store'
 
 type Props = {
@@ -20,8 +21,15 @@ export function AvatarMenu({
   onRescan
 }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [info, setInfo] = useState<AppInfo | null>(null)
   const trackCount = useStore((s) => s.tracks.length)
   const wrap = useRef<HTMLDivElement | null>(null)
+
+  // Fetched once on mount rather than per open: it cannot change while the app
+  // is running, and "which build am I on?" should be answerable immediately.
+  useEffect(() => {
+    void window.bard.getAppInfo().then(setInfo)
+  }, [])
 
   // Close on an outside click or Escape, like any menu.
   useEffect(() => {
@@ -39,7 +47,6 @@ export function AvatarMenu({
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
-
 
   return (
     <div ref={wrap} className="relative border-t border-edge">
@@ -69,6 +76,16 @@ export function AvatarMenu({
               onOpenShortcuts()
             }}
           />
+
+          {info && (
+            <div
+              className="mt-1 flex items-center justify-between gap-3 border-t border-edge px-3 pt-1.5 pb-0.5"
+              title={`Electron ${info.electron} · Chrome ${info.chrome} · Node ${info.node}`}
+            >
+              <span className="text-s1 text-muted">Version</span>
+              <span className="mono text-s1 text-muted">v{info.version}</span>
+            </div>
+          )}
         </div>
       )}
 

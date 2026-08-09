@@ -63,7 +63,22 @@ export function registerIpcHandlers(): void {
       last = now
       if (!sender.isDestroyed()) sender.send(EVENT.scanProgress, p)
     }
-    return scanLibrary(getConfig().libraryPaths, onProgress)
+    const found = await scanLibrary(getConfig().libraryPaths, onProgress)
+
+    // Stock the queue now the library is known.
+    //
+    // Endless only ever reacted to something happening -- a track ending, an
+    // item removed, the setting being changed. None of those occur at startup,
+    // so the app opened with endless on and an empty queue, and the only way
+    // to fill it was to toggle the setting off and on again. The scan is the
+    // first moment there is anything to draw from.
+    //
+    // This deliberately fills the queue without starting playback: seeing what
+    // is queued and choosing when it goes out is the whole point on a stream.
+    // A no-op when endless is off or the queue is already full, so rescans
+    // cost nothing.
+    refreshEndless()
+    return found
   })
 
   ipcMain.handle(INVOKE.addLibraryPath, async (e): Promise<string[]> => {
@@ -112,28 +127,22 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(INVOKE.getOverlayUrl, (): string | null => getOverlayUrl())
 
-  ipcMain.handle(
-    INVOKE.getPaths,
-    (): AppPaths => ({
-      config: configPath(),
-      configDir: app.getPath('userData'),
-      artwork: artworkDir(),
-      nowPlaying: nowPlayingPath(),
-      logs: app.getPath('logs')
-    })
-  )
+  ipcMain.handle(INVOKE.getPaths, (): AppPaths => ({
+    config: configPath(),
+    configDir: app.getPath('userData'),
+    artwork: artworkDir(),
+    nowPlaying: nowPlayingPath(),
+    logs: app.getPath('logs')
+  }))
 
   // app.getVersion() reads the packaged package.json, so this is correct in
   // both dev and a built app without bundling the version in at compile time.
-  ipcMain.handle(
-    INVOKE.getAppInfo,
-    (): AppInfo => ({
-      version: app.getVersion(),
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      node: process.versions.node
-    })
-  )
+  ipcMain.handle(INVOKE.getAppInfo, (): AppInfo => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node
+  }))
 
   ipcMain.handle(INVOKE.revealPath, async (_e, target: string): Promise<void> => {
     // Guard against being handed something outside our own directories. Uses
