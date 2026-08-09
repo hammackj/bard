@@ -9,16 +9,45 @@ let storeInstance: Store<Config> | null = null
 function store(): Store<Config> {
   if (!storeInstance) {
     storeInstance = new Store<Config>({ name: 'config', defaults: DEFAULT_CONFIG })
+
+    // Rewrite once at startup if the file carries settings this version no
+    // longer has. Without this a removed setting sits in the file until some
+    // unrelated change happens to trigger a write, which for the Twitch and
+    // request-rule blocks meant months after the feature was deleted.
+    const raw = storeInstance.store as Record<string, unknown>
+    if (JSON.stringify(prune(DEFAULT_CONFIG, raw)) !== JSON.stringify(raw)) {
+      storeInstance.store = readConfig(storeInstance)
+    }
   }
   return storeInstance
 }
 
-export function getConfig(): Config {
+function readConfig(s: Store<Config>): Config {
   // Spread through the defaults so a config file written by an older version
-  // still yields every key the app expects.
-  return mergeDeep(DEFAULT_CONFIG, store().store as DeepPartial<Config>)
+  // still yields every key the app expects, then drop anything the current
+  // Config does not have -- mergeDeep copies every key it finds, so without
+  // the prune a setting removed from the app survives in the file forever.
+  return prune(DEFAULT_CONFIG, mergeDeep(DEFAULT_CONFIG, s.store as DeepPartial<Config>)) as Config
 }
 
+export function getConfig(): Config {
+  return readConfig(store())
+}
+
+/**
+ * Reshapes `value` to the keys of `shape`, recursively.
+ *
+ * Arrays and primitives are taken wholesale -- only object keys are filtered,
+ * and only where the shape says an object belongs.
+ */
+function prune(shape: unknown, value: unknown): unknown {
+  if (!isPlainObject(shape) || !isPlainObject(value)) return value
+  const out: Record<string, unknown> = {}
+  for (const [key, shapeValue] of Object.entries(shape)) {
+    if (key in value) out[key] = prune(shapeValue, value[key])
+  }
+  return out
+}
 
 export function setConfig(patch: DeepPartial<Config>): Config {
   const next = mergeDeep(getConfig(), patch)
@@ -41,11 +70,8 @@ function mergeDeep<T>(base: T, patch: DeepPartial<T> | undefined): T {
   for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
     if (value === undefined) continue
     const current = out[key]
-    const bothPlainObjects =
-      isPlainObject(current) && isPlainObject(value) && !Array.isArray(value)
-    out[key] = bothPlainObjects
-      ? mergeDeep(current, value as DeepPartial<typeof current>)
-      : value
+    const bothPlainObjects = isPlainObject(current) && isPlainObject(value) && !Array.isArray(value)
+    out[key] = bothPlainObjects ? mergeDeep(current, value as DeepPartial<typeof current>) : value
   }
   return out as T
 }
