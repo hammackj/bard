@@ -164,19 +164,25 @@ function AlbumCard({
   )
 }
 
-/** Album covers are fetched once per album, not once per track. */
+/**
+ * Album covers are fetched once per album, not once per track.
+ *
+ * The fetched art is tagged with the id it belongs to instead of being cleared
+ * on every change: clearing needed a setArt(null) in the effect body, which
+ * cascades a second render, and with a grid of albums that is one extra render
+ * per tile. A stale cover simply fails to match.
+ */
 function useAlbumArt(trackId: string | null): string | null {
-  const [art, setArt] = useState<string | null>(null)
+  const [art, setArt] = useState<{ trackId: string; url: string | null } | null>(null)
   useEffect(() => {
-    let cancelled = false
-    setArt(null)
     if (!trackId) return
-    window.bard.getArtwork(trackId).then((a) => {
-      if (!cancelled) setArt(a)
+    let cancelled = false
+    window.bard.getArtwork(trackId).then((url) => {
+      if (!cancelled) setArt({ trackId, url })
     })
     return () => {
       cancelled = true
     }
   }, [trackId])
-  return art
+  return trackId !== null && art?.trackId === trackId ? art.url : null
 }

@@ -23,28 +23,34 @@ type Props = {
 
 export function NowPlaying(props: Props): React.JSX.Element {
   const { track, position, duration, playing, volume } = props
-  const [art, setArt] = useState<string | null>(null)
+  // Kept with the id it belongs to, rather than being cleared on every track
+  // change. Clearing meant a setArt(null) in the effect body, which is a
+  // set-state-in-effect violation and cost a second render per track; tagging
+  // it instead lets a stale cover simply not match, which needs no reset.
+  const [art, setArt] = useState<{ trackId: string; url: string | null } | null>(null)
 
   // Artwork is fetched by id rather than carried on the Track, so a large
   // library never pushes hundreds of megabytes of JPEG over IPC.
   useEffect(() => {
-    let cancelled = false
-    setArt(null)
     if (!track?.hasArtwork) return
-    window.bard.getArtwork(track.id).then((a) => {
-      if (!cancelled) setArt(a)
+    const trackId = track.id
+    let cancelled = false
+    window.bard.getArtwork(trackId).then((url) => {
+      if (!cancelled) setArt({ trackId, url })
     })
     return () => {
       cancelled = true
     }
   }, [track?.id, track?.hasArtwork])
 
+  const cover = track && art?.trackId === track.id ? art.url : null
+
   return (
     <div className="flex min-h-0 flex-col justify-center gap-[26px] px-5 pt-[34px] pb-[22px] @2xl:px-10">
       <div className="flex min-w-0 items-end gap-[26px]">
-        {art ? (
+        {cover ? (
           <img
-            src={art}
+            src={cover}
             alt=""
             className="block aspect-square w-[min(336px,58%,45vh)] shrink-0 border border-edge object-cover"
           />

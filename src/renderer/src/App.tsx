@@ -29,9 +29,16 @@ function App(): React.JSX.Element {
   const toggleRef = useRef(toggle)
   const seekRef = useRef(seek)
   const stateRef = useRef(state)
-  toggleRef.current = toggle
-  seekRef.current = seek
-  stateRef.current = state
+  // Refreshed after commit rather than during render. Under concurrent
+  // rendering a render can be discarded or replayed, so a ref written during
+  // one can end up holding a value that was never committed. Everything that
+  // reads these -- the transport subscription, the keyboard handler -- runs
+  // after commit, so a render-phase write buys nothing.
+  useEffect(() => {
+    toggleRef.current = toggle
+    seekRef.current = seek
+    stateRef.current = state
+  })
 
   // Subscriptions. Every one returns its unsubscribe fn so HMR cannot stack
   // duplicate listeners.
