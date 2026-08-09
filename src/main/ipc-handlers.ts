@@ -135,25 +135,6 @@ export function registerIpcHandlers(): void {
     await shell.openPath(target)
   })
 
-  /**
-   * Opens a URL in the system browser.
-   *
-   * Allowlisted rather than passing anything the renderer asks for:
-   * shell.openExternal will happily launch non-http schemes, and a renderer
-   * bug should not become "open arbitrary things on the desktop".
-   */
-  ipcMain.handle(INVOKE.openExternal, async (_e, url: string): Promise<boolean> => {
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      return false
-    }
-    if (parsed.protocol !== 'https:') return false
-    await shell.openExternal(parsed.toString())
-    return true
-  })
-
   // Playback reporting from the renderer.
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())
   ipcMain.on(SEND.reportProgress, (_e, p: PlaybackProgress): void => {

@@ -1,6 +1,6 @@
 // MUST be first: pins userData before any module reads a path from it.
 import './userData'
-import { app, shell, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, session } from 'electron'
 import { join } from 'path'
 import { writeFile } from 'node:fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -105,8 +105,10 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+  // Bard's UI has no outbound links, so a window.open from the renderer is a
+  // bug or an injection -- not a user following a link. Refuse it rather than
+  // handing the URL to the desktop.
+  mainWindow.webContents.setWindowOpenHandler(() => {
     return { action: 'deny' }
   })
 

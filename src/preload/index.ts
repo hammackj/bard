@@ -49,7 +49,6 @@ const api: BardApi = {
   getAppInfo: () => ipcRenderer.invoke(INVOKE.getAppInfo),
   revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
   secureStorageAvailable: () => ipcRenderer.invoke(INVOKE.secureStorageAvailable),
-  openExternal: (url) => ipcRenderer.invoke(INVOKE.openExternal, url),
   getStats: () => ipcRenderer.invoke(INVOKE.getStats),
   clearStats: () => ipcRenderer.invoke(INVOKE.clearStats),
   getAlbumFlags: () => ipcRenderer.invoke(INVOKE.getAlbumFlags),

@@ -61,7 +61,6 @@ export const INVOKE = {
   getAppInfo: 'app:info',
   revealPath: 'app:revealPath',
   secureStorageAvailable: 'app:secureStorage',
-  openExternal: 'app:openExternal',
   getStats: 'stats:get',
   clearStats: 'stats:clear',
   getAlbumFlags: 'albums:get',
@@ -132,8 +131,6 @@ export type BardApi = {
 
   /** False when no OS keyring is available to encrypt tokens at rest. */
   secureStorageAvailable: () => Promise<boolean>
-  /** Opens an allowlisted https URL in the system browser. */
-  openExternal: (url: string) => Promise<boolean>
 
   /** Play counts keyed by track id. */
   getStats: () => Promise<Record<string, TrackStats>>
