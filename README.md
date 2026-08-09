@@ -117,7 +117,33 @@ capture stream makes the audio pipeline renegotiate, which is audible.
 
 ### Taking requests
 
-Settings → Twitch, enter your channel name, and press **Connect**. Viewers
+Settings → Twitch, enter your channel name, and press **Connect**. That much
+works anonymously, with no account and no token.
+
+#### Replying in chat (optional)
+
+To have Bard answer `!queue` and `!song` in chat, register an application at
+[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps):
+
+| Field | Value |
+| --- | --- |
+| OAuth Redirect URL | `https://localhost` |
+| Category | Chat Bot |
+| Client Type | **Public** |
+
+Two things the form gets fussy about:
+
+- **The console enforces HTTPS.** A bare `http://localhost` is rejected; use
+  `https://localhost`, or `http://localhost:3000` if you prefer Twitch's own
+  example. Device Code Flow never calls the URL, so the value is inert.
+- **Client Type must be Public.** A confidential client is issued a secret, and
+  Twitch refuses Device Code Flow for those — the failure surfaces as a
+  grant-type error that does not obviously point back at this setting.
+
+Paste the **Client ID** into Settings → Twitch and press *Connect bot account*.
+Do not generate a client secret; there is nowhere to put one and DCF forbids
+it. Sign out of Twitch or use a private window first, or the browser will
+authorise whichever account you are already logged in as rather than the bot. Viewers
 request with:
 
 ```
