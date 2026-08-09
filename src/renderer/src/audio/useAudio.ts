@@ -51,7 +51,11 @@ export function useAudio(initialVolume = 0.8): {
     })
     engine.setVolume(initialVolume)
     return () => engine.setEvents({})
-  }, [initialVolume])
+    // Mount only. initialVolume is a seed for the first render, before config
+    // has resolved -- the saved level arrives later through setVolume, which is
+    // the one path that moves the engine and React state together.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Normalisation is a property of playback, not of a track, so it follows the
   // setting rather than being applied at play time.

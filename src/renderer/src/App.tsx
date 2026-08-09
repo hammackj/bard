@@ -63,6 +63,13 @@ function App(): React.JSX.Element {
     void (async () => {
       const cfg = await window.bard.getConfig()
       useStore.getState().setConfig(cfg)
+
+      // The saved level has to reach React state, not just the engine. It used
+      // to be passed to useAudio as an initial value, but the first render
+      // happens before config resolves, so state kept the 0.8 default while
+      // audio played at the saved level. The slider then read 80 against audio
+      // at 15, and one ArrowUp -- which steps from state -- jumped to 85.
+      setVolume(cfg.audio.volume)
       setOverlayUrl(await window.bard.getOverlayUrl())
       useStore.getState().setStats(await window.bard.getStats())
       useStore.getState().setAlbumFlags(await window.bard.getAlbumFlags())
@@ -87,7 +94,7 @@ function App(): React.JSX.Element {
         await maybeRunSelfTest()
       }
     })()
-  }, [runScan])
+  }, [runScan, setVolume])
 
   // Global shortcuts. Space is swallowed while typing in a field.
   useEffect(() => {
