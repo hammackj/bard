@@ -60,6 +60,54 @@ function App(): React.JSX.Element {
     stateRef.current = state
   })
 
+  /** A configured device we could not apply, kept so a later retry can. */
+  const pendingDevice = useRef<string | null>(null)
+
+  /**
+   * Routes audio to the saved output device, falling back for this session only.
+   *
+   * Deliberately never writes 'default' back to config on failure. A device can
+   * be absent for a moment at startup -- enumerated late, an interface still
+   * powering up, a PipeWire node still settling -- and persisting the fallback
+   * turned that transient miss into permanent loss of the user's choice, with
+   * nothing left to restore it from.
+   *
+   * That is worse than landing on the wrong speakers and noticing. Where the
+   * configured device is a dedicated sink recorded as its own track, the system
+   * default is a different one, so forgetting the setting quietly moves music
+   * onto the wrong recording track and it is found later, in editing.
+   *
+   * engine.setOutputDevice has already routed this session to the system
+   * default by the time it throws, so there is nothing to undo here.
+   */
+  const applySavedDevice = useCallback(async (deviceId: string): Promise<void> => {
+    if (!deviceId || deviceId === 'default') return
+    try {
+      await engine.setOutputDevice(deviceId)
+      // Only clear on recovery, so an unrelated notice is left alone.
+      if (pendingDevice.current) {
+        pendingDevice.current = null
+        useStore.getState().setNotice(null)
+      }
+    } catch (e) {
+      pendingDevice.current = deviceId
+      useStore.getState().setNotice(`${(e as Error).message} — your setting is kept.`)
+    }
+  }, [])
+
+  // A device missing at startup can appear later. Retrying on devicechange
+  // means recovery costs neither a restart nor re-picking the device.
+  useEffect(() => {
+    const devices = navigator.mediaDevices
+    if (!devices) return
+    const onDeviceChange = (): void => {
+      const want = pendingDevice.current
+      if (want) void applySavedDevice(want)
+    }
+    devices.addEventListener('devicechange', onDeviceChange)
+    return () => devices.removeEventListener('devicechange', onDeviceChange)
+  }, [applySavedDevice])
+
   // Subscriptions. Every one returns its unsubscribe fn so HMR cannot stack
   // duplicate listeners.
   useEffect(() => {
@@ -93,26 +141,14 @@ function App(): React.JSX.Element {
       useStore.getState().setAlbumFlags(await window.bard.getAlbumFlags())
       useStore.getState().setLoved(await window.bard.getLoved())
 
-      // Re-apply the saved output device. An interface unplugged between runs
-      // would otherwise leave playback pointed at a device that no longer
-      // exists; fall back, and forget the dead id so it stops failing.
-      if (cfg.audio.outputDeviceId && cfg.audio.outputDeviceId !== 'default') {
-        try {
-          await engine.setOutputDevice(cfg.audio.outputDeviceId)
-        } catch (e) {
-          useStore.getState().setNotice((e as Error).message)
-          useStore
-            .getState()
-            .setConfig(await window.bard.setConfig({ audio: { outputDeviceId: 'default' } }))
-        }
-      }
+      await applySavedDevice(cfg.audio.outputDeviceId)
       if (cfg.libraryPaths.length && !scanned.current) {
         scanned.current = true
         await runScan()
         await maybeRunSelfTest()
       }
     })()
-  }, [setVolume])
+  }, [setVolume, applySavedDevice])
 
   // Global shortcuts. Space is swallowed while typing in a field.
   useEffect(() => {
