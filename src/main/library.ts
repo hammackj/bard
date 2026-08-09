@@ -4,7 +4,7 @@ import { basename, extname, resolve } from 'node:path'
 import { parseFile } from 'music-metadata'
 import type { ScanProgress, Track } from '../shared/types'
 import { ensureArtworkDir, hasArtwork, saveArtwork } from './artwork'
-import { createMatcher, searchTextFor, type Matcher } from '../shared/match'
+import { searchTextFor } from '../shared/match'
 import {
   byPathOrder,
   nextInAlbum as nextInAlbumOf,
@@ -20,7 +20,6 @@ export const AUDIO_EXTENSIONS = ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'opus'] as 
 const PARSE_CONCURRENCY = 8
 
 let tracks: Track[] = []
-let matcher: Matcher | null = null
 const byId = new Map<string, Track>()
 
 export function trackId(path: string): string {
@@ -140,7 +139,6 @@ function setTracks(next: Track[]): void {
   tracks = next
   byId.clear()
   for (const t of next) byId.set(t.id, t)
-  matcher = createMatcher(next)
 }
 
 /** Tracks of one album, in release order. */
@@ -162,9 +160,4 @@ export function nextInAlbum(track: Track): Track | null {
 
 export function randomAlbumStart(notThis?: string): Track | null {
   return randomAlbumStartOf(tracks, notThis)
-}
-
-/** Best match for a chat request, or null. See shared/match for the threshold. */
-export function matchRequest(query: string): Track | null {
-  return matcher ? matcher(query) : null
 }

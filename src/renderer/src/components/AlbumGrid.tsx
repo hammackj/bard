@@ -14,7 +14,7 @@ export type Album = {
 }
 
 /** Groups the flat track list into albums, in library (path) order. */
-export function groupAlbums(tracks: Track[]): Album[] {
+function groupAlbums(tracks: Track[]): Album[] {
   const byName = new Map<string, Album>()
   for (const t of tracks) {
     let album = byName.get(t.album)
@@ -78,7 +78,7 @@ export function AlbumGrid({
 }
 
 /** Colour and label for an album's Content ID result. */
-export const CONTENT_ID_UI: Record<ContentIdStatus, { label: string; className: string }> = {
+const CONTENT_ID_UI: Record<ContentIdStatus, { label: string; className: string }> = {
   untested: { label: 'untested', className: 'text-muted' },
   safe: { label: 'safe', className: 'text-green' },
   claimed: { label: 'claimed', className: 'text-rose' }

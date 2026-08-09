@@ -74,7 +74,9 @@ export function newDeck(
   avoidFirst?: string,
   weightOf?: WeightOf
 ): Deck {
-  let remaining = weightOf ? spread(shuffled(expand(ids, weightOf), rng), rng) : shuffled(ids, rng)
+  const remaining = weightOf
+    ? spread(shuffled(expand(ids, weightOf), rng), rng)
+    : shuffled(ids, rng)
   // Avoid dealing the track that just played as the first of a new deck: the
   // seam between decks is the one place a repeat can still feel wrong.
   if (avoidFirst && remaining.length > 1 && remaining[0] === avoidFirst) {
