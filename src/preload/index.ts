@@ -14,7 +14,7 @@ import { EVENT, INVOKE, SEND, type BardApi, type Unsubscribe } from '../shared/i
  *
  * Every subscription must be torn down in its effect cleanup -- under HMR the
  * renderer re-runs effects without reloading the preload, so listeners
- * accumulate and each chat message renders once per stale listener.
+ * accumulate and one event is then handled once per stale listener.
  */
 function subscribe<T>(channel: string, cb: (payload: T) => void): Unsubscribe {
   const listener = (_e: IpcRendererEvent, payload: T): void => cb(payload)

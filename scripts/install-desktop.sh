@@ -97,12 +97,12 @@ cat > "$desktop_file" <<EOF
 Type=Application
 Name=Bard
 GenericName=Music Player
-Comment=Local music player with Twitch song requests
+Comment=Local music player for a curated library
 Exec=$target %U
 Icon=bard
 Terminal=false
 Categories=AudioVideo;Audio;Player;
-Keywords=music;player;twitch;stream;obs;
+Keywords=music;player;stream;obs;
 StartupNotify=true
 StartupWMClass=Bard
 EOF

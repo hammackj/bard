@@ -1,4 +1,23 @@
 # Bard — Electron Stream Music Player
+
+> [!WARNING]
+> **HISTORICAL DOCUMENT — this is not the current spec.**
+>
+> This is the original 12-phase build guide, kept for the record of how Bard was
+> put together. It has not been maintained since, and parts of it describe
+> features that no longer exist.
+>
+> Most importantly, **everything here about Twitch is wrong now**: the IRC
+> connection, song requests, request rules, cooldowns, the block list and the
+> `ws` dependency were all removed in `d81fd47` ("Remove chat integration; Bard
+> is a local player"). That was a considered product decision, not an oversight
+> — with a library of several hundred instrumental tracks, nobody in chat knows
+> a title to ask for, and the track list does not fit in a chat message. Do not
+> build against any of it.
+>
+> For what Bard actually is and how it works today, read `README.md`. For
+> release process and versioning, see the README's "Cutting a release".
+
 ## CLAUDE.md — Full Build Guide for Claude Code
 
 > Complete implementation spec for **Bard**, a desktop music player for streamers.

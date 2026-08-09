@@ -50,17 +50,17 @@ linux:
   category: AudioVideo;Audio;Player
   # Links running windows to the .desktop entry, so the taskbar shows our icon.
   syncDesktopName: true
-  synopsis: Local music player with Twitch song requests for streamers
+  synopsis: Local music player for a curated library, with an OBS overlay
   description: >-
-    Bard plays music from your own library and takes song requests from Twitch
-    chat, restricted to tracks you already have. It serves a live OBS overlay
-    and can route audio to a dedicated output device.
+    Bard plays music from a library you curate yourself -- nothing is fetched
+    from the internet and nothing streams from a third party. It serves a live
+    OBS overlay and can route audio to a dedicated output device.
   desktop:
     entry:
       Name: Bard
-      Comment: Local music player with Twitch song requests
+      Comment: Local music player for a curated library
       Categories: AudioVideo;Audio;Player;
-      Keywords: music;player;twitch;stream;obs;
+      Keywords: music;player;stream;obs;
       StartupWMClass: Bard
       Terminal: 'false'
 appImage:
