@@ -13,10 +13,12 @@ import {
   shuffleQueue,
   fillQueue,
   reportPosition,
-  refreshEndless
+  refreshEndless,
+  dropClaimedFromQueue
 } from './queue'
 import { setProgress, nowPlayingPath } from './nowplaying'
 import { clearStats, getStats } from './stats'
+import { getAlbumFlags, setAlbumFlag } from './albums'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
 import { sendToMain } from './windows'
@@ -25,7 +27,8 @@ import type {
   DeepPartial,
   PlaybackProgress,
   ScanProgress,
-  Track
+  Track,
+  ContentIdStatus
 } from '../shared/types'
 
 export function registerIpcHandlers(): void {
@@ -139,6 +142,20 @@ export function registerIpcHandlers(): void {
     setProgress(p)
     if (p.playing) reportPosition(p.position, p.duration)
   })
+
+  ipcMain.handle(INVOKE.getAlbumFlags, () => getAlbumFlags())
+  ipcMain.handle(
+    INVOKE.setAlbumFlag,
+    (_e, album: string, status: ContentIdStatus, note?: string) => {
+      setAlbumFlag(album, status, note)
+      const flags = getAlbumFlags()
+      sendToMain(EVENT.albumFlagsChanged, flags)
+      // A newly claimed album must leave the pending queue, not just future
+      // picks -- otherwise it still plays in a few minutes' time.
+      dropClaimedFromQueue()
+      return flags
+    }
+  )
 
   ipcMain.handle(INVOKE.getStats, () => getStats())
   ipcMain.handle(INVOKE.clearStats, (): void => {

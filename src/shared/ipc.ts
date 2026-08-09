@@ -12,7 +12,9 @@ import type {
   ScanProgress,
   QueueItem,
   Track,
-  TrackStats
+  TrackStats,
+  AlbumFlag,
+  ContentIdStatus
 } from './types'
 
 export type TransportAction = 'toggle' | 'restart'
@@ -45,7 +47,9 @@ export const INVOKE = {
   secureStorageAvailable: 'app:secureStorage',
   openExternal: 'app:openExternal',
   getStats: 'stats:get',
-  clearStats: 'stats:clear'
+  clearStats: 'stats:clear',
+  getAlbumFlags: 'albums:get',
+  setAlbumFlag: 'albums:set'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -61,6 +65,7 @@ export const EVENT = {
   scanProgress: 'library:scanProgress',
   nowPlaying: 'player:nowPlaying',
   statsChanged: 'stats:changed',
+  albumFlagsChanged: 'albums:changed',
   transport: 'player:transport'
 } as const
 
@@ -112,6 +117,14 @@ export type BardApi = {
   getStats: () => Promise<Record<string, TrackStats>>
   clearStats: () => Promise<void>
 
+  /** Content ID results, keyed by album name. */
+  getAlbumFlags: () => Promise<Record<string, AlbumFlag>>
+  setAlbumFlag: (
+    album: string,
+    status: ContentIdStatus,
+    note?: string
+  ) => Promise<Record<string, AlbumFlag>>
+
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
   onPlayTrack: (cb: (t: Track) => void) => Unsubscribe
@@ -121,4 +134,5 @@ export type BardApi = {
   /** Transport commands originating outside the renderer (tray, media keys). */
   onTransport: (cb: (a: TransportAction) => void) => Unsubscribe
   onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
+  onAlbumFlagsChanged: (cb: (f: Record<string, AlbumFlag>) => void) => Unsubscribe
 }

@@ -20,6 +20,22 @@ export type Track = {
   searchText: string
 }
 
+/**
+ * Result of checking an album against YouTube Content ID.
+ *
+ * 'claimed' does not mean the music is unlicensed -- a rights-holder matching
+ * their own catalogue is common and benign. It means this album produced a
+ * claim, which is a reason to keep it off a stream until you know why.
+ */
+export type ContentIdStatus = 'untested' | 'safe' | 'claimed'
+
+export type AlbumFlag = {
+  status: ContentIdStatus
+  /** Who claimed it, or anything else worth remembering. */
+  note?: string
+  checkedAt?: number
+}
+
 export type TrackStats = {
   plays: number
   skips: number
@@ -101,6 +117,12 @@ export type PlaybackConfig = {
   endless: boolean
   /** How many tracks endless mode keeps queued ahead. */
   endlessLookahead: number
+  /**
+   * Keep albums marked as Content ID claimed out of shuffle, fill and endless.
+   * Playing one deliberately still works; this only stops them turning up on
+   * their own while a stream is running.
+   */
+  excludeClaimed: boolean
 }
 
 export type TrayPopupCorner =
@@ -142,8 +164,9 @@ export const DEFAULT_CONFIG: Config = {
     avoidRepeat: 50,
     fillCount: 10,
     maxQueueLength: 200,
-    endless: false,
-    endlessLookahead: 10
+    endless: true,
+    endlessLookahead: 10,
+    excludeClaimed: true
   }
 }
 

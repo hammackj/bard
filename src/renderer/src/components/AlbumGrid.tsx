@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Track } from '@shared/types'
+import type { ContentIdStatus, Track } from '@shared/types'
 import { useStore } from '../state/store'
 import { fmtTime } from '../lib/format'
 
@@ -77,6 +77,13 @@ export function AlbumGrid({
   )
 }
 
+/** Colour and label for an album's Content ID result. */
+export const CONTENT_ID_UI: Record<ContentIdStatus, { label: string; className: string }> = {
+  untested: { label: 'untested', className: 'text-muted' },
+  safe: { label: 'safe', className: 'text-green' },
+  claimed: { label: 'claimed', className: 'text-rose' }
+}
+
 function AlbumCard({
   album,
   onPlay,
@@ -89,6 +96,7 @@ function AlbumCard({
   onOpen: () => void
 }): React.JSX.Element {
   const art = useAlbumArt(album.artTrackId)
+  const status = useStore((s) => s.albumFlags[album.name]?.status ?? 'untested')
 
   return (
     <div className="group">
@@ -99,9 +107,29 @@ function AlbumCard({
         title={`${album.name} — ${album.tracks.length} tracks`}
       >
         {art ? (
-          <img src={art} alt="" className="aspect-square w-full border border-edge object-cover" />
+          <img
+            src={art}
+            alt=""
+            className={`aspect-square w-full border border-edge object-cover ${
+              status === 'claimed' ? 'opacity-45' : ''
+            }`}
+          />
         ) : (
           <span className="block aspect-square w-full border border-edge bg-panel" />
+        )}
+        {status !== 'untested' && (
+          <span
+            title={
+              status === 'safe'
+                ? 'Passed Content ID testing'
+                : 'Content ID claim — kept out of shuffle and endless'
+            }
+            className={`absolute top-1.5 left-1.5 bg-ink/85 px-1.5 py-0.5 text-s1 ${
+              CONTENT_ID_UI[status].className
+            }`}
+          >
+            {status === 'safe' ? '✓ safe' : '⚠ claimed'}
+          </span>
         )}
         <span className="absolute inset-0 flex items-end justify-end gap-1 p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
           <span

@@ -56,6 +56,24 @@ export function randomAlbumStart(
   return album[0] ?? null
 }
 
+/**
+ * The next track after `anchor` in album order, rolling to another album when
+ * the current one ends.
+ *
+ * Takes the anchor as an argument rather than reading "what is playing": when
+ * filling several tracks ahead, the anchor has to advance with each pick.
+ * Anchoring on the current track instead returns the same successor every
+ * time, which silently fills nothing.
+ */
+export function nextInAlbumRolling(
+  tracks: Track[],
+  anchor: Track | null,
+  rng: Rng = Math.random
+): Track | null {
+  if (!anchor) return randomAlbumStart(tracks, undefined, rng)
+  return nextInAlbum(tracks, anchor) ?? randomAlbumStart(tracks, anchor.album, rng)
+}
+
 /** Fisher-Yates. Returns a new array; the input is untouched. */
 export function shuffled<T>(items: readonly T[], rng: Rng = Math.random): T[] {
   const next = [...items]

@@ -3,8 +3,9 @@ import { EVENT } from '../shared/ipc'
 import type { QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
-import { allTracks, getTrackById, nextInAlbum, randomAlbumStart, randomTrack } from './library'
-import { shuffled } from '../shared/playlist'
+import { allTracks, getTrackById, randomTrack } from './library'
+import { claimedAlbums } from './albums'
+import { nextInAlbumRolling, shuffled } from '../shared/playlist'
 import { draw, type Deck } from '../shared/deck'
 import { setNowPlaying, setQueueLength } from './nowplaying'
 import {
@@ -32,9 +33,28 @@ let history: string[] = []
 /** Shuffle deck: dealt through completely before any track repeats. */
 let deck: Deck | null = null
 
+/**
+ * Tracks eligible for automatic play.
+ *
+ * Albums flagged as Content ID claimed are withheld from shuffle, fill and
+ * endless -- the whole point of testing them is to keep them from turning up
+ * unattended mid-stream. Playing one deliberately is still allowed: that is an
+ * explicit choice, not the player deciding for you.
+ */
+function playableTracks(): Track[] {
+  const all = allTracks()
+  if (!getConfig().playback.excludeClaimed) return all
+  const blocked = claimedAlbums()
+  if (blocked.size === 0) return all
+  const left = all.filter((t) => !blocked.has(t.album))
+  // If every album is flagged, fall back to the whole library rather than
+  // falling silent -- silence would look like a bug, not a policy.
+  return left.length > 0 ? left : all
+}
+
 /** Draws the next track from the deck, rebuilding it when exhausted. */
 function drawFromDeck(): Track | null {
-  const ids = allTracks().map((t) => t.id)
+  const ids = playableTracks().map((t) => t.id)
   const out = draw(deck, ids, Math.random, nowPlaying?.track.id)
   deck = out.deck
   return out.id ? (getTrackById(out.id) ?? null) : null
@@ -61,10 +81,18 @@ function topUpEndless(): void {
 
   const taken = new Set(queue.map((q) => q.track.id))
   const added: QueueItem[] = []
+  // The anchor advances with every pick. Album mode walks forward from the last
+  // track that will be queued, not from what is playing now.
+  let anchor: Track | null = queue.at(-1)?.track ?? nowPlaying?.track ?? null
+
   let guard = 0
-  while (queue.length + added.length < want && guard++ < want * 4) {
-    const next = cfg.autoFill === 'album' ? autoFillTrack() : drawFromDeck()
+  while (queue.length + added.length < want && guard++ < want * 6) {
+    const next =
+      cfg.autoFill === 'album' ? nextInAlbumRolling(playableTracks(), anchor) : drawFromDeck()
     if (!next) break
+    anchor = next
+    // A duplicate is skipped, not treated as failure: the deck will deal
+    // something else next time round.
     if (taken.has(next.id)) continue
     taken.add(next.id)
     added.push({ id: randomUUID(), track: next, addedAt: Date.now() })
@@ -133,13 +161,7 @@ function autoFillTrack(): Track | null {
   if (mode === 'off') return null
 
   if (mode === 'album') {
-    const from = nowPlaying?.track
-    if (from) {
-      const next = nextInAlbum(from)
-      if (next) return next
-      return randomAlbumStart(from.album)
-    }
-    return randomAlbumStart()
+    return nextInAlbumRolling(playableTracks(), nowPlaying?.track ?? null)
   }
   return drawFromDeck() ?? randomTrack(new Set(history))
 }
@@ -152,6 +174,14 @@ export function enqueueTrack(trackId: string): QueueItem | null {
   emitQueue()
   if (!nowPlaying) playNext()
   return item
+}
+
+/** Ids withheld from automatic selection because their album was claimed. */
+function excludedIds(): string[] {
+  const playable = new Set(playableTracks().map((t) => t.id))
+  return allTracks()
+    .filter((t) => !playable.has(t.id))
+    .map((t) => t.id)
 }
 
 /** Appends `count` tracks chosen the same way auto-fill would. */
@@ -167,7 +197,7 @@ export function fillQueue(count?: number): number {
   const taken = new Set([...history, ...queue.map((q) => q.track.id)])
   const added: QueueItem[] = []
   for (let i = 0; i < n; i++) {
-    const t = randomTrack(taken)
+    const t = randomTrack(new Set([...taken, ...excludedIds()]))
     if (!t) break
     taken.add(t.id)
     added.push({ id: randomUUID(), track: t, addedAt: Date.now() })
@@ -189,6 +219,24 @@ export function shuffleQueue(): void {
 export function removeFromQueue(queueItemId: string): void {
   const before = queue.length
   queue = queue.filter((i) => i.id !== queueItemId)
+  if (queue.length !== before) {
+    emitQueue()
+    topUpEndless()
+  }
+}
+
+/**
+ * Removes newly-claimed albums from the pending queue.
+ *
+ * Excluding them from future picks is not enough: anything already queued
+ * would still play, which on a stream is exactly the moment it matters.
+ */
+export function dropClaimedFromQueue(): void {
+  if (!getConfig().playback.excludeClaimed) return
+  const blocked = claimedAlbums()
+  if (blocked.size === 0) return
+  const before = queue.length
+  queue = queue.filter((i) => !blocked.has(i.track.album))
   if (queue.length !== before) {
     emitQueue()
     topUpEndless()

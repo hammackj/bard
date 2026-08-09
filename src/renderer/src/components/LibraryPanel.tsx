@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Track } from '@shared/types'
 import { AlbumGrid, type Album } from './AlbumGrid'
+import { ContentIdBar } from './ContentIdBar'
 import { useStore } from '../state/store'
 import { fmtTime } from '../lib/format'
 
@@ -98,6 +99,8 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
           </button>
         </span>
       </header>
+
+      {openAlbum && <ContentIdBar album={openAlbum} />}
 
       <div className="px-3 pb-2.5">
         <input

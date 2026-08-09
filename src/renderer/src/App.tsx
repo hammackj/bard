@@ -49,6 +49,7 @@ function App(): React.JSX.Element {
       window.bard.onQueueChanged(useStore.getState().setQueue),
       window.bard.onScanProgress(useStore.getState().setScanProgress),
       window.bard.onStatsChanged(useStore.getState().setStats),
+      window.bard.onAlbumFlagsChanged(useStore.getState().setAlbumFlags),
       window.bard.onTransport((action) => {
         if (action === 'toggle') void toggleRef.current()
         else if (action === 'restart') seekRef.current(0)
@@ -63,6 +64,7 @@ function App(): React.JSX.Element {
       useStore.getState().setConfig(cfg)
       setOverlayUrl(await window.bard.getOverlayUrl())
       useStore.getState().setStats(await window.bard.getStats())
+      useStore.getState().setAlbumFlags(await window.bard.getAlbumFlags())
 
       // Re-apply the saved output device. An interface unplugged between runs
       // would otherwise leave playback pointed at a device that no longer

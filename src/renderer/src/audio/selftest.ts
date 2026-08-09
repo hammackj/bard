@@ -118,6 +118,23 @@ export async function maybeRunSelfTest(): Promise<void> {
       `(repeats=${seen.size < 12 ? 'YES' : 'none'})`
   )
 
+  // Content ID exclusion: a claimed album must leave the queue and stay out of
+  // future picks, not merely get a badge.
+  const victim = useStore.getState().tracks[0]?.album
+  if (victim) {
+    await window.bard.setAlbumFlag(victim, 'claimed', 'selftest')
+    await window.bard.clearQueue()
+    await window.bard.skip()
+    await wait(1200)
+    const q = useStore.getState().queue
+    const leaked = q.filter((i) => i.track.album === victim).length
+    const playingClaimed = engine.getCurrentTrack()?.album === victim
+    console.log(
+      `[selftest] claimed "${victim}": queued from it=${leaked} playing from it=${playingClaimed}`
+    )
+    useStore.getState().setAlbumFlags(await window.bard.setAlbumFlag(victim, 'untested'))
+  }
+
   engine.pause()
   await window.bard.clearQueue()
   useStore.getState().setConfig(

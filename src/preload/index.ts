@@ -50,13 +50,17 @@ const api: BardApi = {
   openExternal: (url) => ipcRenderer.invoke(INVOKE.openExternal, url),
   getStats: () => ipcRenderer.invoke(INVOKE.getStats),
   clearStats: () => ipcRenderer.invoke(INVOKE.clearStats),
+  getAlbumFlags: () => ipcRenderer.invoke(INVOKE.getAlbumFlags),
+  setAlbumFlag: (album, status, note) =>
+    ipcRenderer.invoke(INVOKE.setAlbumFlag, album, status, note),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),
   onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb),
   onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb),
   onTransport: (cb) => subscribe(EVENT.transport, cb),
-  onStatsChanged: (cb) => subscribe(EVENT.statsChanged, cb)
+  onStatsChanged: (cb) => subscribe(EVENT.statsChanged, cb),
+  onAlbumFlagsChanged: (cb) => subscribe(EVENT.albumFlagsChanged, cb)
 }
 
 if (process.contextIsolated) {
