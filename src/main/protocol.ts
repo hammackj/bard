@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { extname } from 'node:path'
 import { Readable } from 'node:stream'
+import { fromUrlPath } from '../shared/url'
 export { isInside, makeIsAllowed } from '../shared/paths'
 
 /**
@@ -99,7 +100,7 @@ export function handleScheme(isAllowed: (path: string) => boolean): void {
   protocol.handle('bard', async (req) => {
     let filePath: string
     try {
-      filePath = decodeURIComponent(new URL(req.url).pathname)
+      filePath = fromUrlPath(new URL(req.url).pathname)
     } catch {
       return new Response('Bad Request', { status: 400 })
     }

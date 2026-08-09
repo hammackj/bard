@@ -1,5 +1,6 @@
 import type { NormalizeMode, Track } from '@shared/types'
 import { gainMultiplier } from '@shared/gain'
+import { trackUrl } from '@shared/url'
 
 /**
  * The one and only audio graph.
@@ -102,16 +103,9 @@ export function getCurrentTrack(): Track | null {
 
 /**
  * file:// is unreachable from the renderer, so local audio is fetched over the
- * bard:// scheme registered in main.
- *
- * Each segment is encoded individually rather than running encodeURI over the
- * whole path: encodeURI leaves '#' and '?' intact, and a track called
- * "What's Next? .flac" would have its path truncated at the query separator.
+ * bard:// scheme registered in main. See shared/url.ts for the encoding.
  */
-export function trackUrl(path: string): string {
-  const encoded = path.split('/').map(encodeURIComponent).join('/')
-  return `bard://local${encoded.startsWith('/') ? '' : '/'}${encoded}`
-}
+export { trackUrl }
 
 export async function play(track: Track, crossfadeSec = 0): Promise<void> {
   const a = element()
