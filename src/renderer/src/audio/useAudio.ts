@@ -78,6 +78,27 @@ export function useAudio(initialVolume = 0.8): {
     })
   }, [])
 
+  /**
+   * Main clears nowPlaying when the queue runs dry with auto-fill off.
+   *
+   * Nothing in the renderer listened for it, so the event reached the overlay
+   * and nowplaying.json -- which correctly went blank -- but not the app. The
+   * window went on showing the finished track's title and cover, header
+   * reading "Paused", progress stuck at 100%, and the player and the on-stream
+   * overlay disagreed about what was playing with no way to clear it short of
+   * starting something else.
+   *
+   * Only the null case is handled here: a non-null nowPlaying is always
+   * followed by playTrack, which is what actually loads the audio.
+   */
+  useEffect(() => {
+    return window.bard.onNowPlaying((item) => {
+      if (item) return
+      engine.pause()
+      setState((s) => ({ ...s, track: null, position: 0, duration: 0, playing: false }))
+    })
+  }, [])
+
   const play = useCallback(async (t: Track) => {
     setState((s) => ({ ...s, track: t, error: null }))
     try {
