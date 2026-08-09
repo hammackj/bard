@@ -9,7 +9,7 @@ import { getLibraryPaths, configPath, getConfig } from './config'
 import { registerScheme, handleScheme, makeIsAllowed } from './protocol'
 import { registerIpcHandlers } from './ipc-handlers'
 import { startOverlay, stopOverlay, getOverlayUrl } from './overlay'
-import { nowPlayingPath, onNowPlayingChange } from './nowplaying'
+import { nowPlayingPath, onNowPlayingChange, writeStoppedNowPlaying } from './nowplaying'
 import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
@@ -213,6 +213,9 @@ if (!app.requestSingleInstanceLock()) {
     void flushStats()
     void flushAlbumFlags()
     void flushLoved()
+    // Synchronous, unlike the flushes above: this one has to land before the
+    // process goes, or the overlay keeps showing a track that stopped with us.
+    writeStoppedNowPlaying()
     quitting = true
     releaseGlobalShortcuts()
     destroyTray()

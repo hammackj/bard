@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { writeFile, rename } from 'node:fs/promises'
+import { writeFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NowPlaying, PlaybackProgress, QueueItem } from '../shared/types'
 import { getConfig } from './config'
@@ -82,6 +83,36 @@ export function setNowPlaying(item: QueueItem | null): void {
   if (!item) progress = { position: 0, duration: 0, playing: false, trackId: null }
   emit()
   void writeFileIfInteresting(true)
+}
+
+/**
+ * Writes the stopped state, synchronously, on the way out.
+ *
+ * Nothing reset this file on quit, so it kept whatever was last written --
+ * after a normal exit it sat at `"isPlaying": true` with the last track's
+ * title indefinitely. Anything reading it, an OBS text or browser source or
+ * another tool, went on showing a now-playing card for a track that stopped
+ * when the app did, with no running process left to correct it.
+ *
+ * Synchronous on purpose. The normal path is serialised behind a promise chain
+ * and before-quit does not await it, so an async write here loses the race with
+ * process exit -- which is precisely the case that has to work. Same temp-file
+ * and rename as the async path, so a reader never catches it half-written.
+ */
+export function writeStoppedNowPlaying(): void {
+  if (!getConfig().overlay.writeNowPlayingJson) return
+  current = null
+  progress = { position: 0, duration: 0, playing: false, trackId: null }
+  queueLength = 0
+
+  const target = nowPlayingPath()
+  const tmp = `${target}.tmp`
+  try {
+    writeFileSync(tmp, JSON.stringify(snapshot(), null, 2), 'utf8')
+    renameSync(tmp, target)
+  } catch {
+    /* a failed overlay write must never hold up quitting */
+  }
 }
 
 export function setQueueLength(n: number): void {
