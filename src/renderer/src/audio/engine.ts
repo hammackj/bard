@@ -115,7 +115,14 @@ export async function play(track: Track, crossfadeSec = 0): Promise<void> {
   currentTrack = track
   // Set the level before the audio starts, or the first moments of a loud
   // track play at the previous track's gain.
-  if (crossfadeSec > 0) fadeIn(0)
+  //
+  // When crossfading, that level is silence. This used to call fadeIn(0),
+  // which routes to applyGain and snaps the gain straight to full -- undoing
+  // the fade-out that had just finished. The ramp is only scheduled after the
+  // awaits on resume() and play() below, so the incoming track could begin at
+  // full volume in the gap, which is the hard edge the crossfade exists to
+  // remove.
+  if (crossfadeSec > 0) silenceNow()
   else applyGain(true)
   a.src = trackUrl(track.path)
   await resume()
@@ -154,6 +161,18 @@ export async function fadeOut(seconds: number): Promise<void> {
   gain.gain.setValueAtTime(gain.gain.value, now)
   gain.gain.linearRampToValueAtTime(0.0001, now + seconds)
   await new Promise((r) => setTimeout(r, seconds * 1000))
+}
+
+/**
+ * Drops the gain to silence at once, cancelling any ramp still in flight.
+ *
+ * 0.0001 rather than 0 throughout: linearRampToValueAtTime toward an exact
+ * zero is a degenerate ramp, and the value is already inaudible.
+ */
+function silenceNow(): void {
+  const { ctx, gain } = graph()
+  gain.gain.cancelScheduledValues(ctx.currentTime)
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime)
 }
 
 export function fadeIn(seconds: number): void {
