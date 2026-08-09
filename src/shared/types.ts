@@ -18,6 +18,12 @@ export type Track = {
   hasArtwork: boolean
   /** Lowercased "title artist album" -- what Fuse indexes. */
   searchText: string
+  /** ReplayGain, in dB, when the file carries the tags. */
+  trackGainDb?: number
+  albumGainDb?: number
+  /** Linear sample peak, used to hold back gain that would clip. */
+  trackPeak?: number
+  albumPeak?: number
 }
 
 /**
@@ -74,9 +80,20 @@ export type ScanProgress = {
   currentPath: string
 }
 
+/** Which ReplayGain value to apply, if any. */
+export type NormalizeMode = 'off' | 'track' | 'album'
+
 export type AudioConfig = {
   volume: number
   outputDeviceId: string
+  /**
+   * Loudness normalisation. 'album' preserves the intended dynamics between
+   * tracks on a record; 'track' evens everything out, which is what shuffle
+   * wants.
+   */
+  normalize: NormalizeMode
+  /** Crossfade between tracks, in seconds. 0 is a hard cut. */
+  crossfadeSec: number
 }
 
 export type OverlayConfig = {
@@ -161,7 +178,7 @@ export type Config = {
 
 export const DEFAULT_CONFIG: Config = {
   libraryPaths: [],
-  audio: { volume: 0.8, outputDeviceId: 'default' },
+  audio: { volume: 0.8, outputDeviceId: 'default', normalize: 'track', crossfadeSec: 0 },
   overlay: { port: 4747, writeNowPlayingJson: true },
   shortcuts: { globalMediaKeys: false },
   window: { closeToTray: true, trayPopupCorner: 'bottom-right', trayPopupSeconds: 8 },

@@ -118,6 +118,27 @@ export async function maybeRunSelfTest(): Promise<void> {
       `(repeats=${seen.size < 12 ? 'YES' : 'none'})`
   )
 
+  // ReplayGain: two tracks with different tagged loudness must end up with
+  // different applied gain, and an untagged one with none.
+  const tagged = useStore.getState().tracks.filter((t) => t.trackGainDb !== undefined)
+  if (tagged.length > 1) {
+    const loud = tagged.reduce((a, b) => ((a.trackGainDb ?? 0) < (b.trackGainDb ?? 0) ? a : b))
+    const quiet = tagged.reduce((a, b) => ((a.trackGainDb ?? 0) > (b.trackGainDb ?? 0) ? a : b))
+    engine.setNormalize('track')
+    await engine.play(loud)
+    await wait(400)
+    const gLoud = engine.currentGainDb()
+    await engine.play(quiet)
+    await wait(400)
+    const gQuiet = engine.currentGainDb()
+    engine.pause()
+    console.log(
+      `[selftest] replaygain tagged=${tagged.length}/${useStore.getState().tracks.length} ` +
+        `loudest "${loud.title}" ${gLoud.toFixed(1)}dB vs quietest "${quiet.title}" ` +
+        `${gQuiet.toFixed(1)}dB (delta ${(gQuiet - gLoud).toFixed(1)}dB)`
+    )
+  }
+
   // Loved: check the flag round-trips through main and back into the store.
   //
   // Deliberately NOT a statistical check: 40 draws from a 585-track deck would

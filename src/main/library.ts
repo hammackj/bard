@@ -109,7 +109,11 @@ async function readTrack(path: string): Promise<Track | null> {
       album,
       durationSec: meta.format.duration ?? 0,
       hasArtwork: artwork,
-      searchText: searchTextFor(title, artist, album)
+      searchText: searchTextFor(title, artist, album),
+      trackGainDb: common.replaygain_track_gain?.dB,
+      albumGainDb: common.replaygain_album_gain?.dB,
+      trackPeak: common.replaygain_track_peak?.ratio,
+      albumPeak: common.replaygain_album_peak?.ratio
     }
   } catch {
     // An unreadable or malformed file should not abort the whole scan; fall

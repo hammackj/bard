@@ -1,4 +1,5 @@
-import type { Track } from '@shared/types'
+import type { NormalizeMode, Track } from '@shared/types'
+import { gainMultiplier } from '@shared/gain'
 
 /**
  * The one and only audio graph.
@@ -24,6 +25,9 @@ let gain: GainNode | null = null
 let analyser: AnalyserNode | null = null
 let events: EngineEvents = {}
 let currentTrack: Track | null = null
+/** User volume, 0..1, kept separate from the per-track normalisation gain. */
+let userVolume = 1
+let normalize: NormalizeMode = 'off'
 
 /** Chromium exposes setSinkId on AudioContext; TS lib does not declare it yet. */
 type SinkCapableContext = AudioContext & { setSinkId?: (id: string) => Promise<void> }
@@ -105,6 +109,9 @@ export async function play(track: Track): Promise<void> {
   const a = element()
   graph()
   currentTrack = track
+  // Set the level before the audio starts, or the first moments of a loud
+  // track play at the previous track's gain.
+  applyGain(true)
   a.src = trackUrl(track.path)
   await resume()
   await a.play()
@@ -132,11 +139,37 @@ export function seek(seconds: number): void {
   }
 }
 
+/**
+ * Applies volume and normalisation together.
+ *
+ * They are multiplied into one gain rather than chained through two nodes: the
+ * user's volume is a preference, the ReplayGain figure is a property of the
+ * file, and keeping them separate in code but combined in the graph means
+ * changing one never disturbs the other.
+ */
+function applyGain(immediate = false): void {
+  const { ctx, gain } = graph()
+  const target = userVolume * gainMultiplier(currentTrack, normalize)
+  const safe = Math.min(Math.max(0, target), 4)
+  if (immediate) gain.gain.setValueAtTime(safe, ctx.currentTime)
+  else gain.gain.setTargetAtTime(safe, ctx.currentTime, 0.015)
+}
+
 /** 0..1. Ramped rather than set, so volume changes don't click. */
 export function setVolume(v: number): void {
-  const { ctx, gain } = graph()
-  const clamped = Math.min(Math.max(0, v), 1)
-  gain.gain.setTargetAtTime(clamped, ctx.currentTime, 0.015)
+  userVolume = Math.min(Math.max(0, v), 1)
+  applyGain()
+}
+
+export function setNormalize(mode: NormalizeMode): void {
+  normalize = mode
+  applyGain()
+}
+
+/** The gain currently being applied for the playing track, in dB. */
+export function currentGainDb(): number {
+  const m = gainMultiplier(currentTrack, normalize)
+  return m > 0 ? 20 * Math.log10(m) : 0
 }
 
 export function getPosition(): { position: number; duration: number; playing: boolean } {

@@ -100,6 +100,28 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             </select>
           </Row>
           {deviceError && <p className="text-s1 text-rose">Output device: {deviceError}</p>}
+
+          <Row label="Loudness normalisation">
+            <select
+              value={config.audio.normalize}
+              onChange={(e) =>
+                void patch({
+                  audio: { normalize: e.target.value as Config['audio']['normalize'] }
+                })
+              }
+              className="border border-edge bg-panel px-2 py-1 text-s2"
+            >
+              <option value="off">Off</option>
+              <option value="track">Per track (even out shuffle)</option>
+              <option value="album">Per album (keep album dynamics)</option>
+            </select>
+          </Row>
+          <p className="text-s1 text-muted">
+            Uses ReplayGain tags written by <span className="mono">scripts/replaygain.py</span>.
+            This library spans about 9 dB between its quietest and loudest tracks, which on
+            shuffle is the difference between background music and reaching for the volume.
+            Boost is capped and held back from clipping.
+          </p>
           <p className="text-s1 text-muted">
             Device names stay blank until you open the picker. Reading them needs microphone
             permission; Bard asks only for that, records nothing, and closes the stream

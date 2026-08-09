@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Track } from '@shared/types'
 import * as engine from './engine'
+import { useStore } from '../state/store'
 
 export type AudioState = {
   track: Track | null
@@ -51,6 +52,13 @@ export function useAudio(initialVolume = 0.8): {
     engine.setVolume(initialVolume)
     return () => engine.setEvents({})
   }, [initialVolume])
+
+  // Normalisation is a property of playback, not of a track, so it follows the
+  // setting rather than being applied at play time.
+  const normalize = useStore((s) => s.config?.audio.normalize ?? 'off')
+  useEffect(() => {
+    engine.setNormalize(normalize)
+  }, [normalize])
 
   // Main drives what plays: it owns the queue and pushes the next track.
   useEffect(() => {
