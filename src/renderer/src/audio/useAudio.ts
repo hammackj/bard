@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import * as engine from './engine'
 import { useStore } from '../state/store'
@@ -60,11 +60,17 @@ export function useAudio(initialVolume = 0.8): {
     engine.setNormalize(normalize)
   }, [normalize])
 
+  const crossfade = useStore((s) => s.config?.audio.crossfadeSec ?? 0)
+  const crossfadeRef = useRef(crossfade)
+  crossfadeRef.current = crossfade
+
   // Main drives what plays: it owns the queue and pushes the next track.
   useEffect(() => {
     return window.bard.onPlayTrack((t) => {
       setState((s) => ({ ...s, track: t, error: null }))
-      void engine.play(t).catch((e: Error) => setState((s) => ({ ...s, error: e.message })))
+      void engine
+        .play(t, crossfadeRef.current)
+        .catch((e: Error) => setState((s) => ({ ...s, error: e.message })))
     })
   }, [])
 

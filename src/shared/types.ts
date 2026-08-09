@@ -112,11 +112,18 @@ export type ShortcutConfig = {
 
 /**
  * What happens when the queue runs dry.
- *  off     -- silence; the streamer or chat must queue something
+ *  off     -- silence; nothing plays until something is queued
  *  shuffle -- a random track, avoiding the recent window
  *  album   -- carry on through the current album, then roll to another
  */
 export type AutoFillMode = 'off' | 'shuffle' | 'album'
+
+/**
+ * off  -- advance normally
+ * one  -- replay the current track until changed
+ * all  -- when the queue empties, replay what was just played
+ */
+export type RepeatMode = 'off' | 'one' | 'all'
 
 export type PlaybackConfig = {
   autoFill: AutoFillMode
@@ -124,6 +131,7 @@ export type PlaybackConfig = {
   avoidRepeat: number
   /** How many tracks the "fill queue" action adds. */
   fillCount: number
+  repeat: RepeatMode
   /** Upper bound on the queue, so Fill cannot run away with the library. */
   maxQueueLength: number
   /**
@@ -184,6 +192,7 @@ export const DEFAULT_CONFIG: Config = {
   window: { closeToTray: true, trayPopupCorner: 'bottom-right', trayPopupSeconds: 8 },
   playback: {
     autoFill: 'shuffle',
+    repeat: 'off',
     avoidRepeat: 50,
     fillCount: 10,
     maxQueueLength: 200,

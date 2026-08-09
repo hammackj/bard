@@ -10,6 +10,7 @@ import {
   removeFromQueue,
   reorderQueue,
   skip,
+  previous,
   shuffleQueue,
   fillQueue,
   reportPosition,
@@ -92,6 +93,7 @@ export function registerIpcHandlers(): void {
     reorderQueue(from, to)
   })
   ipcMain.handle(INVOKE.skip, (): void => skip())
+  ipcMain.handle(INVOKE.previous, (): void => previous())
   ipcMain.handle(INVOKE.clearQueue, (): void => clearQueue())
   ipcMain.handle(INVOKE.shuffleQueue, (): void => shuffleQueue())
   ipcMain.handle(INVOKE.fillQueue, (_e, count?: number): void => {

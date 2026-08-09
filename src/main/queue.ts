@@ -8,14 +8,9 @@ import { claimedAlbums } from './albums'
 import { isLoved } from './loved'
 import { nextInAlbumRolling, shuffled } from '../shared/playlist'
 import { draw, type Deck } from '../shared/deck'
+import { pushPlayed, stepBack, wrapForRepeatAll } from '../shared/history'
 import { setNowPlaying, setQueueLength } from './nowplaying'
-import {
-  PLAY_THRESHOLD_RATIO,
-  PLAY_THRESHOLD_SEC,
-  getStats,
-  recordPlay,
-  recordSkip
-} from './stats'
+import { PLAY_THRESHOLD_RATIO, PLAY_THRESHOLD_SEC, getStats, recordPlay, recordSkip } from './stats'
 
 /**
  * The queue lives here and nowhere else.
@@ -31,6 +26,16 @@ let counted = false
 let position = 0
 /** Recently played ids, newest last. Keeps shuffle from repeating itself. */
 let history: string[] = []
+/**
+ * Tracks actually played, newest last, for stepping backwards.
+ *
+ * Separate from `history`, which exists to stop shuffle repeating itself and
+ * is capped by a different setting. Conflating them would make the back button
+ * depend on a shuffle preference.
+ */
+let played: QueueItem[] = []
+/** Set while stepping back, so the item is not re-pushed onto the stack. */
+
 /** Shuffle deck: dealt through completely before any track repeats. */
 let deck: Deck | null = null
 
@@ -126,8 +131,7 @@ export function reportPosition(seconds: number, duration: number): void {
   position = seconds
   if (counted || !nowPlaying) return
   const enough =
-    seconds >= PLAY_THRESHOLD_SEC ||
-    (duration > 0 && seconds >= duration * PLAY_THRESHOLD_RATIO)
+    seconds >= PLAY_THRESHOLD_SEC || (duration > 0 && seconds >= duration * PLAY_THRESHOLD_RATIO)
   if (!enough) return
   counted = true
   recordPlay(nowPlaying.track.id)
@@ -291,6 +295,7 @@ export function playNext(): QueueItem | null {
       const item: QueueItem = { id: randomUUID(), track: filled, addedAt: Date.now() }
       nowPlaying = item
       remember(filled)
+      played = pushPlayed(played, item)
       setNowPlaying(item)
       broadcast(EVENT.nowPlaying, item)
       broadcast(EVENT.playTrack, filled)
@@ -304,6 +309,7 @@ export function playNext(): QueueItem | null {
   queue = rest
   nowPlaying = next
   remember(next.track)
+  played = pushPlayed(played, next)
   emitQueue()
   topUpEndless()
   setNowPlaying(next)
@@ -316,8 +322,52 @@ export function skip(): void {
   playNext()
 }
 
+/**
+ * Back one track, or restart the current one.
+ *
+ * Restarting when a few seconds in matches every other player: pressing back
+ * mid-track almost always means "start this again", and only a quick
+ * double-press means "the one before".
+ */
+export function previous(): void {
+  const step = stepBack(played, position)
+  if (step.kind === 'restart') {
+    if (!nowPlaying) return
+    counted = false
+    position = 0
+    broadcast(EVENT.playTrack, nowPlaying.track)
+    return
+  }
+
+  creditSkipIfUnplayed()
+  played = step.played
+  // Put the current track back at the head so forward still works.
+  if (nowPlaying) queue = [nowPlaying, ...queue]
+  nowPlaying = step.prior
+  counted = false
+  position = 0
+  emitQueue()
+  setNowPlaying(step.prior)
+  broadcast(EVENT.nowPlaying, step.prior)
+  broadcast(EVENT.playTrack, step.prior.track)
+}
+
 /** Called when the renderer reports the current track finished. */
 export function onTrackEnded(): void {
+  const mode = getConfig().playback.repeat
+  if (mode === 'one' && nowPlaying) {
+    counted = false
+    position = 0
+    broadcast(EVENT.playTrack, nowPlaying.track)
+    return
+  }
+  if (mode === 'all' && queue.length === 0 && played.length > 0) {
+    // Re-queue what has been played, in order, and carry on.
+    const wrapped = wrapForRepeatAll(played, nowPlaying)
+    queue = wrapped.queue.map((i) => ({ ...i, id: randomUUID(), addedAt: Date.now() }))
+    played = wrapped.played
+    emitQueue()
+  }
   playNext()
 }
 

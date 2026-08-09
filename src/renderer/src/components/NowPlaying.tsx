@@ -4,7 +4,8 @@ import { StringBar } from './StringBar'
 import { fmtTime } from '../lib/format'
 import { useStore } from '../state/store'
 import { LoveButton } from './LoveButton'
-import type { AutoFillMode } from '@shared/types'
+import { SleepTimer } from './SleepTimer'
+import type { AutoFillMode, RepeatMode } from '@shared/types'
 
 type Props = {
   track: Track | null
@@ -16,6 +17,8 @@ type Props = {
   onSkip: () => void
   onSeek: (s: number) => void
   onVolume: (v: number) => void
+  /** Called by the sleep timer; expected to pause, not to quit. */
+  onSleep: () => void
 }
 
 export function NowPlaying(props: Props): React.JSX.Element {
@@ -80,6 +83,14 @@ export function NowPlaying(props: Props): React.JSX.Element {
       <div className="flex items-center gap-[22px]">
         <div className="flex items-center gap-[18px]">
           <button
+            className="rounded-sm p-1 text-muted hover:text-text"
+            aria-label="Previous"
+            title="Previous track (restarts if a few seconds in)"
+            onClick={() => void window.bard.previous()}
+          >
+            <PrevIcon />
+          </button>
+          <button
             className="rounded-sm p-1 text-muted hover:text-text disabled:opacity-40"
             aria-label="Play/Pause"
             onClick={props.onToggle}
@@ -96,9 +107,14 @@ export function NowPlaying(props: Props): React.JSX.Element {
           </button>
         </div>
 
+        <RepeatButton />
         <PlaybackMode />
 
-        <label className="ml-auto flex items-center gap-[9px] text-muted">
+        <div className="ml-auto">
+          <SleepTimer onSleep={props.onSleep} />
+        </div>
+
+        <label className="flex items-center gap-[9px] text-muted">
           <VolumeIcon />
           <input
             type="range"
@@ -140,18 +156,18 @@ function PlaybackMode(): React.JSX.Element {
     <div className="ml-6 flex items-center gap-3">
       <EndlessToggle />
       <div className="flex items-center gap-1 border border-edge p-0.5" role="group">
-      {options.map(([value, label, title]) => (
-        <button
-          key={value}
-          title={title}
-          onClick={() => void choose(value)}
-          className={`px-2 py-0.5 text-s1 ${
-            mode === value ? 'bg-cyan-deep text-text' : 'text-muted hover:text-text'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
+        {options.map(([value, label, title]) => (
+          <button
+            key={value}
+            title={title}
+            onClick={() => void choose(value)}
+            className={`px-2 py-0.5 text-s1 ${
+              mode === value ? 'bg-cyan-deep text-text' : 'text-muted hover:text-text'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -192,6 +208,44 @@ function EndlessToggle(): React.JSX.Element {
   )
 }
 
+/** Repeat off / one / all, cycled by clicking. */
+function RepeatButton(): React.JSX.Element {
+  const mode = useStore((s) => s.config?.playback.repeat ?? 'off')
+  const setConfig = useStore((s) => s.setConfig)
+  const next: Record<RepeatMode, RepeatMode> = { off: 'all', all: 'one', one: 'off' }
+  const label: Record<RepeatMode, string> = {
+    off: 'Repeat off',
+    all: 'Repeat all — replay what has played once the queue empties',
+    one: 'Repeat one — keep replaying this track'
+  }
+  return (
+    <button
+      title={label[mode]}
+      onClick={async () =>
+        setConfig(await window.bard.setConfig({ playback: { repeat: next[mode] } }))
+      }
+      className={`relative ml-4 rounded-sm p-1 ${mode === 'off' ? 'text-muted hover:text-text' : 'text-cyan'}`}
+    >
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+      >
+        <path d="M17 2l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+        <path d="M7 22l-4-4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+      </svg>
+      {mode === 'one' && (
+        <span className="mono absolute -right-0.5 -bottom-0.5 text-[9px] leading-none">1</span>
+      )}
+    </button>
+  )
+}
+
 function PlaceholderArt(): React.JSX.Element {
   return (
     <svg viewBox="0 0 168 168" className="block size-[168px] flex-none border border-edge">
@@ -210,6 +264,11 @@ function PlaceholderArt(): React.JSX.Element {
   )
 }
 
+const PrevIcon = (): React.JSX.Element => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M7 6h2v12H7zm11 0l-8 6 8 6z" />
+  </svg>
+)
 const PlayIcon = (): React.JSX.Element => (
   <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
     <path d="M8 5l11 7-11 7z" />

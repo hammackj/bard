@@ -209,6 +209,9 @@ function App(): React.JSX.Element {
                 else void toggle()
               }}
               onSkip={() => void window.bard.skip()}
+              onSleep={() => {
+                if (state.playing) void toggle()
+              }}
               onSeek={seek}
               onVolume={(v) => {
                 setVolume(v)

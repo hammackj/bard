@@ -1,6 +1,6 @@
 import { globalShortcut } from 'electron'
 import { EVENT } from '../shared/ipc'
-import { skip } from './queue'
+import { skip, previous } from './queue'
 import { sendToMain } from './windows'
 
 /**
@@ -13,9 +13,7 @@ import { sendToMain } from './windows'
 const BINDINGS: Array<[string, () => void]> = [
   ['MediaPlayPause', () => broadcast('toggle')],
   ['MediaNextTrack', () => skip()],
-  // No play history yet, so "previous" restarts the current track rather than
-  // doing nothing.
-  ['MediaPreviousTrack', () => broadcast('restart')]
+  ['MediaPreviousTrack', () => previous()]
 ]
 
 function broadcast(action: 'toggle' | 'restart'): void {

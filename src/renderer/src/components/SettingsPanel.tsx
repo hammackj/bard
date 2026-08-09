@@ -118,14 +118,36 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
           </Row>
           <p className="text-s1 text-muted">
             Uses ReplayGain tags written by <span className="mono">scripts/replaygain.py</span>.
-            This library spans about 9 dB between its quietest and loudest tracks, which on
-            shuffle is the difference between background music and reaching for the volume.
-            Boost is capped and held back from clipping.
+            This library spans about 9 dB between its quietest and loudest tracks, which on shuffle
+            is the difference between background music and reaching for the volume. Boost is capped
+            and held back from clipping.
           </p>
+          <Row label="Crossfade">
+            <span className="flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={12}
+                step={1}
+                value={config.audio.crossfadeSec}
+                aria-label="Crossfade seconds"
+                onChange={(e) => void patch({ audio: { crossfadeSec: Number(e.target.value) } })}
+                className="h-px w-32 appearance-none bg-edge accent-cyan"
+              />
+              <span className="mono w-10 text-s1 text-muted">
+                {config.audio.crossfadeSec === 0 ? 'off' : `${config.audio.crossfadeSec}s`}
+              </span>
+            </span>
+          </Row>
+          <p className="text-s1 text-muted">
+            Fades out, swaps, and fades back in rather than overlapping two decoders. On ambient
+            music that is what the seam actually sounds like, and it keeps one audio path instead of
+            two to keep in sync. Note the fade eats into the start of the next track.
+          </p>
+
           <p className="text-s1 text-muted">
             Device names stay blank until you open the picker. Reading them needs microphone
-            permission; Bard asks only for that, records nothing, and closes the stream
-            immediately.
+            permission; Bard asks only for that, records nothing, and closes the stream immediately.
           </p>
         </Group>
 
@@ -180,8 +202,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               onChange={(e) =>
                 void patch({
                   window: {
-                    trayPopupCorner: e.target
-                      .value as Config['window']['trayPopupCorner']
+                    trayPopupCorner: e.target.value as Config['window']['trayPopupCorner']
                   }
                 })
               }
@@ -200,9 +221,9 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             onChange={(v) => void patch({ window: { trayPopupSeconds: v } })}
           />
           <p className="text-s1 text-muted">
-            Left-click the tray icon to restore the window; middle-click, or use the tray menu,
-            for the preview. On Wayland the compositor places windows itself and ignores the
-            corner setting.
+            Left-click the tray icon to restore the window; middle-click, or use the tray menu, for
+            the preview. On Wayland the compositor places windows itself and ignores the corner
+            setting.
           </p>
           <Row label="Close hides to tray">
             <input
@@ -279,13 +300,7 @@ function Group({
   )
 }
 
-function Row({
-  label,
-  children
-}: {
-  label: string
-  children: React.ReactNode
-}): React.JSX.Element {
+function Row({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div className="flex items-center justify-between gap-4 py-1">
       <span className="text-s2 text-muted">{label}</span>
@@ -298,11 +313,7 @@ function PathRow({ label, value }: { label: string; value: string }): React.JSX.
   return (
     <div className="flex items-baseline justify-between gap-4 py-1">
       <span className="flex-none text-s2 text-muted">{label}</span>
-      <span
-        className="mono min-w-0 truncate text-right text-s1 text-text"
-        title={value}
-        dir="rtl"
-      >
+      <span className="mono min-w-0 truncate text-right text-s1 text-text" title={value} dir="rtl">
         {value}
       </span>
     </div>

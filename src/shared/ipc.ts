@@ -36,6 +36,7 @@ export const INVOKE = {
   removeFromQueue: 'queue:remove',
   reorderQueue: 'queue:reorder',
   skip: 'queue:skip',
+  previous: 'queue:previous',
   clearQueue: 'queue:clear',
   shuffleQueue: 'queue:shuffle',
   fillQueue: 'queue:fill',
@@ -88,6 +89,8 @@ export type BardApi = {
   removeFromQueue: (queueItemId: string) => Promise<void>
   reorderQueue: (from: number, to: number) => Promise<void>
   skip: () => Promise<void>
+  /** Steps back through play history; restarts the track if far enough in. */
+  previous: () => Promise<void>
   clearQueue: () => Promise<void>
   /** Reorders the pending queue at random. */
   shuffleQueue: () => Promise<void>
@@ -109,7 +112,6 @@ export type BardApi = {
   getPaths: () => Promise<AppPaths>
   /** Opens a folder in the system file manager. */
   revealPath: (path: string) => Promise<void>
-
 
   /** False when no OS keyring is available to encrypt tokens at rest. */
   secureStorageAvailable: () => Promise<boolean>

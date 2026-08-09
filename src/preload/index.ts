@@ -33,6 +33,7 @@ const api: BardApi = {
   removeFromQueue: (queueItemId) => ipcRenderer.invoke(INVOKE.removeFromQueue, queueItemId),
   reorderQueue: (from, to) => ipcRenderer.invoke(INVOKE.reorderQueue, from, to),
   skip: () => ipcRenderer.invoke(INVOKE.skip),
+  previous: () => ipcRenderer.invoke(INVOKE.previous),
   clearQueue: () => ipcRenderer.invoke(INVOKE.clearQueue),
   shuffleQueue: () => ipcRenderer.invoke(INVOKE.shuffleQueue),
   fillQueue: (count) => ipcRenderer.invoke(INVOKE.fillQueue, count),

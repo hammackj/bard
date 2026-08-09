@@ -48,9 +48,7 @@ function element(): HTMLAudioElement {
       events.onProgress?.(el!.currentTime, el!.duration || 0, !el!.paused)
     })
     el.addEventListener('ended', () => events.onEnded?.())
-    el.addEventListener('play', () =>
-      events.onProgress?.(el!.currentTime, el!.duration || 0, true)
-    )
+    el.addEventListener('play', () => events.onProgress?.(el!.currentTime, el!.duration || 0, true))
     el.addEventListener('pause', () =>
       events.onProgress?.(el!.currentTime, el!.duration || 0, false)
     )
@@ -105,16 +103,20 @@ export function trackUrl(path: string): string {
   return `bard://local${encoded.startsWith('/') ? '' : '/'}${encoded}`
 }
 
-export async function play(track: Track): Promise<void> {
+export async function play(track: Track, crossfadeSec = 0): Promise<void> {
   const a = element()
   graph()
+  if (crossfadeSec > 0 && !a.paused) await fadeOut(crossfadeSec)
+
   currentTrack = track
   // Set the level before the audio starts, or the first moments of a loud
   // track play at the previous track's gain.
-  applyGain(true)
+  if (crossfadeSec > 0) fadeIn(0)
+  else applyGain(true)
   a.src = trackUrl(track.path)
   await resume()
   await a.play()
+  if (crossfadeSec > 0) fadeIn(crossfadeSec)
 }
 
 export async function togglePlay(): Promise<boolean> {
@@ -130,6 +132,37 @@ export async function togglePlay(): Promise<boolean> {
 
 export function pause(): void {
   element().pause()
+}
+
+/**
+ * Fades the output down and back up around a track change.
+ *
+ * A true crossfade needs two decoders playing at once, which this graph
+ * deliberately does not have -- one element, one source node. This is a fade
+ * out, swap, fade in: it removes the hard edge between tracks, which is what
+ * the seam actually sounds like, without a second audio path to keep in sync.
+ */
+export async function fadeOut(seconds: number): Promise<void> {
+  if (seconds <= 0) return
+  const { ctx, gain } = graph()
+  const now = ctx.currentTime
+  gain.gain.cancelScheduledValues(now)
+  gain.gain.setValueAtTime(gain.gain.value, now)
+  gain.gain.linearRampToValueAtTime(0.0001, now + seconds)
+  await new Promise((r) => setTimeout(r, seconds * 1000))
+}
+
+export function fadeIn(seconds: number): void {
+  if (seconds <= 0) {
+    applyGain(true)
+    return
+  }
+  const { ctx, gain } = graph()
+  const now = ctx.currentTime
+  const target = userVolume * gainMultiplier(currentTrack, normalize)
+  gain.gain.cancelScheduledValues(now)
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.linearRampToValueAtTime(Math.max(0.0001, target), now + seconds)
 }
 
 export function seek(seconds: number): void {
@@ -164,6 +197,17 @@ export function setVolume(v: number): void {
 export function setNormalize(mode: NormalizeMode): void {
   normalize = mode
   applyGain()
+}
+
+/**
+ * The gain node's live value.
+ *
+ * Distinct from currentGainDb, which reports what the level *should* be from
+ * volume and ReplayGain. This reads the node itself, so it also sees fades in
+ * progress -- the only way to tell a crossfade actually happened.
+ */
+export function currentGain(): number {
+  return graph().gain.gain.value
 }
 
 /** The gain currently being applied for the playing track, in dB. */

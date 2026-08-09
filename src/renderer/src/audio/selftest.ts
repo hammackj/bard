@@ -38,6 +38,9 @@ export async function maybeRunSelfTest(): Promise<void> {
   // The deterministic checks below assume nothing is topping the queue up
   // behind them, so endless is disabled for the duration and restored after.
   const endlessWas = useStore.getState().config?.playback.endless ?? false
+  const autoFillWas = useStore.getState().config?.playback.autoFill ?? 'shuffle'
+  const crossfadeWas = useStore.getState().config?.audio.crossfadeSec ?? 0
+  const repeatWas = useStore.getState().config?.playback.repeat ?? 'off'
   await window.bard.setConfig({ playback: { endless: false } })
 
   const [a, b] = tracks
@@ -139,6 +142,116 @@ export async function maybeRunSelfTest(): Promise<void> {
     )
   }
 
+  // Previous: back one track, and restart when already a few seconds in.
+  //
+  // Driven through main rather than the engine, because the whole point of the
+  // feature is the history main keeps -- the engine has no idea what came
+  // before.
+  // Auto-fill is off here so a skip past the end of the queue cannot slip an
+  // unrelated track in and make the history ambiguous.
+  await window.bard.setConfig({ playback: { endless: false, autoFill: 'off' } })
+  await window.bard.clearQueue()
+  const [p1, p2, p3] = tracks
+  for (const t of [p1, p2, p3]) await window.bard.enqueue(t.id)
+  for (let i = 0; i < 3; i++) {
+    await window.bard.skip()
+    await wait(600)
+  }
+  const atThird = engine.getCurrentTrack()?.title
+  await window.bard.previous()
+  await wait(700)
+  const backOne = engine.getCurrentTrack()?.title
+  await window.bard.previous()
+  await wait(700)
+  const backTwo = engine.getCurrentTrack()?.title
+  console.log(
+    `[selftest] previous: at "${atThird}" -> "${backOne}" -> "${backTwo}" ` +
+      `(expected "${p3.title}" -> "${p2.title}" -> "${p1.title}") ` +
+      (atThird === p3.title && backOne === p2.title && backTwo === p1.title ? 'OK' : 'WRONG')
+  )
+
+  // Past the restart threshold, previous should replay rather than step back.
+  //
+  // Seeking through the engine alone is not enough: main decides this from the
+  // position the renderer reports, so the test has to let a report land first.
+  // Seek until it sticks: right after a track change the element can still be
+  // loading, and a seek issued before metadata arrives is silently dropped.
+  let seeked = 0
+  for (let i = 0; i < 20 && seeked < 15; i++) {
+    engine.seek(20)
+    await wait(150)
+    seeked = engine.getPosition().position
+  }
+  // ...then let a progress report carry that position to main, which is what
+  // actually decides between restarting and stepping back.
+  await wait(1200)
+  const beforeRestart = engine.getCurrentTrack()?.title
+  await window.bard.previous()
+  await wait(900)
+  const afterRestart = engine.getCurrentTrack()?.title
+  const restartedPos = engine.getPosition().position
+  console.log(
+    `[selftest] previous ${seeked.toFixed(0)}s in: "${beforeRestart}" -> "${afterRestart}" at ` +
+      `${restartedPos.toFixed(1)}s ` +
+      (afterRestart === beforeRestart && restartedPos < 5 ? 'OK (restarted)' : 'WRONG')
+  )
+  engine.pause()
+  // Restore auto-fill before the later checks, which assume a skip on an empty
+  // queue still produces a track.
+  await window.bard.setConfig({ playback: { autoFill: autoFillWas } })
+
+  // Repeat one: the same track must come back after it ends.
+  await window.bard.setConfig({ playback: { repeat: 'one' } })
+  await window.bard.clearQueue()
+  await window.bard.enqueue(p1.id)
+  await window.bard.enqueue(p2.id)
+  await window.bard.skip()
+  await wait(600)
+  const beforeEnd = engine.getCurrentTrack()?.title
+  await window.bard.reportEnded()
+  await wait(800)
+  console.log(
+    `[selftest] repeat=one: "${beforeEnd}" -> "${engine.getCurrentTrack()?.title}" ` +
+      (engine.getCurrentTrack()?.title === beforeEnd ? 'OK' : 'WRONG')
+  )
+
+  // Repeat all: an emptied queue refills from history, without replaying the
+  // track that just finished across the seam.
+  await window.bard.setConfig({ playback: { repeat: 'all' } })
+  await window.bard.clearQueue()
+  for (const t of [p1, p2, p3]) await window.bard.enqueue(t.id)
+  for (let i = 0; i < 3; i++) {
+    await window.bard.skip()
+    await wait(400)
+  }
+  const lastOfLap = engine.getCurrentTrack()?.title
+  await window.bard.reportEnded()
+  await wait(900)
+  const firstOfNextLap = engine.getCurrentTrack()?.title
+  console.log(
+    `[selftest] repeat=all: lap ended on "${lastOfLap}" -> next lap starts "${firstOfNextLap}" ` +
+      (firstOfNextLap && firstOfNextLap !== lastOfLap ? 'OK (no seam repeat)' : 'WRONG')
+  )
+  engine.pause()
+
+  // Crossfade: the gain must actually come down before the swap, not jump.
+  await window.bard.setConfig({ audio: { crossfadeSec: 2 } })
+  await engine.play(p1)
+  await wait(500)
+  const gBefore = engine.currentGain()
+  const swap = engine.play(p2, 2)
+  await wait(900)
+  const mid = engine.currentGain()
+  await swap
+  await wait(2200)
+  const settled = engine.currentGain()
+  console.log(
+    `[selftest] crossfade 2s: gain ${gBefore.toFixed(3)} -> ${mid.toFixed(3)} (mid-fade) -> ` +
+      `${settled.toFixed(3)} ` +
+      (mid < gBefore * 0.9 && settled > mid ? 'OK (faded down then back)' : 'WRONG')
+  )
+  engine.pause()
+
   // Loved: check the flag round-trips through main and back into the store.
   //
   // Deliberately NOT a statistical check: 40 draws from a 585-track deck would
@@ -174,7 +287,10 @@ export async function maybeRunSelfTest(): Promise<void> {
   engine.pause()
   await window.bard.clearQueue()
   useStore.getState().setConfig(
-    await window.bard.setConfig({ playback: { endless: endlessWas } })
+    await window.bard.setConfig({
+      playback: { endless: endlessWas, autoFill: autoFillWas, repeat: repeatWas },
+      audio: { crossfadeSec: crossfadeWas }
+    })
   )
   if (silent) {
     try {
@@ -184,7 +300,6 @@ export async function maybeRunSelfTest(): Promise<void> {
     }
   }
   engine.setVolume(previousVolume)
-
 }
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
