@@ -74,11 +74,24 @@ function createWindow(): void {
     const delay = Number(process.env.BARD_SHOT_DELAY ?? 6000)
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(() => {
-        mainWindow.webContents
-          .capturePage()
-          .then((img) => writeFile(target, img.toPNG()))
-          .then(() => console.log(`[bard] captured window -> ${target}`))
-          .catch((e) => console.error('[bard] capture failed', e))
+        /**
+         * Raise before capturing.
+         *
+         * capturePage returns the last frame the compositor asked for, and an
+         * occluded window is never asked to repaint -- so a capture of a
+         * buried window silently returns whatever it looked like when it first
+         * appeared, which is a convincing screenshot of the wrong thing.
+         */
+        mainWindow.show()
+        mainWindow.moveTop()
+        mainWindow.focus()
+        setTimeout(() => {
+          mainWindow.webContents
+            .capturePage()
+            .then((img) => writeFile(target, img.toPNG()))
+            .then(() => console.log(`[bard] captured window -> ${target}`))
+            .catch((e) => console.error('[bard] capture failed', e))
+        }, 900)
       }, delay)
     })
   }

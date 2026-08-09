@@ -192,7 +192,7 @@ function App(): React.JSX.Element {
           />
         </aside>
 
-        <section className="grid min-h-0 grid-rows-[1fr]">
+        <section className="@container grid min-h-0 min-w-0 grid-rows-[1fr] overflow-x-hidden overflow-y-auto">
           {noLibrary ? (
             <FirstRun onChoose={chooseFolder} />
           ) : (
@@ -248,7 +248,6 @@ function App(): React.JSX.Element {
   )
 }
 
-
 /** Transient, dismissible strip for things worth saying once. */
 function Notice(): React.JSX.Element | null {
   const notice = useStore((s) => s.notice)
@@ -257,7 +256,10 @@ function Notice(): React.JSX.Element | null {
   return (
     <div className="absolute inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-cyan-deep bg-panel px-4 py-2 text-s2">
       <span className="min-w-0 truncate">{notice}</span>
-      <button className="flex-none text-s1 text-muted hover:text-text" onClick={() => setNotice(null)}>
+      <button
+        className="flex-none text-s1 text-muted hover:text-text"
+        onClick={() => setNotice(null)}
+      >
         Dismiss
       </button>
     </div>

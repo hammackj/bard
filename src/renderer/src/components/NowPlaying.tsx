@@ -40,13 +40,13 @@ export function NowPlaying(props: Props): React.JSX.Element {
   }, [track?.id, track?.hasArtwork])
 
   return (
-    <div className="flex min-h-0 flex-col justify-center gap-[26px] px-10 pt-[34px] pb-[22px]">
-      <div className="flex items-end gap-[26px]">
+    <div className="flex min-h-0 flex-col justify-center gap-[26px] px-5 pt-[34px] pb-[22px] @2xl:px-10">
+      <div className="flex min-w-0 items-end gap-[26px]">
         {art ? (
           <img
             src={art}
             alt=""
-            className="block size-[168px] flex-none border border-edge object-cover"
+            className="block aspect-square w-[min(336px,58%,45vh)] shrink-0 border border-edge object-cover"
           />
         ) : (
           <PlaceholderArt />
@@ -80,7 +80,7 @@ export function NowPlaying(props: Props): React.JSX.Element {
         </div>
       </div>
 
-      <div className="flex items-center gap-[22px]">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-[22px] gap-y-3">
         <div className="flex items-center gap-[18px]">
           <button
             className="rounded-sm p-1 text-muted hover:text-text"
@@ -114,7 +114,7 @@ export function NowPlaying(props: Props): React.JSX.Element {
           <SleepTimer onSleep={props.onSleep} />
         </div>
 
-        <label className="flex items-center gap-[9px] text-muted">
+        <label className="flex min-w-0 items-center gap-[9px] text-muted">
           <VolumeIcon />
           <input
             type="range"
@@ -124,7 +124,7 @@ export function NowPlaying(props: Props): React.JSX.Element {
             value={volume}
             aria-label="Volume"
             onChange={(e) => props.onVolume(Number(e.target.value))}
-            className="h-px w-24 appearance-none bg-edge accent-cyan"
+            className="h-px w-16 appearance-none bg-edge accent-cyan @2xl:w-24"
           />
           <span className="mono text-s1">{Math.round(volume * 100)}</span>
         </label>
@@ -248,7 +248,10 @@ function RepeatButton(): React.JSX.Element {
 
 function PlaceholderArt(): React.JSX.Element {
   return (
-    <svg viewBox="0 0 168 168" className="block size-[168px] flex-none border border-edge">
+    <svg
+      viewBox="0 0 168 168"
+      className="block aspect-square w-[min(336px,58%,45vh)] shrink-0 border border-edge"
+    >
       <rect width="168" height="168" fill="var(--color-panel)" />
       <g fill="none" stroke="var(--color-cyan-deep)" strokeOpacity=".75">
         <circle cx="84" cy="84" r="46" />
