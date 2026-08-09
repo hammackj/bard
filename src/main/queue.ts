@@ -5,6 +5,7 @@ import { getConfig } from './config'
 import { sendToMain } from './windows'
 import { allTracks, getTrackById, randomTrack } from './library'
 import { claimedAlbums } from './albums'
+import { isLoved } from './loved'
 import { nextInAlbumRolling, shuffled } from '../shared/playlist'
 import { draw, type Deck } from '../shared/deck'
 import { setNowPlaying, setQueueLength } from './nowplaying'
@@ -55,7 +56,10 @@ function playableTracks(): Track[] {
 /** Draws the next track from the deck, rebuilding it when exhausted. */
 function drawFromDeck(): Track | null {
   const ids = playableTracks().map((t) => t.id)
-  const out = draw(deck, ids, Math.random, nowPlaying?.track.id)
+  const weight = Math.max(1, Math.floor(getConfig().playback.lovedWeight))
+  const out = draw(deck, ids, Math.random, nowPlaying?.track.id, (id) =>
+    weight > 1 && isLoved(id) ? weight : 1
+  )
   deck = out.deck
   return out.id ? (getTrackById(out.id) ?? null) : null
 }

@@ -19,6 +19,7 @@ import {
 import { setProgress, nowPlayingPath } from './nowplaying'
 import { clearStats, getStats } from './stats'
 import { getAlbumFlags, setAlbumFlag } from './albums'
+import { getLoved, toggleLoved } from './loved'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
 import { sendToMain } from './windows'
@@ -156,6 +157,14 @@ export function registerIpcHandlers(): void {
       return flags
     }
   )
+
+  ipcMain.handle(INVOKE.getLoved, () => getLoved())
+  ipcMain.handle(INVOKE.toggleLoved, (_e, trackId: string) => {
+    toggleLoved(trackId)
+    const ids = getLoved()
+    sendToMain(EVENT.lovedChanged, ids)
+    return ids
+  })
 
   ipcMain.handle(INVOKE.getStats, () => getStats())
   ipcMain.handle(INVOKE.clearStats, (): void => {

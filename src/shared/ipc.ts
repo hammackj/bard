@@ -49,7 +49,9 @@ export const INVOKE = {
   getStats: 'stats:get',
   clearStats: 'stats:clear',
   getAlbumFlags: 'albums:get',
-  setAlbumFlag: 'albums:set'
+  setAlbumFlag: 'albums:set',
+  getLoved: 'loved:get',
+  toggleLoved: 'loved:toggle'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -66,6 +68,7 @@ export const EVENT = {
   nowPlaying: 'player:nowPlaying',
   statsChanged: 'stats:changed',
   albumFlagsChanged: 'albums:changed',
+  lovedChanged: 'loved:changed',
   transport: 'player:transport'
 } as const
 
@@ -125,6 +128,10 @@ export type BardApi = {
     note?: string
   ) => Promise<Record<string, AlbumFlag>>
 
+  /** Track ids the user has loved. */
+  getLoved: () => Promise<string[]>
+  toggleLoved: (trackId: string) => Promise<string[]>
+
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
   onPlayTrack: (cb: (t: Track) => void) => Unsubscribe
@@ -135,4 +142,5 @@ export type BardApi = {
   onTransport: (cb: (a: TransportAction) => void) => Unsubscribe
   onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
   onAlbumFlagsChanged: (cb: (f: Record<string, AlbumFlag>) => void) => Unsubscribe
+  onLovedChanged: (cb: (ids: string[]) => void) => Unsubscribe
 }

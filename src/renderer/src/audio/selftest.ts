@@ -118,6 +118,21 @@ export async function maybeRunSelfTest(): Promise<void> {
       `(repeats=${seen.size < 12 ? 'YES' : 'none'})`
   )
 
+  // Loved: check the flag round-trips through main and back into the store.
+  //
+  // Deliberately NOT a statistical check: 40 draws from a 585-track deck would
+  // expect a weight-3 track about 0.2 times, so any result would be noise. The
+  // weighting itself is proven deterministically in tests/deck.test.ts.
+  const favourite = useStore.getState().tracks[3]
+  if (favourite) {
+    const after = await window.bard.toggleLoved(favourite.id)
+    const on = after.includes(favourite.id)
+    const back = await window.bard.toggleLoved(favourite.id)
+    console.log(
+      `[selftest] loved "${favourite.title}" toggled on=${on} off=${!back.includes(favourite.id)}`
+    )
+  }
+
   // Content ID exclusion: a claimed album must leave the queue and stay out of
   // future picks, not merely get a badge.
   const victim = useStore.getState().tracks[0]?.album

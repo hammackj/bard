@@ -3,6 +3,7 @@ import type { Track } from '@shared/types'
 import { StringBar } from './StringBar'
 import { fmtTime } from '../lib/format'
 import { useStore } from '../state/store'
+import { LoveButton } from './LoveButton'
 import type { AutoFillMode } from '@shared/types'
 
 type Props = {
@@ -52,8 +53,11 @@ export function NowPlaying(props: Props): React.JSX.Element {
           <div className="mb-[9px] text-s1 font-semibold tracking-[.15em] text-cyan uppercase">
             {playing ? 'Now playing' : track ? 'Paused' : 'Nothing playing'}
           </div>
-          <div className="display truncate text-s5 leading-[1.06] font-semibold tracking-[-.015em]">
-            {track?.title ?? '—'}
+          <div className="flex items-center gap-3">
+            <div className="display truncate text-s5 leading-[1.06] font-semibold tracking-[-.015em]">
+              {track?.title ?? '—'}
+            </div>
+            <LoveButton trackId={track?.id ?? null} size={22} />
           </div>
           <div className="mt-[7px] truncate text-s4">{track?.artist ?? ''}</div>
           <div className="mt-1 truncate text-s2 text-muted">{track?.album ?? ''}</div>

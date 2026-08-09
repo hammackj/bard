@@ -16,6 +16,7 @@ import { getNowPlaying } from './queue'
 import { setMainWindow } from './windows'
 import { loadStats, flushStats } from './stats'
 import { loadAlbumFlags, flushAlbumFlags } from './albums'
+import { loadLoved, flushLoved } from './loved'
 import { toggleTrayPopup, warmTrayPopup } from './trayPopup'
 
 // Must run before app.whenReady().
@@ -115,6 +116,7 @@ app.whenReady().then(() => {
   handleScheme(makeIsAllowed(getLibraryPaths))
   void loadStats()
   void loadAlbumFlags()
+  void loadLoved()
   registerIpcHandlers()
 
   app.on('browser-window-created', (_, window) => {
@@ -159,6 +161,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   void flushStats()
   void flushAlbumFlags()
+  void flushLoved()
   quitting = true
   releaseGlobalShortcuts()
   destroyTray()

@@ -53,6 +53,8 @@ const api: BardApi = {
   getAlbumFlags: () => ipcRenderer.invoke(INVOKE.getAlbumFlags),
   setAlbumFlag: (album, status, note) =>
     ipcRenderer.invoke(INVOKE.setAlbumFlag, album, status, note),
+  getLoved: () => ipcRenderer.invoke(INVOKE.getLoved),
+  toggleLoved: (trackId) => ipcRenderer.invoke(INVOKE.toggleLoved, trackId),
 
   onQueueChanged: (cb) => subscribe(EVENT.queueChanged, cb),
   onPlayTrack: (cb) => subscribe(EVENT.playTrack, cb),
@@ -60,7 +62,8 @@ const api: BardApi = {
   onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb),
   onTransport: (cb) => subscribe(EVENT.transport, cb),
   onStatsChanged: (cb) => subscribe(EVENT.statsChanged, cb),
-  onAlbumFlagsChanged: (cb) => subscribe(EVENT.albumFlagsChanged, cb)
+  onAlbumFlagsChanged: (cb) => subscribe(EVENT.albumFlagsChanged, cb),
+  onLovedChanged: (cb) => subscribe(EVENT.lovedChanged, cb)
 }
 
 if (process.contextIsolated) {

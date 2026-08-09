@@ -11,13 +11,14 @@ type State = {
   filter: string
   selectedIndex: number
   /** Which way the library dock is showing the collection. */
-  view: 'tracks' | 'albums'
+  view: 'tracks' | 'albums' | 'loved'
   /** Album currently drilled into, or null at the top level. */
   openAlbum: string | null
   stats: Record<string, TrackStats>
   /** Transient message for things the user should know but need not act on. */
   notice: string | null
   albumFlags: Record<string, AlbumFlag>
+  loved: string[]
 
   setConfig: (c: Config) => void
   setTracks: (t: Track[]) => void
@@ -26,11 +27,12 @@ type State = {
   setScanProgress: (p: ScanProgress | null) => void
   setFilter: (f: string) => void
   setSelectedIndex: (i: number) => void
-  setView: (v: 'tracks' | 'albums') => void
+  setView: (v: 'tracks' | 'albums' | 'loved') => void
   setOpenAlbum: (a: string | null) => void
   setStats: (s: Record<string, TrackStats>) => void
   setNotice: (n: string | null) => void
   setAlbumFlags: (f: Record<string, AlbumFlag>) => void
+  setLoved: (ids: string[]) => void
 }
 
 export const useStore = create<State>((set) => ({
@@ -46,6 +48,7 @@ export const useStore = create<State>((set) => ({
   stats: {},
   notice: null,
   albumFlags: {},
+  loved: [],
 
   setConfig: (config) => set({ config }),
   setTracks: (tracks) => set({ tracks }),
@@ -58,5 +61,6 @@ export const useStore = create<State>((set) => ({
   setOpenAlbum: (openAlbum) => set({ openAlbum, selectedIndex: 0 }),
   setStats: (stats) => set({ stats }),
   setNotice: (notice) => set({ notice }),
-  setAlbumFlags: (albumFlags) => set({ albumFlags })
+  setAlbumFlags: (albumFlags) => set({ albumFlags }),
+  setLoved: (loved) => set({ loved })
 }))

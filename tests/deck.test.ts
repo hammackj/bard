@@ -90,6 +90,53 @@ describe('shuffle deck', () => {
     }
   })
 
+  describe('loved weighting', () => {
+    it('deals loved tracks more often but still deals everything', () => {
+      const lib = Array.from({ length: 50 }, (_, i) => `t${i}`)
+      const lovedSet = new Set(['t0', 't1'])
+      const weightOf = (id: string): number => (lovedSet.has(id) ? 3 : 1)
+
+      let deck: Deck | null = null
+      const counts = new Map<string, number>()
+      // One full pass: 48 singles + 2 tracks x3 = 54 cards.
+      for (let i = 0; i < 54; i++) {
+        const out = draw(deck, lib, Math.random, undefined, weightOf)
+        deck = out.deck
+        counts.set(out.id!, (counts.get(out.id!) ?? 0) + 1)
+      }
+      // Nothing is starved: every track still appears in the pass.
+      expect(counts.size).toBe(50)
+      expect(counts.get('t0')).toBe(3)
+      expect(counts.get('t1')).toBe(3)
+      expect(counts.get('t2')).toBe(1)
+    })
+
+    it('does not deal a loved track twice in a row', () => {
+      const lib = ['a', 'b', 'c', 'd', 'e', 'f']
+      const weightOf = (id: string): number => (id === 'a' ? 3 : 1)
+      let deck: Deck | null = null
+      let previous: string | null = null
+      for (let i = 0; i < 40; i++) {
+        const out = draw(deck, lib, Math.random, undefined, weightOf)
+        deck = out.deck
+        expect(out.id).not.toBe(previous)
+        previous = out.id
+      }
+    })
+
+    it('weight 1 behaves exactly like an unweighted deck', () => {
+      const lib = ['a', 'b', 'c']
+      let deck: Deck | null = null
+      const seen: string[] = []
+      for (let i = 0; i < 3; i++) {
+        const out = draw(deck, lib, Math.random, undefined, () => 1)
+        deck = out.deck
+        seen.push(out.id!)
+      }
+      expect(new Set(seen).size).toBe(3)
+    })
+  })
+
   it('reports progress through the deck', () => {
     expect(deckProgress(null, 10)).toBe(0)
     expect(deckProgress({ remaining: [], dealt: 5 }, 10)).toBe(0.5)

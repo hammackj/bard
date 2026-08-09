@@ -123,6 +123,12 @@ export type PlaybackConfig = {
    * their own while a stream is running.
    */
   excludeClaimed: boolean
+  /**
+   * How many times a loved track appears in each shuffle pass. 1 disables the
+   * preference; higher values surface favourites more often without ever
+   * starving the rest of the library, since every track still appears.
+   */
+  lovedWeight: number
 }
 
 export type TrayPopupCorner =
@@ -166,7 +172,8 @@ export const DEFAULT_CONFIG: Config = {
     maxQueueLength: 200,
     endless: true,
     endlessLookahead: 10,
-    excludeClaimed: true
+    excludeClaimed: true,
+    lovedWeight: 3
   }
 }
 

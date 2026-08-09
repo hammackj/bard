@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Track } from '@shared/types'
 import { AlbumGrid, type Album } from './AlbumGrid'
 import { ContentIdBar } from './ContentIdBar'
+import { LoveButton } from './LoveButton'
 import { useStore } from '../state/store'
 import { fmtTime } from '../lib/format'
 
@@ -28,6 +29,7 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
   const openAlbum = useStore((s) => s.openAlbum)
   const setOpenAlbum = useStore((s) => s.setOpenAlbum)
   const stats = useStore((s) => s.stats)
+  const loved = useStore((s) => s.loved)
   const scanning = useStore((s) => s.scanning)
   const progress = useStore((s) => s.scanProgress)
 
@@ -35,11 +37,15 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
   const scroller = useRef<HTMLDivElement | null>(null)
 
   const filtered = useMemo(() => {
-    const base = openAlbum ? tracks.filter((t) => t.album === openAlbum) : tracks
+    const base = openAlbum
+      ? tracks.filter((t) => t.album === openAlbum)
+      : view === 'loved'
+        ? tracks.filter((t) => loved.includes(t.id))
+        : tracks
     const q = filter.trim().toLowerCase()
     if (!q) return base
     return base.filter((t) => t.searchText.includes(q))
-  }, [tracks, filter, openAlbum])
+  }, [tracks, filter, openAlbum, view, loved])
 
   const virtual = useVirtualizer({
     count: filtered.length,
@@ -96,6 +102,13 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
             className={view === 'tracks' && !openAlbum ? 'text-cyan' : 'hover:text-text'}
           >
             Tracks
+          </button>
+          <button
+            onClick={() => setView('loved')}
+            title="Only loved tracks"
+            className={view === 'loved' && !openAlbum ? 'text-rose' : 'hover:text-text'}
+          >
+            Loved
           </button>
         </span>
       </header>
@@ -155,7 +168,8 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
                     <span className="block truncate text-s2">{t.title}</span>
                     <span className="mt-px block truncate text-s1 text-muted">{t.artist}</span>
                   </span>
-                  <span className="mono flex items-baseline gap-2 text-s1 text-muted">
+                  <span className="mono flex items-center gap-2 text-s1 text-muted">
+                    <LoveButton trackId={t.id} size={13} />
                     {(stats[t.id]?.plays ?? 0) > 0 && (
                       <span className="text-cyan" title={`Played ${stats[t.id].plays} times`}>
                         {stats[t.id].plays}×
@@ -177,7 +191,9 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
             ? `Scanning ${progress.scanned}/${progress.total}`
             : view === 'albums' && !openAlbum
               ? `${new Set(tracks.map((t) => t.album)).size} albums`
-              : `${filtered.length.toLocaleString()} tracks`}
+              : view === 'loved' && !openAlbum
+                ? `${filtered.length.toLocaleString()} loved`
+                : `${filtered.length.toLocaleString()} tracks`}
         </span>
         <span>Enter to queue</span>
       </footer>
