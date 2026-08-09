@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { getAnalyser } from '../audio/engine'
+import { ease, predict, type Sample } from '@shared/progress'
 
 const W = 1000
 const H = 44
@@ -34,8 +35,14 @@ export function StringBar({ position, duration, playing, onSeek }: Props): React
   const clip = useRef<SVGRectElement | null>(null)
 
   // Read progress from a ref so the animation loop never needs re-creating.
-  const progress = useRef({ position: 0, duration: 0, playing: false })
-  progress.current = { position, duration, playing }
+  //
+  // Stamped in an effect rather than during render: `at` has to record when
+  // the report actually arrived, and a ref written during render is both a
+  // lint error and wrong under a re-render that carries no new position.
+  const progress = useRef<Sample>({ position: 0, duration: 0, playing: false, at: 0 })
+  useEffect(() => {
+    progress.current = { position, duration, playing, at: performance.now() }
+  }, [position, duration, playing])
 
   useEffect(() => {
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -45,10 +52,18 @@ export function StringBar({ position, duration, playing, onSeek }: Props): React
     let raf = 0
     let amp = 0
     let t = 0
+    // The drawn position, which trails the reported one smoothly.
+    let shown = 0
+    let last = performance.now()
 
     const frame = (): void => {
       raf = requestAnimationFrame(frame)
-      const { position, duration, playing } = progress.current
+      const now = performance.now()
+      const dt = now - last
+      last = now
+
+      const { duration, playing } = progress.current
+      shown = ease(shown, predict(progress.current, now), dt)
 
       let target = 0
       if (playing && !reduce) {
@@ -84,7 +99,7 @@ export function StringBar({ position, duration, playing, onSeek }: Props): React
       ahead.current?.setAttribute('d', d)
       behind.current?.setAttribute('d', d)
 
-      const p = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0
+      const p = duration > 0 ? Math.min(1, Math.max(0, shown / duration)) : 0
       clip.current?.setAttribute('width', (p * W).toFixed(1))
       const hp = pts[Math.min(SEGMENTS, Math.round(p * SEGMENTS))]
       head.current?.setAttribute('cx', String(hp[0]))
