@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import { useAudio } from './audio/useAudio'
 import { useStore } from './state/store'
@@ -10,6 +10,7 @@ import { FirstRun } from './components/FirstRun'
 import { ShortcutsOverlay } from './components/ShortcutsOverlay'
 import { AvatarMenu } from './components/AvatarMenu'
 import { maybeRunSelfTest } from './audio/selftest'
+import { runScan } from './lib/scan'
 import * as engine from './audio/engine'
 
 function App(): React.JSX.Element {
@@ -31,16 +32,6 @@ function App(): React.JSX.Element {
   toggleRef.current = toggle
   seekRef.current = seek
   stateRef.current = state
-
-  const runScan = useCallback(async () => {
-    useStore.getState().setScanning(true)
-    try {
-      useStore.getState().setTracks(await window.bard.scanLibrary())
-    } finally {
-      useStore.getState().setScanning(false)
-      useStore.getState().setScanProgress(null)
-    }
-  }, [])
 
   // Subscriptions. Every one returns its unsubscribe fn so HMR cannot stack
   // duplicate listeners.
@@ -94,7 +85,7 @@ function App(): React.JSX.Element {
         await maybeRunSelfTest()
       }
     })()
-  }, [runScan, setVolume])
+  }, [setVolume])
 
   // Global shortcuts. Space is swallowed while typing in a field.
   useEffect(() => {

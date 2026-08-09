@@ -3,6 +3,7 @@ import type { DeepPartial, Config } from '@shared/types'
 import type { AppPaths, AppInfo } from '@shared/ipc'
 import { useStore } from '../state/store'
 import * as engine from '../audio/engine'
+import { runScan } from '../lib/scan'
 
 type Props = { open: boolean; onClose: () => void; overlayUrl: string | null }
 
@@ -66,7 +67,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             onClick={async () => {
               await window.bard.addLibraryPath()
               setConfig(await window.bard.getConfig())
-              void window.bard.scanLibrary()
+              await runScan()
             }}
           >
             Add music folder
