@@ -8,7 +8,7 @@ import { claimedAlbums } from './albums'
 import { isLoved } from './loved'
 import { nextInAlbumRolling, shuffled } from '../shared/playlist'
 import { draw, type Deck } from '../shared/deck'
-import { pushPlayed, stepBack, wrapForRepeatAll } from '../shared/history'
+import { pushPlayed, rememberRecent, stepBack, wrapForRepeatAll } from '../shared/history'
 import { setNowPlaying, setQueueLength } from './nowplaying'
 import { PLAY_THRESHOLD_RATIO, PLAY_THRESHOLD_SEC, getStats, recordPlay, recordSkip } from './stats'
 
@@ -112,8 +112,7 @@ function topUpEndless(): void {
 }
 
 function remember(track: Track): void {
-  const limit = Math.max(0, getConfig().playback.avoidRepeat)
-  history = [...history.filter((id) => id !== track.id), track.id].slice(-limit)
+  history = rememberRecent(history, track.id, getConfig().playback.avoidRepeat)
 }
 
 function broadcast(channel: string, payload: unknown): void {

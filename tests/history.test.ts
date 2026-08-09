@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { PLAYED_LIMIT, pushPlayed, stepBack, wrapForRepeatAll } from '../src/shared/history'
+import {
+  PLAYED_LIMIT,
+  pushPlayed,
+  rememberRecent,
+  stepBack,
+  wrapForRepeatAll
+} from '../src/shared/history'
 
 const item = (id: string): { id: string } => ({ id })
 const ids = (xs: readonly { id: string }[]): string[] => xs.map((x) => x.id)
@@ -82,5 +88,36 @@ describe('wrapForRepeatAll', () => {
   it('falls back to the tail of history when nothing is playing', () => {
     const wrapped = wrapForRepeatAll([item('a'), item('b')], null)
     expect(ids(wrapped.queue)).toEqual(['a'])
+  })
+})
+
+/**
+ * The window shuffle refuses to repeat from. The bug worth a test here is the
+ * zero case: slice(-0) is slice(0), so expressing "avoid nothing" that way
+ * returned the whole array and excluded everything instead.
+ */
+describe('rememberRecent', () => {
+  it('keeps nothing when the limit is 0', () => {
+    expect(rememberRecent(['a', 'b', 'c'], 'd', 0)).toEqual([])
+  })
+
+  it('keeps nothing when the limit is negative', () => {
+    expect(rememberRecent(['a', 'b'], 'c', -5)).toEqual([])
+  })
+
+  it('appends up to the limit', () => {
+    expect(rememberRecent(['a'], 'b', 3)).toEqual(['a', 'b'])
+  })
+
+  it('drops the oldest once the limit is reached', () => {
+    expect(rememberRecent(['a', 'b', 'c'], 'd', 3)).toEqual(['b', 'c', 'd'])
+  })
+
+  it('moves a repeat to the newest position rather than duplicating it', () => {
+    expect(rememberRecent(['a', 'b', 'c'], 'b', 3)).toEqual(['a', 'c', 'b'])
+  })
+
+  it('holds exactly one entry at a limit of 1', () => {
+    expect(rememberRecent(['a'], 'b', 1)).toEqual(['b'])
   })
 })

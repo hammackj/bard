@@ -24,6 +24,23 @@ export function pushPlayed<T extends Item>(played: readonly T[], item: T): T[] {
 }
 
 /**
+ * The recent-tracks window shuffle refuses to repeat from.
+ *
+ * `limit` is the avoid-repeat setting, and 0 has to mean "avoid nothing".
+ * Expressing that as slice(-limit) does the opposite: slice(-0) is slice(0),
+ * which returns the whole array rather than an empty one, so a setting of 0
+ * grew the window without bound and excluded every track that had ever played
+ * -- the exact inverse of what was asked for.
+ *
+ * The id is moved to the newest position rather than duplicated, so replaying
+ * a track refreshes its place in the window instead of consuming two slots.
+ */
+export function rememberRecent(recent: readonly string[], id: string, limit: number): string[] {
+  if (limit <= 0) return []
+  return [...recent.filter((x) => x !== id), id].slice(-limit)
+}
+
+/**
  * What pressing "previous" should do.
  *
  * `restart` covers both the common case (a few seconds in, you meant "play
