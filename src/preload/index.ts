@@ -43,7 +43,6 @@ const api: BardApi = {
   reportProgress: (p) => ipcRenderer.send(SEND.reportProgress, p),
   reportEnded: () => ipcRenderer.send(SEND.reportEnded),
 
-
   getConfig: () => ipcRenderer.invoke(INVOKE.getConfig),
   setConfig: (patch) => ipcRenderer.invoke(INVOKE.setConfig, patch),
   getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
@@ -64,6 +63,7 @@ const api: BardApi = {
   onScanProgress: (cb) => subscribe(EVENT.scanProgress, cb),
   onNowPlaying: (cb) => subscribe(EVENT.nowPlaying, cb),
   onTransport: (cb) => subscribe(EVENT.transport, cb),
+  onNotice: (cb) => subscribe(EVENT.notice, cb),
   onStatsChanged: (cb) => subscribe(EVENT.statsChanged, cb),
   onAlbumFlagsChanged: (cb) => subscribe(EVENT.albumFlagsChanged, cb),
   onLovedChanged: (cb) => subscribe(EVENT.lovedChanged, cb)

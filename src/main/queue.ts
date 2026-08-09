@@ -4,7 +4,7 @@ import type { QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
 import { allTracks, getTrackById, randomTrack } from './library'
-import { claimedAlbums } from './albums'
+import { claimedAlbums, getAlbumStatus } from './albums'
 import { isLoved } from './loved'
 import { nextInAlbumRolling, shuffled } from '../shared/playlist'
 import { draw, type Deck } from '../shared/deck'
@@ -49,6 +49,14 @@ let deck: Deck | null = null
  */
 function playableTracks(): Track[] {
   const all = allTracks()
+
+  // Streamer mode is an allow-list and takes precedence: only albums actually
+  // checked and found safe may play. Deliberately no "fall back to everything
+  // if the result is empty" escape here, unlike the claimed filter below --
+  // falling back is exactly the failure this mode exists to prevent, and an
+  // empty pool while armed is a real answer that the UI has to explain.
+  if (isStreamerArmed()) return all.filter((t) => getAlbumStatus(t.album) === 'safe')
+
   if (!getConfig().playback.excludeClaimed) return all
   const blocked = claimedAlbums()
   if (blocked.size === 0) return all
@@ -56,6 +64,28 @@ function playableTracks(): Track[] {
   // If every album is flagged, fall back to the whole library rather than
   // falling silent -- silence would look like a bug, not a policy.
   return left.length > 0 ? left : all
+}
+
+/** Armed means: only `safe` plays, whoever asked for it. */
+export function isStreamerArmed(): boolean {
+  return getConfig().streamer.enabled
+}
+
+/**
+ * Why a track may not play right now, or null when it may.
+ *
+ * Returns a reason rather than a boolean because refusing silently is the
+ * worst outcome available here: on a stream, a player that quietly does
+ * nothing reads as broken, and the user cannot tell a blocked track from a
+ * bug. Every refusal below is surfaced.
+ */
+export function blockedReason(track: Track): string | null {
+  if (!isStreamerArmed()) return null
+  const status = getAlbumStatus(track.album)
+  if (status === 'safe') return null
+  return status === 'claimed'
+    ? `Streamer mode: "${track.album}" is flagged as claimed`
+    : `Streamer mode: "${track.album}" has not been checked for Content ID`
 }
 
 /** Draws the next track from the deck, rebuilding it when exhausted. */
@@ -183,12 +213,26 @@ function autoFillTrack(): Track | null {
   if (mode === 'album') {
     return nextInAlbumRolling(playableTracks(), nowPlaying?.track ?? null)
   }
-  return drawFromDeck() ?? randomTrack(new Set(history))
+  // The fallback has to exclude what is not playable, not just recent history.
+  // randomTrack draws from the whole library, so passing only `history` let it
+  // reach straight past the streamer-mode and claimed filters the moment the
+  // deck came up empty -- which is exactly when the pool is restricted.
+  return drawFromDeck() ?? randomTrack(new Set([...history, ...excludedIds()]))
+}
+
+/** Tells the user something, rather than failing silently. */
+function notify(message: string): void {
+  broadcast(EVENT.notice, message)
 }
 
 export function enqueueTrack(trackId: string): QueueItem | null {
   const track = getTrackById(trackId)
   if (!track) return null
+  const reason = blockedReason(track)
+  if (reason) {
+    notify(reason)
+    return null
+  }
   const item: QueueItem = { id: randomUUID(), track, addedAt: Date.now() }
   queue = [...queue, item]
   emitQueue()
@@ -268,6 +312,44 @@ export function refreshEndless(): void {
   topUpEndless()
 }
 
+/**
+ * Applies streamer mode to what is already in flight.
+ *
+ * Arming has to act on the present, not just on future picks. Anything queued
+ * would still play in a few minutes, and whatever is playing right now is on
+ * air already -- which is the moment the user armed the mode to stop.
+ *
+ * Called on every change so disarming re-stocks the queue too, rather than
+ * leaving it short until something else happens to trigger a top-up.
+ */
+export function refreshStreamerMode(): void {
+  if (!isStreamerArmed()) {
+    topUpEndless()
+    return
+  }
+
+  const before = queue.length
+  queue = queue.filter((i) => !blockedReason(i.track))
+  const dropped = before - queue.length
+  if (dropped > 0) {
+    emitQueue()
+    notify(
+      `Streamer mode: removed ${dropped} queued track${dropped === 1 ? '' : 's'} not marked safe`
+    )
+  }
+
+  // The track on air matters most. Skipping is not enough on its own: if
+  // nothing safe can follow, playNext lands on null and stops, which is the
+  // correct outcome -- silence beats an unchecked track going out.
+  const playingReason = nowPlaying ? blockedReason(nowPlaying.track) : null
+  if (playingReason) {
+    notify(`${playingReason} — skipping`)
+    playNext()
+    return
+  }
+  topUpEndless()
+}
+
 export function reorderQueue(from: number, to: number): void {
   if (from === to) return
   if (from < 0 || from >= queue.length) return
@@ -342,6 +424,12 @@ export function skip(): void {
  * double-press means "the one before".
  */
 export function previous(): void {
+  // Stepping back reaches into history, which can hold tracks that were
+  // allowed when they played but are not now -- anything queued before the
+  // mode was armed. Prune before stepping rather than refusing at the end, so
+  // Previous walks to the most recent *permitted* track instead of dead-ending.
+  if (isStreamerArmed()) played = played.filter((i) => !blockedReason(i.track))
+
   const step = stepBack(played, position)
   if (step.kind === 'restart') {
     if (!nowPlaying) return
@@ -376,7 +464,11 @@ export function onTrackEnded(): void {
   if (mode === 'all' && queue.length === 0 && played.length > 0) {
     // Re-queue what has been played, in order, and carry on.
     const wrapped = wrapForRepeatAll(played, nowPlaying)
-    queue = wrapped.queue.map((i) => ({ ...i, id: randomUUID(), addedAt: Date.now() }))
+    // Re-queuing a lap replays what was played earlier in the session, which
+    // may predate the mode being armed.
+    queue = wrapped.queue
+      .filter((i) => !blockedReason(i.track))
+      .map((i) => ({ ...i, id: randomUUID(), addedAt: Date.now() }))
     played = wrapped.played
     emitQueue()
   }
@@ -418,6 +510,11 @@ function startPlaying(item: QueueItem): void {
 export function playNowById(trackId: string): QueueItem | null {
   const track = getTrackById(trackId)
   if (!track) return null
+  const reason = blockedReason(track)
+  if (reason) {
+    notify(reason)
+    return null
+  }
   const item: QueueItem = { id: randomUUID(), track, addedAt: Date.now() }
   startPlaying(item)
   topUpEndless()
@@ -452,9 +549,24 @@ function playQueueItem(itemId: string): void {
  */
 export function enqueueTracks(trackIds: string[], startNow = false): QueueItem[] {
   const items: QueueItem[] = []
+  let blocked = 0
   for (const id of trackIds) {
     const track = getTrackById(id)
-    if (track) items.push({ id: randomUUID(), track, addedAt: Date.now() })
+    if (!track) continue
+    if (blockedReason(track)) {
+      blocked++
+      continue
+    }
+    items.push({ id: randomUUID(), track, addedAt: Date.now() })
+  }
+  // One message for the batch, not one per track: queueing a blocked album
+  // would otherwise fire a notice for every track on it.
+  if (blocked > 0) {
+    notify(
+      items.length === 0
+        ? `Streamer mode: nothing queued — ${blocked} track${blocked === 1 ? '' : 's'} not marked safe`
+        : `Streamer mode: skipped ${blocked} track${blocked === 1 ? '' : 's'} not marked safe`
+    )
   }
   if (items.length === 0) return []
 

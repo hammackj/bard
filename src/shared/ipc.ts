@@ -95,7 +95,9 @@ export const EVENT = {
   statsChanged: 'stats:changed',
   albumFlagsChanged: 'albums:changed',
   lovedChanged: 'loved:changed',
-  transport: 'player:transport'
+  transport: 'player:transport',
+  /** Human-readable message from main, for things the user must be told. */
+  notice: 'app:notice'
 } as const
 
 /** Unsubscribe handle returned by every onX subscription. */
@@ -175,6 +177,12 @@ export type BardApi = {
   onNowPlaying: (cb: (i: QueueItem | null) => void) => Unsubscribe
   /** Transport commands originating outside the renderer (tray, media keys). */
   onTransport: (cb: (a: TransportAction) => void) => Unsubscribe
+  /**
+   * Messages main needs the user to see -- a refusal and its reason, chiefly.
+   * Streamer mode blocks tracks, and a block the user cannot see is
+   * indistinguishable from a broken player.
+   */
+  onNotice: (cb: (message: string) => void) => Unsubscribe
   onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
   onAlbumFlagsChanged: (cb: (f: Record<string, AlbumFlag>) => void) => Unsubscribe
   onLovedChanged: (cb: (ids: string[]) => void) => Unsubscribe

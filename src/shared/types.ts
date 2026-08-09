@@ -177,6 +177,32 @@ export type WindowConfig = {
   trayPopupSeconds: number
 }
 
+/**
+ * Streamer mode: while armed, only albums flagged `safe` may play.
+ *
+ * Stricter than `playback.excludeClaimed`, in two ways. It is an allow-list
+ * rather than a block-list, so `untested` is withheld too -- an album nobody
+ * has checked is not evidence of safety. And it applies to deliberate play as
+ * well as auto-selection, because the risk it guards against does not care
+ * whether a human picked the track.
+ */
+export type StreamerConfig = {
+  /** Armed. Only ever set true by detection; clearing it is always deliberate. */
+  enabled: boolean
+  /** Arm automatically when OBS reports streaming or recording. */
+  autoArm: boolean
+  /** obs-websocket endpoint. Ships inside OBS 28+, off by default, port 4455. */
+  obsUrl: string
+  /**
+   * Whether an obs-websocket password has been stored.
+   *
+   * The password itself is not kept here -- config.json is plain text on disk.
+   * It goes through Electron safeStorage; this flag only tells the UI whether
+   * one is set, so it can offer "replace" rather than showing a blank field.
+   */
+  hasObsPassword: boolean
+}
+
 export type Config = {
   libraryPaths: string[]
   audio: AudioConfig
@@ -184,6 +210,7 @@ export type Config = {
   shortcuts: ShortcutConfig
   window: WindowConfig
   playback: PlaybackConfig
+  streamer: StreamerConfig
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -202,6 +229,12 @@ export const DEFAULT_CONFIG: Config = {
     endlessLookahead: 10,
     excludeClaimed: true,
     lovedWeight: 3
+  },
+  streamer: {
+    enabled: false,
+    autoArm: false,
+    obsUrl: 'ws://127.0.0.1:4455',
+    hasObsPassword: false
   }
 }
 

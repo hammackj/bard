@@ -18,6 +18,7 @@ import {
   reportPosition,
   isCurrentTrack,
   refreshEndless,
+  refreshStreamerMode,
   dropClaimedFromQueue
 } from './queue'
 import { setProgress, nowPlayingPath } from './nowplaying'
@@ -48,6 +49,11 @@ export function registerIpcHandlers(): void {
     }
     if (patch.playback?.endless !== undefined || patch.playback?.endlessLookahead !== undefined) {
       refreshEndless()
+    }
+    // Arming has to reach the queue and the track on air, not just future
+    // picks -- see refreshStreamerMode.
+    if (patch.streamer?.enabled !== undefined) {
+      refreshStreamerMode()
     }
     return next
   })

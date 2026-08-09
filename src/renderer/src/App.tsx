@@ -120,7 +120,11 @@ function App(): React.JSX.Element {
       window.bard.onTransport((action) => {
         if (action === 'toggle') void toggleRef.current()
         else if (action === 'restart') seekRef.current(0)
-      })
+      }),
+      // Streamer mode refusals arrive here. A block the user cannot see is
+      // indistinguishable from a broken player, which on a stream is worse
+      // than the risk being guarded against.
+      window.bard.onNotice(useStore.getState().setNotice)
     ]
     return () => offs.forEach((off) => off())
   }, [])
