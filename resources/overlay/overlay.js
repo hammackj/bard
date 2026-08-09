@@ -72,7 +72,7 @@
     es.onmessage = function (e) {
       try {
         render(JSON.parse(e.data))
-      } catch (_) {
+      } catch {
         /* ignore a malformed frame rather than tearing down the stream */
       }
     }

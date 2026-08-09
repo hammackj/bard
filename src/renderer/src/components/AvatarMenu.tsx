@@ -80,10 +80,13 @@ export function AvatarMenu({
           {info && (
             <div
               className="mt-1 flex items-center justify-between gap-3 border-t border-edge px-3 pt-1.5 pb-0.5"
-              title={`Electron ${info.electron} · Chrome ${info.chrome} · Node ${info.node}`}
+              title={`commit ${info.commit} · Electron ${info.electron} · Chrome ${info.chrome} · Node ${info.node}`}
             >
               <span className="text-s1 text-muted">Version</span>
-              <span className="mono text-s1 text-muted">v{info.version}</span>
+              <span className="mono text-s1 text-muted">
+                v{info.version}
+                <span className="ml-1.5 opacity-70">{info.commit}</span>
+              </span>
             </div>
           )}
         </div>

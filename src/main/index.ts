@@ -140,7 +140,9 @@ function startBard(): void {
 
   createWindow()
 
-  console.log(`[bard] version ${app.getVersion()} (electron ${process.versions.electron})`)
+  console.log(
+    `[bard] version ${app.getVersion()} (${__GIT_SHA__}, electron ${process.versions.electron})`
+  )
   console.log('[bard] config:', configPath())
 
   void startOverlay(getConfig().overlay.port).then((port) => {

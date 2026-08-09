@@ -23,7 +23,7 @@ instance on this machine; exposing it would put your library, and its artwork,
 on the network.
 
 If your library is licensed music (StreamBeats and similar), check the terms —
-most royalty-free catalogues permit use *within* your stream but forbid
+most royalty-free catalogues permit use _within_ your stream but forbid
 redistributing the audio separately. Keeping the overlay on localhost is part
 of staying inside that line.
 
@@ -50,7 +50,7 @@ npm install
 npm run dev
 ```
 
-If Electron fails to start with *"Electron failed to install correctly"*, its
+If Electron fails to start with _"Electron failed to install correctly"_, its
 postinstall was blocked — npm 10+ can skip install scripts. Approve it and
 reinstall:
 
@@ -61,13 +61,13 @@ rm -rf node_modules/electron && npm install
 
 Useful scripts:
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Run with hot reload |
-| `npm test` | Unit tests (vitest, no Electron) |
-| `npm run typecheck` | Type-check main, preload, renderer and tests |
-| `npm run build` | Type-check and bundle |
-| `npm run build:linux` / `:win` / `:mac` | Build installers |
+| Command                                 | What it does                                 |
+| --------------------------------------- | -------------------------------------------- |
+| `npm run dev`                           | Run with hot reload                          |
+| `npm test`                              | Unit tests (vitest, no Electron)             |
+| `npm run typecheck`                     | Type-check main, preload, renderer and tests |
+| `npm run build`                         | Type-check and bundle                        |
+| `npm run build:linux` / `:win` / `:mac` | Build installers                             |
 
 Two development-only environment variables:
 
@@ -76,7 +76,7 @@ Two development-only environment variables:
 - `VITE_BARD_SELFTEST=1` — runs an audio self-test at startup. It renders the
   graph at full gain into no output device, then asserts the analyser sees a
   non-zero signal. This exists because a cross-origin-tainted media source
-  emits *pure silence* while still reporting that it is playing, so every other
+  emits _pure silence_ while still reporting that it is playing, so every other
   check passes against nothing.
 
 ## First run
@@ -113,16 +113,16 @@ capture stream makes the audio pipeline renegotiate, which is audible.
 
 ## Shortcuts
 
-| Key | Action |
-| --- | --- |
-| `Space` | Play / pause |
-| `←` `→` | Seek ±5s |
-| `↑` `↓` | Volume |
-| `/` | Focus the library filter |
-| `Enter` | Queue the selected track |
-| `Shift+Enter` | Play it now |
-| `Ctrl/Cmd+,` | Settings |
-| `?` | Shortcut list |
+| Key           | Action                   |
+| ------------- | ------------------------ |
+| `Space`       | Play / pause             |
+| `←` `→`       | Seek ±5s                 |
+| `↑` `↓`       | Volume                   |
+| `/`           | Focus the library filter |
+| `Enter`       | Queue the selected track |
+| `Shift+Enter` | Play it now              |
+| `Ctrl/Cmd+,`  | Settings                 |
+| `?`           | Shortcut list            |
 
 System-wide media keys are available but **off by default** — once taken, they
 stop reaching every other player on your machine. Enable them in Settings.
@@ -139,6 +139,27 @@ Output lands in `dist/`. `build:linux` also refreshes `dist/linux-unpacked`,
 which the desktop launcher points at, so one command keeps the shortcut, the
 AppImage and the deb in step. All of them type-check first, so a broken build
 cannot be packaged.
+
+**`npm run build` does not update the installed app.** It writes `out/`, which
+is what `npm run dev` and `npm start` run. The launcher in your application
+menu runs the _packaged_ build in `dist/`, and only the `build:*` commands
+above refresh that. You can build and test all day while the installed app
+stays on month-old code — that is not hypothetical, a packaged build once ran
+for a day without the loudness-normalisation code while the source had it, and
+the symptom looked like broken normalisation rather than a stale package.
+
+`npm run build` now warns when `dist/` is behind `out/`, and every build stamps
+in its commit: the startup log, the About section in Settings and the avatar
+menu all show it next to the version, with `-dirty` when the build carried
+uncommitted changes. If the app is not behaving like the source, check that
+first.
+
+> **Debugging a packaged build:** plain `grep` against an `.asar` reports **no
+> matches regardless of content** — it detects binary and suppresses counting,
+> which produces a very convincing false negative. Use `strings file | grep`,
+> `grep -a`, or `npx asar extract` first. Note also that `replaygain_track_gain`
+> appears inside the asar even when Bard's own gain code is absent, because
+> music-metadata ships those strings; it is not a usable probe.
 
 macOS builds are **unsigned**. Gatekeeper will refuse to open them on first
 launch; right-click the app and choose **Open** to get the override prompt.
@@ -209,12 +230,12 @@ Some deliberate structure worth knowing before changing things:
 - **The queue lives in the main process.** The renderer sends intents and
   renders what comes back, so there is one source of truth for what plays next.
 - **Audio lives in the renderer**, because `setSinkId` and the Web Audio API
-  only exist there. Output routing sets the sink on the *AudioContext*, not the
+  only exist there. Output routing sets the sink on the _AudioContext_, not the
   media element — once an element feeds a `MediaElementAudioSourceNode`, its
   own `setSinkId` no longer affects what you hear.
 - **Local audio is served over a `bard://` scheme**, not `file://`, which the
-  renderer cannot load. That scheme needs `corsEnabled` *and* a matching
-  `Access-Control-Allow-Origin` header *and* `crossOrigin` on the element. Miss
+  renderer cannot load. That scheme needs `corsEnabled` _and_ a matching
+  `Access-Control-Allow-Origin` header _and_ `crossOrigin` on the element. Miss
   any one and playback is silent with no error anywhere.
 - **Every channel the renderer can reach is named in `shared/ipc.ts`.** There
   is no generic `ipcRenderer` passthrough.

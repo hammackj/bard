@@ -137,8 +137,10 @@ export function registerIpcHandlers(): void {
 
   // app.getVersion() reads the packaged package.json, so this is correct in
   // both dev and a built app without bundling the version in at compile time.
+  // The commit has to be stamped in at build time -- see electron.vite.config.
   ipcMain.handle(INVOKE.getAppInfo, (): AppInfo => ({
     version: app.getVersion(),
+    commit: __GIT_SHA__,
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node

@@ -293,7 +293,10 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
           {info ? (
             <>
               <Row label="Bard">
-                <span className="mono text-s2 text-text">{info.version}</span>
+                <span className="mono text-s2 text-text">
+                  {info.version}
+                  <span className="ml-2 text-s1 text-muted">{info.commit}</span>
+                </span>
               </Row>
               <Row label="Runtime">
                 <span className="mono text-s1 text-muted">

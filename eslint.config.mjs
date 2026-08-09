@@ -18,6 +18,17 @@ export default defineConfig(
     }
   },
   {
+    // The TS ruleset above is not scoped to TS files, so rules that only make
+    // sense there fired on plain JS -- the OBS overlay script and the build
+    // scripts, neither of which can carry a type annotation. That is why
+    // resources/overlay/overlay.js had four permanent "Missing return type"
+    // errors that nobody could act on.
+    files: ['**/*.{js,mjs,cjs}'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off'
+    }
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     plugins: {
       'react-hooks': eslintPluginReactHooks,

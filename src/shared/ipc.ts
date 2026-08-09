@@ -36,6 +36,15 @@ export type AppPaths = {
  */
 export type AppInfo = {
   version: string
+  /**
+   * Short commit this build came from, `-dirty` when it carried uncommitted
+   * changes, or 'unknown' when built without git.
+   *
+   * The version only moves at release, so it cannot distinguish two builds
+   * between releases -- which is how a packaged build ran for a day without
+   * the ReplayGain code while the source had it.
+   */
+  commit: string
   electron: string
   chrome: string
   node: string
