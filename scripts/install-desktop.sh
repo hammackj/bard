@@ -49,6 +49,48 @@ if [[ -f "$repo_root/resources/icon.svg" ]]; then
   install -m 644 "$repo_root/resources/icon.svg" "$icons_dir/scalable/apps/bard.svg"
 fi
 
+# The Icon Theme Specification wants an index.theme in every theme directory,
+# and we were writing icons into one without it. It works on a normal desktop
+# only because /usr/share/icons/hicolor/index.theme supplies the directory list
+# and Qt/GTK merge a theme across XDG base dirs -- on a system with no
+# system-level hicolor index, or under a stricter loader, these icons would not
+# resolve.
+#
+# Built from what is actually on disk rather than from the sizes written above:
+# other applications install into the same per-user hicolor tree, and an index
+# listing only Bard's directories would hide theirs.
+write_icon_index() {
+  local dirs=() sections="" path sub ctx
+  for path in "$icons_dir"/*/*/; do
+    [[ -d "$path" ]] || continue
+    ctx="$(basename "$path")"
+    sub="$(basename "$(dirname "$path")")"
+    if [[ "$sub" =~ ^([0-9]+)x[0-9]+$ ]]; then
+      dirs+=("$sub/$ctx")
+      sections+="[$sub/$ctx]"$'\n'"Size=${BASH_REMATCH[1]}"$'\n'"Type=Threshold"$'\n\n'
+    elif [[ "$sub" == scalable ]]; then
+      dirs+=("$sub/$ctx")
+      sections+="[$sub/$ctx]"$'\n'"Size=48"$'\n'"MinSize=8"$'\n'"MaxSize=512"$'\n'"Type=Scalable"$'\n\n'
+    fi
+  done
+  (( ${#dirs[@]} )) || return 0
+
+  local joined
+  joined="$(IFS=,; echo "${dirs[*]}")"
+  # Context is deliberately omitted: it is optional in the spec, and guessing it
+  # for directories other applications created would be worse than leaving it out.
+  cat > "$icons_dir/index.theme" <<EOF
+[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Directories=$joined
+
+$sections
+EOF
+  chmod 644 "$icons_dir/index.theme"
+}
+write_icon_index
+
 desktop_file="$apps_dir/bard.desktop"
 cat > "$desktop_file" <<EOF
 [Desktop Entry]
