@@ -183,14 +183,19 @@ function startBard(): void {
  */
 if (!app.requestSingleInstanceLock()) {
   /**
-   * app.exit, not app.quit.
+   * quit, not exit.
    *
-   * quit emits before-quit, and this process has loaded none of the on-disk
-   * state it would then flush -- exiting "properly" would write empty stats
-   * over the running instance's. Nothing has been started yet, so there is
-   * nothing here worth cleaning up.
+   * requestSingleInstanceLock has already handed our argv to the primary, and
+   * quit lets that delivery finish before we go; exit terminates hard enough to
+   * risk cutting it off, which would leave the running window un-raised -- the
+   * one thing the second launch is for.
+   *
+   * Safe specifically because the before-quit handler that flushes stats and
+   * loved tracks is registered in the primary branch below. This process has
+   * loaded none of that state, so a quit that ran it would write empty data
+   * over the running instance's; a quit that cannot reach it will not.
    */
-  app.exit(0)
+  app.quit()
 } else {
   // Fired in this (primary) process when a second launch is turned away.
   app.on('second-instance', () => {

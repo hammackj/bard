@@ -184,6 +184,11 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
             Shuffle avoids anything played recently, so a small library does not loop back on
             itself. Album mode plays through the current record, then rolls to another.
           </p>
+          <p className="text-s1 text-muted">
+            With Endless on (the ∞ button by the transport), playback never stops: the queue is kept
+            topped up ahead of the current track, every track plays once before any repeats, and
+            once the library is exhausted it reshuffles and keeps going. It runs until you stop it.
+          </p>
         </Group>
 
         <Group title="Shortcuts & window">
