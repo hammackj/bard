@@ -14,10 +14,12 @@ import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
 import { setMainWindow, getMainWindow, showMainWindow } from './windows'
+import { syncObsWatch } from './streamer'
 import { loadStats, flushStats } from './stats'
 import { loadAlbumFlags, flushAlbumFlags } from './albums'
 import { loadLoved, flushLoved } from './loved'
 import { toggleTrayPopup, warmTrayPopup } from './trayPopup'
+import { stopObsWatch } from './obs'
 
 // Must run before app.whenReady().
 registerScheme()
@@ -153,6 +155,9 @@ function startBard(): void {
     )
   })
 
+  // Only connects when auto-arm is on; a no-op otherwise.
+  syncObsWatch()
+
   createTray(quitApp)
   // Give the preview a caption before it is ever shown, so a compositor rule
   // matching on title applies to the first show as well as later ones.
@@ -221,6 +226,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     releaseGlobalShortcuts()
     destroyTray()
+    stopObsWatch()
     void stopOverlay()
   })
 

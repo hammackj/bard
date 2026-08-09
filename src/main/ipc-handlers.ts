@@ -29,6 +29,8 @@ import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
 import { sendToMain } from './windows'
 import { isRevealable } from '../shared/paths'
+import { hasObsPassword, secureStorageAvailable, setObsPassword } from './secrets'
+import { syncObsWatch } from './streamer'
 import type {
   Config,
   DeepPartial,
@@ -55,7 +57,23 @@ export function registerIpcHandlers(): void {
     if (patch.streamer?.enabled !== undefined) {
       refreshStreamerMode()
     }
+    // A changed endpoint or auto-arm toggle should take effect now, not on the
+    // next restart.
+    if (patch.streamer?.autoArm !== undefined || patch.streamer?.obsUrl !== undefined) {
+      syncObsWatch()
+    }
     return next
+  })
+
+  ipcMain.handle(INVOKE.secureStorageAvailable, (): boolean => secureStorageAvailable())
+
+  ipcMain.handle(INVOKE.setObsPassword, (_e, password: string): boolean => {
+    const stored = setObsPassword(password)
+    // Keep the config flag in step so Settings can offer "replace" rather than
+    // showing an empty field that implies no password is set.
+    setConfig({ streamer: { hasObsPassword: hasObsPassword() } })
+    syncObsWatch()
+    return stored
   })
 
   ipcMain.handle(INVOKE.scanLibrary, async (e): Promise<Track[]> => {

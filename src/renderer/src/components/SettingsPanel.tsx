@@ -15,6 +15,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
   const [deviceError, setDeviceError] = useState<string | null>(null)
   const [paths, setPaths] = useState<AppPaths | null>(null)
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [obsError, setObsError] = useState<string | null>(null)
 
   const patch = async (p: DeepPartial<Config>): Promise<void> => {
     setConfig(await window.bard.setConfig(p))
@@ -287,6 +288,78 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               className="accent-cyan"
             />
           </Row>
+        </Group>
+
+        <Group title="Streamer mode">
+          <Row label="Only play albums marked safe">
+            <input
+              type="checkbox"
+              checked={config.streamer.enabled}
+              onChange={(e) => void patch({ streamer: { enabled: e.target.checked } })}
+              className="accent-cyan"
+            />
+          </Row>
+          <p className="text-s1 text-muted">
+            While armed, only albums you have checked and marked <span className="mono">safe</span>{' '}
+            will play — including ones you pick deliberately. Untested albums are blocked too, on
+            the grounds that an album nobody has checked is not evidence of anything. Blocked tracks
+            always say so rather than failing silently.
+          </p>
+
+          <Row label="Arm automatically when OBS goes live">
+            <input
+              type="checkbox"
+              checked={config.streamer.autoArm}
+              onChange={(e) => void patch({ streamer: { autoArm: e.target.checked } })}
+              className="accent-cyan"
+            />
+          </Row>
+          <Row label="obs-websocket URL">
+            <input
+              type="text"
+              defaultValue={config.streamer.obsUrl}
+              onBlur={(e) => void patch({ streamer: { obsUrl: e.target.value.trim() } })}
+              className="mono w-56 border border-edge bg-panel px-2 py-1 text-s1"
+            />
+          </Row>
+          <Row label={config.streamer.hasObsPassword ? 'Password (set)' : 'Password'}>
+            <span className="flex items-center gap-2">
+              <input
+                type="password"
+                placeholder={config.streamer.hasObsPassword ? '••••••••' : 'none'}
+                onBlur={async (e) => {
+                  const value = e.target.value
+                  if (!value) return
+                  e.target.value = ''
+                  const stored = await window.bard.setObsPassword(value)
+                  setConfig(await window.bard.getConfig())
+                  if (!stored) setObsError('No OS keyring available — password not stored')
+                  else setObsError(null)
+                }}
+                className="mono w-40 border border-edge bg-panel px-2 py-1 text-s1"
+              />
+              {config.streamer.hasObsPassword && (
+                <button
+                  className="text-s1 text-muted hover:text-rose"
+                  onClick={async () => {
+                    await window.bard.setObsPassword('')
+                    setConfig(await window.bard.getConfig())
+                    setObsError(null)
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </span>
+          </Row>
+          {obsError && <p className="text-s1 text-rose">{obsError}</p>}
+          <p className="text-s1 text-muted">
+            Enable the server in OBS under <em>Tools → WebSocket Server Settings</em>; it ships with
+            OBS 28+ but is off by default. Going live arms the mode — it is never disarmed
+            automatically, so a dropped connection cannot quietly remove the protection. Turn it off
+            yourself when you are done. The password is stored with your OS keyring, not in{' '}
+            <span className="mono">config.json</span>.
+          </p>
         </Group>
 
         <Group title="About">

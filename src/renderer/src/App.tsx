@@ -124,7 +124,10 @@ function App(): React.JSX.Element {
       // Streamer mode refusals arrive here. A block the user cannot see is
       // indistinguishable from a broken player, which on a stream is worse
       // than the risk being guarded against.
-      window.bard.onNotice(useStore.getState().setNotice)
+      window.bard.onNotice(useStore.getState().setNotice),
+      // Main arms streamer mode by itself when OBS goes live; without this the
+      // toggle would keep reading "off" while the mode was enforcing.
+      window.bard.onConfigChanged(useStore.getState().setConfig)
     ]
     return () => offs.forEach((off) => off())
   }, [])

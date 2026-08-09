@@ -72,6 +72,7 @@ export const INVOKE = {
   getAppInfo: 'app:info',
   revealPath: 'app:revealPath',
   secureStorageAvailable: 'app:secureStorage',
+  setObsPassword: 'streamer:setObsPassword',
   getStats: 'stats:get',
   clearStats: 'stats:clear',
   getAlbumFlags: 'albums:get',
@@ -97,7 +98,9 @@ export const EVENT = {
   lovedChanged: 'loved:changed',
   transport: 'player:transport',
   /** Human-readable message from main, for things the user must be told. */
-  notice: 'app:notice'
+  notice: 'app:notice',
+  /** Config changed in main rather than through the renderer -- see onConfigChanged. */
+  configChanged: 'config:changed'
 } as const
 
 /** Unsubscribe handle returned by every onX subscription. */
@@ -152,6 +155,13 @@ export type BardApi = {
 
   /** False when no OS keyring is available to encrypt tokens at rest. */
   secureStorageAvailable: () => Promise<boolean>
+  /**
+   * Stores the obs-websocket password, or clears it when given ''.
+   *
+   * Resolves false when no OS encryption is available -- the password is not
+   * stored in that case rather than being written as plaintext.
+   */
+  setObsPassword: (password: string) => Promise<boolean>
 
   /** Play counts keyed by track id. */
   getStats: () => Promise<Record<string, TrackStats>>
@@ -183,6 +193,14 @@ export type BardApi = {
    * indistinguishable from a broken player.
    */
   onNotice: (cb: (message: string) => void) => Unsubscribe
+  /**
+   * Config that main changed on its own.
+   *
+   * Normally the renderer owns config edits and holds the result, but OBS
+   * auto-arming flips streamer mode from main -- without this the toggle would
+   * keep showing "off" while the mode was enforcing.
+   */
+  onConfigChanged: (cb: (c: Config) => void) => Unsubscribe
   onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
   onAlbumFlagsChanged: (cb: (f: Record<string, AlbumFlag>) => void) => Unsubscribe
   onLovedChanged: (cb: (ids: string[]) => void) => Unsubscribe
