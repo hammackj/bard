@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { app } from 'electron'
 import { artworkDir } from './artwork'
-import { onNowPlayingChange, snapshot } from './nowplaying'
+import { onNowPlayingChange, snapshot, setOverlayPort } from './nowplaying'
 
 /** If the configured port is taken, walk upward this many times before failing. */
 const PORT_ATTEMPTS = 10
@@ -86,6 +86,9 @@ export async function startOverlay(preferredPort: number): Promise<number | null
 
   const port = await listenWithRetry(http, preferredPort)
   boundPort = port
+  // Snapshots build their art URL from this, so it has to be the port we got,
+  // not the one we asked for.
+  setOverlayPort(port)
   if (port === null) return null
 
   unsubscribe = onNowPlayingChange((snap) => {
@@ -143,6 +146,7 @@ export function stopOverlay(): Promise<void> {
   }
   clients = []
   boundPort = null
+  setOverlayPort(null)
 
   const closing = server
   server = null

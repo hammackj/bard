@@ -19,6 +19,14 @@ let listeners: Listener[] = []
 let current: QueueItem | null = null
 let progress: PlaybackProgress = { position: 0, duration: 0, playing: false, trackId: null }
 let queueLength = 0
+/**
+ * The port the overlay server actually bound, or null when it is not running.
+ *
+ * Pushed in by overlay.ts rather than read back out of it: overlay.ts already
+ * imports this module for the snapshot, and reaching the other way would make
+ * the pair circular.
+ */
+let overlayPort: number | null = null
 let lastWritten = ''
 let writing: Promise<void> = Promise.resolve()
 
@@ -33,8 +41,14 @@ export function onNowPlayingChange(fn: Listener): () => void {
   }
 }
 
+/** Called by overlay.ts when the server binds or stops. */
+export function setOverlayPort(port: number | null): void {
+  if (port === overlayPort) return
+  overlayPort = port
+  emit()
+}
+
 export function snapshot(): NowPlaying {
-  const port = getConfig().overlay.port
   return {
     title: current?.track.title ?? '',
     artist: current?.track.artist ?? '',
@@ -42,7 +56,16 @@ export function snapshot(): NowPlaying {
     durationSec: progress.duration || current?.track.durationSec || 0,
     positionSec: progress.position,
     isPlaying: progress.playing,
-    artUrl: current?.track.hasArtwork ? `http://127.0.0.1:${port}/art/${current.track.id}` : null,
+    // The bound port, not the configured one. When the configured port is
+    // taken the server walks upward, and building this from config pointed the
+    // overlay's cover art at a port some other process holds -- so every track
+    // showed a blank cover for the whole session, and nowplaying.json handed
+    // the same dead URL to anything else reading it. Null when nothing is
+    // bound: there is no server to serve the art.
+    artUrl:
+      current?.track.hasArtwork && overlayPort !== null
+        ? `http://127.0.0.1:${overlayPort}/art/${current.track.id}`
+        : null,
     queueLength,
     updatedAt: new Date().toISOString()
   }
