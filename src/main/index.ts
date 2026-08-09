@@ -13,7 +13,7 @@ import { nowPlayingPath, onNowPlayingChange } from './nowplaying'
 import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
-import { setMainWindow } from './windows'
+import { setMainWindow, getMainWindow, showMainWindow } from './windows'
 import { loadStats, flushStats } from './stats'
 import { loadAlbumFlags, flushAlbumFlags } from './albums'
 import { loadLoved, flushLoved } from './loved'
@@ -117,7 +117,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+function startBard(): void {
   electronApp.setAppUserModelId('io.github.hammackj.bard')
 
   // enumerateDevices() returns blank labels until media permission is granted,
@@ -170,21 +170,52 @@ app.whenReady().then(() => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-})
+}
 
-app.on('before-quit', () => {
-  void flushStats()
-  void flushAlbumFlags()
-  void flushLoved()
-  quitting = true
-  releaseGlobalShortcuts()
-  destroyTray()
-  void stopOverlay()
-})
+/**
+ * One Bard at a time.
+ *
+ * Two instances do not merely duplicate the window: they race for the overlay
+ * port and the global media keys, and both flush stats/loved/album flags on
+ * quit -- so whichever exits last silently overwrites the other's play counts.
+ */
+if (!app.requestSingleInstanceLock()) {
+  /**
+   * app.exit, not app.quit.
+   *
+   * quit emits before-quit, and this process has loaded none of the on-disk
+   * state it would then flush -- exiting "properly" would write empty stats
+   * over the running instance's. Nothing has been started yet, so there is
+   * nothing here worth cleaning up.
+   */
+  app.exit(0)
+} else {
+  // Fired in this (primary) process when a second launch is turned away.
+  app.on('second-instance', () => {
+    if (getMainWindow()) {
+      // May be hidden rather than destroyed -- closeToTray defaults on.
+      showMainWindow()
+    } else {
+      createWindow()
+    }
+  })
 
-app.on('window-all-closed', () => {
-  // With close-to-tray on, the window closing is not a request to exit.
-  if (process.platform !== 'darwin' && !getConfig().window.closeToTray) {
-    app.quit()
-  }
-})
+  void app.whenReady().then(startBard)
+
+  app.on('before-quit', () => {
+    void flushStats()
+    void flushAlbumFlags()
+    void flushLoved()
+    quitting = true
+    releaseGlobalShortcuts()
+    destroyTray()
+    void stopOverlay()
+  })
+
+  app.on('window-all-closed', () => {
+    // With close-to-tray on, the window closing is not a request to exit.
+    if (process.platform !== 'darwin' && !getConfig().window.closeToTray) {
+      app.quit()
+    }
+  })
+}
