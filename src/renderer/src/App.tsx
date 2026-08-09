@@ -9,6 +9,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { FirstRun } from './components/FirstRun'
 import { ShortcutsOverlay } from './components/ShortcutsOverlay'
 import { AvatarMenu } from './components/AvatarMenu'
+import { StreamerBanner } from './components/StreamerBanner'
 import { maybeRunSelfTest } from './audio/selftest'
 import { runScan } from './lib/scan'
 import * as engine from './audio/engine'
@@ -127,7 +128,8 @@ function App(): React.JSX.Element {
       window.bard.onNotice(useStore.getState().setNotice),
       // Main arms streamer mode by itself when OBS goes live; without this the
       // toggle would keep reading "off" while the mode was enforcing.
-      window.bard.onConfigChanged(useStore.getState().setConfig)
+      window.bard.onConfigChanged(useStore.getState().setConfig),
+      window.bard.onStreamerSource(useStore.getState().setStreamerSource)
     ]
     return () => offs.forEach((off) => off())
   }, [])
@@ -144,6 +146,10 @@ function App(): React.JSX.Element {
       // at 15, and one ArrowUp -- which steps from state -- jumped to 85.
       setVolume(cfg.audio.volume)
       setOverlayUrl(await window.bard.getOverlayUrl())
+      // Read once here as well as subscribing: the mode can already be armed
+      // when the window opens, and the banner should not wait for OBS to change
+      // state before it says so.
+      useStore.getState().setStreamerSource(await window.bard.getStreamerSource())
       useStore.getState().setStats(await window.bard.getStats())
       useStore.getState().setAlbumFlags(await window.bard.getAlbumFlags())
       useStore.getState().setLoved(await window.bard.getLoved())
@@ -214,9 +220,16 @@ function App(): React.JSX.Element {
     )
 
   const noLibrary = (s.config?.libraryPaths.length ?? 0) === 0
+  const armed = s.config?.streamer.enabled ?? false
 
   return (
-    <div className="relative z-[1] grid h-screen grid-rows-[34px_1fr]">
+    <div
+      className={`relative z-[1] grid h-screen ${
+        // The banner takes a real row rather than overlaying, so it pushes the
+        // app down instead of covering the top of the library.
+        armed ? 'grid-rows-[34px_auto_1fr]' : 'grid-rows-[34px_1fr]'
+      }`}
+    >
       <div
         className="flex items-center gap-3 border-b border-edge px-3"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
@@ -241,6 +254,8 @@ function App(): React.JSX.Element {
           />
         </span>
       </div>
+
+      <StreamerBanner />
 
       <div
         className="grid min-h-0"

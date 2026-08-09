@@ -1,4 +1,4 @@
-import { EVENT } from '../shared/ipc'
+import { EVENT, type StreamerSource } from '../shared/ipc'
 import { getConfig, setConfig } from './config'
 import { restartObsWatch, stopObsWatch } from './obs'
 import { refreshStreamerMode } from './queue'
@@ -20,7 +20,29 @@ import { sendToMain } from './windows'
  * silently remove protection, and the user may well still be recording
  * something this client cannot see. Disarming stays a deliberate act.
  */
-function armFromObs(): void {
+/**
+ * What armed the mode, for the banner to name.
+ *
+ * Runtime state rather than config: it describes what OBS is doing now, and
+ * persisting it would have the banner claim a recording that stopped hours ago.
+ */
+let source: StreamerSource = null
+
+export function getStreamerSource(): StreamerSource {
+  return source
+}
+
+/** Clears the source when the mode is turned off, or armed by hand. */
+export function setStreamerSource(next: StreamerSource): void {
+  if (next === source) return
+  source = next
+  sendToMain(EVENT.streamerSource, source)
+}
+
+function armFromObs(obsSource: StreamerSource): void {
+  // Re-broadcast even when already armed: switching from recording to
+  // streaming should update what the banner says.
+  setStreamerSource(obsSource)
   if (getConfig().streamer.enabled) return
   const next = setConfig({ streamer: { enabled: true } })
   // Main changed config without being asked, so the renderer has to be told or

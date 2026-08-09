@@ -1,5 +1,12 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
-import { EVENT, INVOKE, SEND, type AppPaths, type AppInfo } from '../shared/ipc'
+import {
+  EVENT,
+  INVOKE,
+  SEND,
+  type AppPaths,
+  type AppInfo,
+  type StreamerSource
+} from '../shared/ipc'
 import { getConfig, setConfig, configPath } from './config'
 import { scanLibrary } from './library'
 import { getArtwork, artworkDir } from './artwork'
@@ -30,7 +37,7 @@ import { applyGlobalShortcuts } from './shortcuts'
 import { sendToMain } from './windows'
 import { isRevealable } from '../shared/paths'
 import { hasObsPassword, secureStorageAvailable, setObsPassword } from './secrets'
-import { syncObsWatch } from './streamer'
+import { getStreamerSource, setStreamerSource, syncObsWatch } from './streamer'
 import type {
   Config,
   DeepPartial,
@@ -55,6 +62,9 @@ export function registerIpcHandlers(): void {
     // Arming has to reach the queue and the track on air, not just future
     // picks -- see refreshStreamerMode.
     if (patch.streamer?.enabled !== undefined) {
+      // Turning it off by hand clears what armed it; turning it on by hand
+      // means there is no OBS output to name.
+      setStreamerSource(null)
       refreshStreamerMode()
     }
     // A changed endpoint or auto-arm toggle should take effect now, not on the
@@ -64,6 +74,8 @@ export function registerIpcHandlers(): void {
     }
     return next
   })
+
+  ipcMain.handle(INVOKE.getStreamerSource, (): StreamerSource => getStreamerSource())
 
   ipcMain.handle(INVOKE.secureStorageAvailable, (): boolean => secureStorageAvailable())
 

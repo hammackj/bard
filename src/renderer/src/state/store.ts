@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { AlbumFlag, Config, QueueItem, ScanProgress, Track, TrackStats } from '@shared/types'
+import type { StreamerSource } from '@shared/ipc'
 
 /** Deliberately small: server-owned state mirrored here, plus local UI state. */
 type State = {
@@ -17,6 +18,8 @@ type State = {
   stats: Record<string, TrackStats>
   /** Transient message for things the user should know but need not act on. */
   notice: string | null
+  /** Which OBS output armed streamer mode; null when armed by hand. */
+  streamerSource: StreamerSource
   albumFlags: Record<string, AlbumFlag>
   loved: string[]
 
@@ -31,6 +34,7 @@ type State = {
   setOpenAlbum: (a: string | null) => void
   setStats: (s: Record<string, TrackStats>) => void
   setNotice: (n: string | null) => void
+  setStreamerSource: (s: StreamerSource) => void
   setAlbumFlags: (f: Record<string, AlbumFlag>) => void
   setLoved: (ids: string[]) => void
 }
@@ -47,6 +51,7 @@ export const useStore = create<State>((set) => ({
   openAlbum: null,
   stats: {},
   notice: null,
+  streamerSource: null,
   albumFlags: {},
   loved: [],
 
@@ -61,6 +66,7 @@ export const useStore = create<State>((set) => ({
   setOpenAlbum: (openAlbum) => set({ openAlbum, selectedIndex: 0 }),
   setStats: (stats) => set({ stats }),
   setNotice: (notice) => set({ notice }),
+  setStreamerSource: (streamerSource) => set({ streamerSource }),
   setAlbumFlags: (albumFlags) => set({ albumFlags }),
   setLoved: (loved) => set({ loved })
 }))

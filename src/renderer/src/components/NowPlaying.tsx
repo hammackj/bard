@@ -160,7 +160,6 @@ function PlaybackMode(): React.JSX.Element {
 
   return (
     <div className="ml-6 flex items-center gap-3">
-      <StreamerToggle />
       <EndlessToggle />
       <div className="flex items-center gap-1 border border-edge p-0.5" role="group">
         {options.map(([value, label, title]) => (
@@ -177,42 +176,6 @@ function PlaybackMode(): React.JSX.Element {
         ))}
       </div>
     </div>
-  )
-}
-
-/**
- * Streamer mode.
- *
- * Sits beside the transport rather than in Settings because being armed
- * changes what the player will do, and a mode that silently refuses tracks has
- * to be visible while it is on. It is styled loudly when armed for the same
- * reason -- this is the one control where "I forgot it was on" and "I forgot
- * it was off" are both expensive.
- */
-function StreamerToggle(): React.JSX.Element {
-  const on = useStore((s) => s.config?.streamer.enabled ?? false)
-  const setConfig = useStore((s) => s.setConfig)
-  return (
-    <button
-      onClick={async () => setConfig(await window.bard.setConfig({ streamer: { enabled: !on } }))}
-      title={
-        on
-          ? 'Streamer mode is ON — only albums checked and marked safe will play, however they are chosen. Click to turn off.'
-          : 'Streamer mode: play only albums marked safe for Content ID. Blocks untested albums too, including ones you pick deliberately.'
-      }
-      className={`flex items-center gap-1.5 border px-2 py-0.5 text-s1 ${
-        on ? 'border-green bg-green/20 text-green' : 'border-edge text-muted hover:text-text'
-      }`}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path
-          d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"
-          strokeWidth="1.7"
-          strokeLinejoin="round"
-        />
-      </svg>
-      {on ? 'Live-safe' : 'Streamer'}
-    </button>
   )
 }
 

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import WebSocket from 'ws'
+import type { StreamerSource } from '../shared/ipc'
 import { getConfig } from './config'
 import { getObsPassword } from './secrets'
 
@@ -32,20 +33,20 @@ const RETRY_MS = [2_000, 5_000, 10_000, 30_000, 60_000]
  * effectively always armed. That is the safe direction to be wrong in, and it
  * is still one click to turn off.
  */
-const LIVE_EVENTS = [
-  'StreamStateChanged',
-  'RecordStateChanged',
-  'ReplayBufferStateChanged',
-  'VirtualcamStateChanged'
-]
+const LIVE_EVENTS: Record<string, StreamerSource> = {
+  StreamStateChanged: 'stream',
+  RecordStateChanged: 'record',
+  ReplayBufferStateChanged: 'replay',
+  VirtualcamStateChanged: 'virtualcam'
+}
 
 /** Status requests asked on connect, so an already-live OBS arms immediately. */
-const LIVE_REQUESTS = [
-  'GetStreamStatus',
-  'GetRecordStatus',
-  'GetReplayBufferStatus',
-  'GetVirtualCamStatus'
-]
+const LIVE_REQUESTS: Record<string, StreamerSource> = {
+  GetStreamStatus: 'stream',
+  GetRecordStatus: 'record',
+  GetReplayBufferStatus: 'replay',
+  GetVirtualCamStatus: 'virtualcam'
+}
 
 /** obs-websocket close code for a rejected password. */
 const AUTH_FAILED = 4009
@@ -64,7 +65,7 @@ let stopped = true
 /** Set once per connection so a flapping OBS cannot spam the notice strip. */
 let toldUser = false
 
-let onLive: (() => void) | null = null
+let onLive: ((source: StreamerSource) => void) | null = null
 let onStatus: ((message: string) => void) | null = null
 
 /**
@@ -143,7 +144,7 @@ function connect(): void {
       retry = 0
       toldUser = false
       debug('identified; asking current output state')
-      for (const requestType of LIVE_REQUESTS) {
+      for (const requestType of Object.keys(LIVE_REQUESTS)) {
         ws.send(JSON.stringify({ op: 6, d: { requestType, requestId: requestType } }))
       }
       return
@@ -153,9 +154,10 @@ function connect(): void {
     if (msg.op === 5) {
       const type = String(msg.d.eventType)
       const data = (msg.d.eventData ?? {}) as Record<string, unknown>
-      if (LIVE_EVENTS.includes(type)) {
+      const eventSource = LIVE_EVENTS[type]
+      if (eventSource) {
         debug('event', type, 'outputActive=', data.outputActive)
-        if (data.outputActive === true) arm(type)
+        if (data.outputActive === true) arm(eventSource, type)
       }
       return
     }
@@ -166,9 +168,10 @@ function connect(): void {
       const requestId = String(msg.d.requestId)
       // Each status request answers under its own field name as well as
       // outputActive, depending on the request; outputActive is the common one.
-      if (data.outputActive === true) {
+      const requestSource = LIVE_REQUESTS[requestId]
+      if (requestSource && data.outputActive === true) {
         debug('already active at connect:', requestId)
-        arm(requestId)
+        arm(requestSource, requestId)
       }
     }
   })
@@ -197,9 +200,9 @@ function connect(): void {
   })
 }
 
-function arm(source: string): void {
-  debug('arming from', source)
-  onLive?.()
+function arm(source: StreamerSource, label: string): void {
+  debug('arming from', label)
+  onLive?.(source)
 }
 
 function report(message: string): void {
@@ -208,7 +211,7 @@ function report(message: string): void {
 
 /** Starts watching OBS. Safe to call repeatedly; a no-op when already running. */
 export function startObsWatch(handlers: {
-  onLive: () => void
+  onLive: (source: StreamerSource) => void
   onStatus: (m: string) => void
 }): void {
   onLive = handlers.onLive
@@ -236,7 +239,7 @@ export function stopObsWatch(): void {
 
 /** Restarts the watcher so a changed URL or password takes effect at once. */
 export function restartObsWatch(handlers: {
-  onLive: () => void
+  onLive: (source: StreamerSource) => void
   onStatus: (m: string) => void
 }): void {
   stopObsWatch()

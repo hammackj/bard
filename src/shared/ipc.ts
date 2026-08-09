@@ -70,6 +70,7 @@ export const INVOKE = {
   getOverlayUrl: 'overlay:url',
   getPaths: 'app:paths',
   getAppInfo: 'app:info',
+  getStreamerSource: 'streamer:getSource',
   revealPath: 'app:revealPath',
   secureStorageAvailable: 'app:secureStorage',
   setObsPassword: 'streamer:setObsPassword',
@@ -100,8 +101,19 @@ export const EVENT = {
   /** Human-readable message from main, for things the user must be told. */
   notice: 'app:notice',
   /** Config changed in main rather than through the renderer -- see onConfigChanged. */
-  configChanged: 'config:changed'
+  configChanged: 'config:changed',
+  /** What armed streamer mode, so the banner can name it. */
+  streamerSource: 'streamer:source'
 } as const
+
+/**
+ * Which OBS output armed streamer mode, or null when it was armed by hand.
+ *
+ * Runtime state, deliberately not config: it describes what OBS is doing right
+ * now, and persisting it across a restart would make the banner claim a
+ * recording that stopped hours ago.
+ */
+export type StreamerSource = 'stream' | 'record' | 'replay' | 'virtualcam' | null
 
 /** Unsubscribe handle returned by every onX subscription. */
 export type Unsubscribe = () => void
@@ -150,6 +162,8 @@ export type BardApi = {
   getPaths: () => Promise<AppPaths>
   /** App version plus the Electron/Chrome/Node it is running on. */
   getAppInfo: () => Promise<AppInfo>
+  /** Read once on mount; thereafter it arrives via onStreamerSource. */
+  getStreamerSource: () => Promise<StreamerSource>
   /** Opens a folder in the system file manager. */
   revealPath: (path: string) => Promise<void>
 
@@ -201,6 +215,8 @@ export type BardApi = {
    * keep showing "off" while the mode was enforcing.
    */
   onConfigChanged: (cb: (c: Config) => void) => Unsubscribe
+  /** What armed streamer mode; null when armed by hand. */
+  onStreamerSource: (cb: (s: StreamerSource) => void) => Unsubscribe
   onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
   onAlbumFlagsChanged: (cb: (f: Record<string, AlbumFlag>) => void) => Unsubscribe
   onLovedChanged: (cb: (ids: string[]) => void) => Unsubscribe
