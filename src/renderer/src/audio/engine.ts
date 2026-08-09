@@ -159,7 +159,17 @@ export async function setOutputDevice(deviceId: string): Promise<void> {
   const sink = deviceId === 'default' ? '' : deviceId
   const c = ctx as SinkCapableContext
   if (typeof c.setSinkId === 'function') {
-    await c.setSinkId(sink)
+    try {
+      await c.setSinkId(sink)
+    } catch (err) {
+      // The saved device is gone -- an interface unplugged between runs, say.
+      // Falling back to the system default keeps audio playing; throwing here
+      // used to leave the app silent with only an unhandled rejection to show
+      // for it.
+      if (sink === '') throw err
+      await c.setSinkId('')
+      throw new Error(`saved output device unavailable, using system default`)
+    }
     return
   }
   const a = element() as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }

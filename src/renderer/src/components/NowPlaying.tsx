@@ -133,7 +133,9 @@ function PlaybackMode(): React.JSX.Element {
   ]
 
   return (
-    <div className="ml-6 flex items-center gap-1 border border-edge p-0.5" role="group">
+    <div className="ml-6 flex items-center gap-3">
+      <EndlessToggle />
+      <div className="flex items-center gap-1 border border-edge p-0.5" role="group">
       {options.map(([value, label, title]) => (
         <button
           key={value}
@@ -146,7 +148,43 @@ function PlaybackMode(): React.JSX.Element {
           {label}
         </button>
       ))}
+      </div>
     </div>
+  )
+}
+
+/**
+ * Endless play.
+ *
+ * Distinct from auto-fill: auto-fill decides what to play when the queue is
+ * already empty, endless keeps it from ever getting there, and shows you the
+ * upcoming tracks so you can still steer. Shuffle deals from a deck, so every
+ * track in the library plays before any repeats.
+ */
+function EndlessToggle(): React.JSX.Element {
+  const on = useStore((s) => s.config?.playback.endless ?? false)
+  const setConfig = useStore((s) => s.setConfig)
+  return (
+    <button
+      onClick={async () => setConfig(await window.bard.setConfig({ playback: { endless: !on } }))}
+      title={
+        on
+          ? 'Endless play is on: the queue is kept full and every track plays before any repeats'
+          : 'Endless play: never stop, and never repeat a track until the whole library has played'
+      }
+      className={`flex items-center gap-1.5 border px-2 py-0.5 text-s1 ${
+        on ? 'border-cyan-deep bg-cyan-deep text-text' : 'border-edge text-muted hover:text-text'
+      }`}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path
+          d="M17 7a5 5 0 0 1 0 10c-3 0-4-3-7-3a4 4 0 1 0 0-8c3 0 4 3 7 3z"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+      </svg>
+      Endless
+    </button>
   )
 }
 

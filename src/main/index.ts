@@ -14,6 +14,7 @@ import { createTray, updateTray, destroyTray } from './tray'
 import { applyGlobalShortcuts, releaseGlobalShortcuts } from './shortcuts'
 import { getNowPlaying } from './queue'
 import { setMainWindow } from './windows'
+import { loadStats, flushStats } from './stats'
 import { toggleTrayPopup, warmTrayPopup } from './trayPopup'
 
 // Must run before app.whenReady().
@@ -111,6 +112,7 @@ app.whenReady().then(() => {
   })
 
   handleScheme(makeIsAllowed(getLibraryPaths))
+  void loadStats()
   registerIpcHandlers()
 
   app.on('browser-window-created', (_, window) => {
@@ -153,6 +155,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  void flushStats()
   quitting = true
   releaseGlobalShortcuts()
   destroyTray()

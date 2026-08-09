@@ -11,7 +11,8 @@ import type {
   PlaybackProgress,
   ScanProgress,
   QueueItem,
-  Track
+  Track,
+  TrackStats
 } from './types'
 
 export type TransportAction = 'toggle' | 'restart'
@@ -42,7 +43,9 @@ export const INVOKE = {
   getPaths: 'app:paths',
   revealPath: 'app:revealPath',
   secureStorageAvailable: 'app:secureStorage',
-  openExternal: 'app:openExternal'
+  openExternal: 'app:openExternal',
+  getStats: 'stats:get',
+  clearStats: 'stats:clear'
 } as const
 
 /** Renderer -> main, fire and forget (ipcRenderer.send). */
@@ -57,6 +60,7 @@ export const EVENT = {
   playTrack: 'player:play',
   scanProgress: 'library:scanProgress',
   nowPlaying: 'player:nowPlaying',
+  statsChanged: 'stats:changed',
   transport: 'player:transport'
 } as const
 
@@ -104,6 +108,10 @@ export type BardApi = {
   /** Opens an allowlisted https URL in the system browser. */
   openExternal: (url: string) => Promise<boolean>
 
+  /** Play counts keyed by track id. */
+  getStats: () => Promise<Record<string, TrackStats>>
+  clearStats: () => Promise<void>
+
   // subscriptions -- each returns its unsubscribe fn
   onQueueChanged: (cb: (q: QueueItem[]) => void) => Unsubscribe
   onPlayTrack: (cb: (t: Track) => void) => Unsubscribe
@@ -112,4 +120,5 @@ export type BardApi = {
   onNowPlaying: (cb: (i: QueueItem | null) => void) => Unsubscribe
   /** Transport commands originating outside the renderer (tray, media keys). */
   onTransport: (cb: (a: TransportAction) => void) => Unsubscribe
+  onStatsChanged: (cb: (s: Record<string, TrackStats>) => void) => Unsubscribe
 }

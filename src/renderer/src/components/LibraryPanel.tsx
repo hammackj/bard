@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { Track } from '@shared/types'
+import { AlbumGrid, type Album } from './AlbumGrid'
 import { useStore } from '../state/store'
 import { fmtTime } from '../lib/format'
 
@@ -21,18 +22,23 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
   const setFilter = useStore((s) => s.setFilter)
   const selected = useStore((s) => s.selectedIndex)
   const setSelected = useStore((s) => s.setSelectedIndex)
+  const view = useStore((s) => s.view)
+  const setView = useStore((s) => s.setView)
+  const openAlbum = useStore((s) => s.openAlbum)
+  const setOpenAlbum = useStore((s) => s.setOpenAlbum)
+  const stats = useStore((s) => s.stats)
   const scanning = useStore((s) => s.scanning)
   const progress = useStore((s) => s.scanProgress)
-  const folders = useStore((s) => s.config?.libraryPaths.length ?? 0)
 
   const input = useRef<HTMLInputElement | null>(null)
   const scroller = useRef<HTMLDivElement | null>(null)
 
   const filtered = useMemo(() => {
+    const base = openAlbum ? tracks.filter((t) => t.album === openAlbum) : tracks
     const q = filter.trim().toLowerCase()
-    if (!q) return tracks
-    return tracks.filter((t) => t.searchText.includes(q))
-  }, [tracks, filter])
+    if (!q) return base
+    return base.filter((t) => t.searchText.includes(q))
+  }, [tracks, filter, openAlbum])
 
   const virtual = useVirtualizer({
     count: filtered.length,
@@ -65,10 +71,31 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
 
   return (
     <section className="flex min-h-0 flex-col" onKeyDown={onKeyDown}>
-      <header className="flex items-center justify-between px-4 pt-[13px] pb-[11px] text-s1 font-semibold tracking-[.13em] text-muted uppercase">
-        <span>Library</span>
-        <span>
-          {folders} folder{folders === 1 ? '' : 's'}
+      <header className="flex items-center justify-between gap-2 px-4 pt-[13px] pb-[11px] text-s1 font-semibold tracking-[.13em] text-muted uppercase">
+        {openAlbum ? (
+          <button
+            onClick={() => setOpenAlbum(null)}
+            className="min-w-0 truncate normal-case hover:text-text"
+            title="Back to albums"
+          >
+            ‹ {openAlbum}
+          </button>
+        ) : (
+          <span>Library</span>
+        )}
+        <span className="flex flex-none gap-2 normal-case">
+          <button
+            onClick={() => setView('albums')}
+            className={view === 'albums' && !openAlbum ? 'text-cyan' : 'hover:text-text'}
+          >
+            Albums
+          </button>
+          <button
+            onClick={() => setView('tracks')}
+            className={view === 'tracks' && !openAlbum ? 'text-cyan' : 'hover:text-text'}
+          >
+            Tracks
+          </button>
         </span>
       </header>
 
@@ -84,6 +111,18 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
         />
       </div>
 
+      {view === 'albums' && !openAlbum ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <AlbumGrid
+            onOpenAlbum={(a: Album) => setOpenAlbum(a.name)}
+            onQueueAlbum={(a: Album) => a.tracks.forEach((t) => onEnqueue(t))}
+            onPlayAlbum={(a: Album) => {
+              a.tracks.forEach((t) => onEnqueue(t))
+              onPlayNow(a.tracks[0])
+            }}
+          />
+        </div>
+      ) : (
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto px-1.5">
         <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
           {virtual.getVirtualItems().map((row) => {
@@ -113,19 +152,29 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
                     <span className="block truncate text-s2">{t.title}</span>
                     <span className="mt-px block truncate text-s1 text-muted">{t.artist}</span>
                   </span>
-                  <span className="mono text-s1 text-muted">{fmtTime(t.durationSec)}</span>
+                  <span className="mono flex items-baseline gap-2 text-s1 text-muted">
+                    {(stats[t.id]?.plays ?? 0) > 0 && (
+                      <span className="text-cyan" title={`Played ${stats[t.id].plays} times`}>
+                        {stats[t.id].plays}×
+                      </span>
+                    )}
+                    {fmtTime(t.durationSec)}
+                  </span>
                 </button>
               </div>
             )
           })}
         </div>
       </div>
+      )}
 
       <footer className="flex justify-between border-t border-edge px-4 py-[9px] text-s1 text-muted">
         <span>
           {scanning && progress
             ? `Scanning ${progress.scanned}/${progress.total}`
-            : `${filtered.length.toLocaleString()} tracks`}
+            : view === 'albums' && !openAlbum
+              ? `${new Set(tracks.map((t) => t.album)).size} albums`
+              : `${filtered.length.toLocaleString()} tracks`}
         </span>
         <span>Enter to queue</span>
       </footer>

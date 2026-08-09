@@ -3,9 +3,17 @@ import { EVENT } from '../shared/ipc'
 import type { QueueItem, Track } from '../shared/types'
 import { getConfig } from './config'
 import { sendToMain } from './windows'
-import { getTrackById, nextInAlbum, randomAlbumStart, randomTrack } from './library'
+import { allTracks, getTrackById, nextInAlbum, randomAlbumStart, randomTrack } from './library'
 import { shuffled } from '../shared/playlist'
+import { draw, type Deck } from '../shared/deck'
 import { setNowPlaying, setQueueLength } from './nowplaying'
+import {
+  PLAY_THRESHOLD_RATIO,
+  PLAY_THRESHOLD_SEC,
+  getStats,
+  recordPlay,
+  recordSkip
+} from './stats'
 
 /**
  * The queue lives here and nowhere else.
@@ -16,8 +24,55 @@ import { setNowPlaying, setQueueLength } from './nowplaying'
 
 let queue: QueueItem[] = []
 let nowPlaying: QueueItem | null = null
+/** Whether the current track has already been counted, and how far it got. */
+let counted = false
+let position = 0
 /** Recently played ids, newest last. Keeps shuffle from repeating itself. */
 let history: string[] = []
+/** Shuffle deck: dealt through completely before any track repeats. */
+let deck: Deck | null = null
+
+/** Draws the next track from the deck, rebuilding it when exhausted. */
+function drawFromDeck(): Track | null {
+  const ids = allTracks().map((t) => t.id)
+  const out = draw(deck, ids, Math.random, nowPlaying?.track.id)
+  deck = out.deck
+  return out.id ? (getTrackById(out.id) ?? null) : null
+}
+
+/**
+ * Tops the queue up so playback never runs out.
+ *
+ * Deliberately fills the visible queue rather than picking a track at the last
+ * moment: you can see what is coming, and reorder or drop it, instead of being
+ * handed whatever the player decided a second ago.
+ */
+function topUpEndless(): void {
+  const cfg = getConfig().playback
+  if (process.env.BARD_ENDLESS_DEBUG) {
+    console.log(
+      `[endless] on=${cfg.endless} look=${cfg.endlessLookahead} queue=${queue.length} ` +
+        `library=${allTracks().length}`
+    )
+  }
+  if (!cfg.endless) return
+  const want = Math.max(1, cfg.endlessLookahead)
+  if (queue.length >= want) return
+
+  const taken = new Set(queue.map((q) => q.track.id))
+  const added: QueueItem[] = []
+  let guard = 0
+  while (queue.length + added.length < want && guard++ < want * 4) {
+    const next = cfg.autoFill === 'album' ? autoFillTrack() : drawFromDeck()
+    if (!next) break
+    if (taken.has(next.id)) continue
+    taken.add(next.id)
+    added.push({ id: randomUUID(), track: next, addedAt: Date.now() })
+  }
+  if (!added.length) return
+  queue = [...queue, ...added]
+  emitQueue()
+}
 
 function remember(track: Track): void {
   const limit = Math.max(0, getConfig().playback.avoidRepeat)
@@ -26,6 +81,32 @@ function remember(track: Track): void {
 
 function broadcast(channel: string, payload: unknown): void {
   sendToMain(channel, payload)
+}
+
+/**
+ * Counts a play once the track has actually been listened to.
+ *
+ * Counting on start would make skipping through the library inflate every
+ * number; 30 seconds, or half of a short track, is the point at which it was
+ * genuinely played rather than sampled.
+ */
+export function reportPosition(seconds: number, duration: number): void {
+  position = seconds
+  if (counted || !nowPlaying) return
+  const enough =
+    seconds >= PLAY_THRESHOLD_SEC ||
+    (duration > 0 && seconds >= duration * PLAY_THRESHOLD_RATIO)
+  if (!enough) return
+  counted = true
+  recordPlay(nowPlaying.track.id)
+  broadcast(EVENT.statsChanged, getStats())
+}
+
+/** Called when playback leaves a track before it counted as played. */
+function creditSkipIfUnplayed(): void {
+  if (!nowPlaying || counted || position <= 1) return
+  recordSkip(nowPlaying.track.id)
+  broadcast(EVENT.statsChanged, getStats())
 }
 
 function emitQueue(): void {
@@ -60,7 +141,7 @@ function autoFillTrack(): Track | null {
     }
     return randomAlbumStart()
   }
-  return randomTrack(new Set(history))
+  return drawFromDeck() ?? randomTrack(new Set(history))
 }
 
 export function enqueueTrack(trackId: string): QueueItem | null {
@@ -108,7 +189,15 @@ export function shuffleQueue(): void {
 export function removeFromQueue(queueItemId: string): void {
   const before = queue.length
   queue = queue.filter((i) => i.id !== queueItemId)
-  if (queue.length !== before) emitQueue()
+  if (queue.length !== before) {
+    emitQueue()
+    topUpEndless()
+  }
+}
+
+/** Called when the endless setting changes, so it takes effect immediately. */
+export function refreshEndless(): void {
+  topUpEndless()
 }
 
 export function reorderQueue(from: number, to: number): void {
@@ -130,8 +219,21 @@ export function clearQueue(): void {
 
 /** Pulls the head of the queue and tells the renderer to play it. */
 export function playNext(): QueueItem | null {
+  creditSkipIfUnplayed()
+  counted = false
+  position = 0
+
+  // Stock the queue before drawing from it.
+  //
+  // Order matters: auto-fill returns a track whenever the library is non-empty,
+  // so doing it first meant the "queue is empty" branch always won and played
+  // directly, leaving the queue permanently empty. Endless would then be
+  // invisible -- music kept playing but nothing was ever queued to look at.
+  topUpEndless()
+
   const [next, ...rest] = queue
   if (!next) {
+    // Not endless: fall back to a single auto-filled track, or stop.
     const filled = autoFillTrack()
     if (filled) {
       const item: QueueItem = { id: randomUUID(), track: filled, addedAt: Date.now() }
@@ -151,6 +253,7 @@ export function playNext(): QueueItem | null {
   nowPlaying = next
   remember(next.track)
   emitQueue()
+  topUpEndless()
   setNowPlaying(next)
   broadcast(EVENT.nowPlaying, next)
   broadcast(EVENT.playTrack, next.track)

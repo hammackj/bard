@@ -11,11 +11,15 @@ import {
   reorderQueue,
   skip,
   shuffleQueue,
-  fillQueue
+  fillQueue,
+  reportPosition,
+  refreshEndless
 } from './queue'
 import { setProgress, nowPlayingPath } from './nowplaying'
+import { clearStats, getStats } from './stats'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
+import { sendToMain } from './windows'
 import type {
   Config,
   DeepPartial,
@@ -32,6 +36,9 @@ export function registerIpcHandlers(): void {
     // than waiting for a restart.
     if (patch.shortcuts?.globalMediaKeys !== undefined) {
       applyGlobalShortcuts(next.shortcuts.globalMediaKeys)
+    }
+    if (patch.playback?.endless !== undefined || patch.playback?.endlessLookahead !== undefined) {
+      refreshEndless()
     }
     return next
   })
@@ -130,5 +137,12 @@ export function registerIpcHandlers(): void {
   ipcMain.on(SEND.reportEnded, (): void => onTrackEnded())
   ipcMain.on(SEND.reportProgress, (_e, p: PlaybackProgress): void => {
     setProgress(p)
+    if (p.playing) reportPosition(p.position, p.duration)
+  })
+
+  ipcMain.handle(INVOKE.getStats, () => getStats())
+  ipcMain.handle(INVOKE.clearStats, (): void => {
+    clearStats()
+    sendToMain(EVENT.statsChanged, getStats())
   })
 }

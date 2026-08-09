@@ -20,6 +20,13 @@ export type Track = {
   searchText: string
 }
 
+export type TrackStats = {
+  plays: number
+  skips: number
+  lastPlayedAt?: number
+  lastSkippedAt?: number
+}
+
 export type QueueItem = {
   /** Identifies this queue entry, not the track -- the same track may be queued twice. */
   id: string
@@ -86,6 +93,14 @@ export type PlaybackConfig = {
   fillCount: number
   /** Upper bound on the queue, so Fill cannot run away with the library. */
   maxQueueLength: number
+  /**
+   * Never stop. The queue is kept topped up ahead of the current track, so
+   * playback continues indefinitely and you can still see and reorder what is
+   * coming.
+   */
+  endless: boolean
+  /** How many tracks endless mode keeps queued ahead. */
+  endlessLookahead: number
 }
 
 export type TrayPopupCorner =
@@ -122,7 +137,14 @@ export const DEFAULT_CONFIG: Config = {
   overlay: { port: 4747, writeNowPlayingJson: true },
   shortcuts: { globalMediaKeys: false },
   window: { closeToTray: true, trayPopupCorner: 'bottom-right', trayPopupSeconds: 8 },
-  playback: { autoFill: 'off', avoidRepeat: 50, fillCount: 10, maxQueueLength: 200 }
+  playback: {
+    autoFill: 'shuffle',
+    avoidRepeat: 50,
+    fillCount: 10,
+    maxQueueLength: 200,
+    endless: false,
+    endlessLookahead: 10
+  }
 }
 
 /** Recursive partial, for config patches coming over IPC. */

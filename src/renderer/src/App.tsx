@@ -10,6 +10,7 @@ import { FirstRun } from './components/FirstRun'
 import { ShortcutsOverlay } from './components/ShortcutsOverlay'
 import { AvatarMenu } from './components/AvatarMenu'
 import { maybeRunSelfTest } from './audio/selftest'
+import * as engine from './audio/engine'
 
 function App(): React.JSX.Element {
   const s = useStore()
@@ -47,6 +48,7 @@ function App(): React.JSX.Element {
     const offs = [
       window.bard.onQueueChanged(useStore.getState().setQueue),
       window.bard.onScanProgress(useStore.getState().setScanProgress),
+      window.bard.onStatsChanged(useStore.getState().setStats),
       window.bard.onTransport((action) => {
         if (action === 'toggle') void toggleRef.current()
         else if (action === 'restart') seekRef.current(0)
@@ -60,6 +62,21 @@ function App(): React.JSX.Element {
       const cfg = await window.bard.getConfig()
       useStore.getState().setConfig(cfg)
       setOverlayUrl(await window.bard.getOverlayUrl())
+      useStore.getState().setStats(await window.bard.getStats())
+
+      // Re-apply the saved output device. An interface unplugged between runs
+      // would otherwise leave playback pointed at a device that no longer
+      // exists; fall back, and forget the dead id so it stops failing.
+      if (cfg.audio.outputDeviceId && cfg.audio.outputDeviceId !== 'default') {
+        try {
+          await engine.setOutputDevice(cfg.audio.outputDeviceId)
+        } catch (e) {
+          useStore.getState().setNotice((e as Error).message)
+          useStore
+            .getState()
+            .setConfig(await window.bard.setConfig({ audio: { outputDeviceId: 'default' } }))
+        }
+      }
       if (cfg.libraryPaths.length && !scanned.current) {
         scanned.current = true
         await runScan()
@@ -212,6 +229,8 @@ function App(): React.JSX.Element {
         </aside>
       </div>
 
+      <Notice />
+
       <SettingsPanel
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -222,6 +241,21 @@ function App(): React.JSX.Element {
   )
 }
 
+
+/** Transient, dismissible strip for things worth saying once. */
+function Notice(): React.JSX.Element | null {
+  const notice = useStore((s) => s.notice)
+  const setNotice = useStore((s) => s.setNotice)
+  if (!notice) return null
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-cyan-deep bg-panel px-4 py-2 text-s2">
+      <span className="min-w-0 truncate">{notice}</span>
+      <button className="flex-none text-s1 text-muted hover:text-text" onClick={() => setNotice(null)}>
+        Dismiss
+      </button>
+    </div>
+  )
+}
 
 /** Chevron that folds the dock on its side of the window away. */
 function DockToggle({

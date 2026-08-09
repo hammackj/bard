@@ -35,6 +35,11 @@ export async function maybeRunSelfTest(): Promise<void> {
   const previousVolume = useStore.getState().config?.audio.volume ?? 0.8
   engine.setVolume(silent ? 1 : 0)
 
+  // The deterministic checks below assume nothing is topping the queue up
+  // behind them, so endless is disabled for the duration and restored after.
+  const endlessWas = useStore.getState().config?.playback.endless ?? false
+  await window.bard.setConfig({ playback: { endless: false } })
+
   const [a, b] = tracks
   await window.bard.clearQueue()
   await window.bard.enqueue(a.id)
@@ -94,10 +99,36 @@ export async function maybeRunSelfTest(): Promise<void> {
       (kept ? `still playing "${kept.title}"` : 'stopped')
   )
 
+  // Endless: the queue must refill itself and never hand out a repeat.
+  await window.bard.setConfig({ playback: { endless: true } })
+  await window.bard.clearQueue()
+  await window.bard.skip()
+  await wait(900)
+  const q1 = useStore.getState().queue
+  console.log(`[selftest] endless topped queue to ${q1.length}`)
+  const seen = new Set(q1.map((i) => i.track.id))
+  for (let i = 0; i < 12; i++) {
+    await window.bard.skip()
+    await wait(250)
+    for (const item of useStore.getState().queue) seen.add(item.track.id)
+  }
+  const q2 = useStore.getState().queue
+  console.log(
+    `[selftest] after 12 skips queue=${q2.length} distinct tracks seen=${seen.size} ` +
+      `(repeats=${seen.size < 12 ? 'YES' : 'none'})`
+  )
+
   engine.pause()
   await window.bard.clearQueue()
+  useStore.getState().setConfig(
+    await window.bard.setConfig({ playback: { endless: endlessWas } })
+  )
   if (silent) {
-    await engine.setOutputDevice(useStore.getState().config?.audio.outputDeviceId ?? 'default')
+    try {
+      await engine.setOutputDevice(useStore.getState().config?.audio.outputDeviceId ?? 'default')
+    } catch (e) {
+      console.warn(`[selftest] restoring output device: ${(e as Error).message}`)
+    }
   }
   engine.setVolume(previousVolume)
 
