@@ -327,6 +327,13 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               <input
                 type="password"
                 placeholder={config.streamer.hasObsPassword ? '••••••••' : 'none'}
+                // Enter saves as well as blur. Saving only on blur meant typing
+                // the password and pressing Enter, or closing Settings with
+                // Escape, discarded it silently -- and the field looks identical
+                // either way, so it reads as saved when it is not.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                }}
                 onBlur={async (e) => {
                   // Trimmed: OBS shows the password in a field people copy, and
                   // a pasted trailing space or newline fails authentication with
@@ -336,8 +343,13 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
                   e.target.value = ''
                   const stored = await window.bard.setObsPassword(value)
                   setConfig(await window.bard.getConfig())
-                  if (!stored) setObsError('No OS keyring available — password not stored')
-                  else setObsError(null)
+                  // Say so either way: a credential field that changes nothing
+                  // visible on save is indistinguishable from one that failed.
+                  setObsError(
+                    stored
+                      ? `Password saved (${value.length} characters) — reconnecting to OBS`
+                      : 'No OS keyring available — password not stored'
+                  )
                 }}
                 className="mono w-40 border border-edge bg-panel px-2 py-1 text-s1"
               />
@@ -355,7 +367,13 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               )}
             </span>
           </Row>
-          {obsError && <p className="text-s1 text-rose">{obsError}</p>}
+          {obsError && (
+            <p
+              className={`text-s1 ${obsError.startsWith('Password saved') ? 'text-green' : 'text-rose'}`}
+            >
+              {obsError}
+            </p>
+          )}
           <p className="text-s1 text-muted">
             Enable the server in OBS under <em>Tools → WebSocket Server Settings</em>; it ships with
             OBS 28+ but is off by default. Going live arms the mode — it is never disarmed
