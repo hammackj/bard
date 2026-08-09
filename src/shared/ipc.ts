@@ -47,6 +47,7 @@ export const INVOKE = {
   addLibraryPath: 'library:addPath',
   getArtwork: 'library:artwork',
   enqueue: 'queue:enqueue',
+  enqueueMany: 'queue:enqueueMany',
   playNow: 'queue:playNow',
   removeFromQueue: 'queue:remove',
   reorderQueue: 'queue:reorder',
@@ -101,6 +102,12 @@ export type BardApi = {
 
   // queue -- the renderer sends intents, main owns the state
   enqueue: (trackId: string) => Promise<void>
+  /**
+   * Appends a batch in one call. Must be used for anything multi-track: a loop
+   * of single enqueues lets auto-fill interleave after the first one.
+   * `startNow` begins playback on the batch's first track.
+   */
+  enqueueMany: (trackIds: string[], startNow?: boolean) => Promise<void>
   /** Plays this track at once, leaving the pending queue as it was. */
   playNow: (trackId: string) => Promise<void>
   removeFromQueue: (queueItemId: string) => Promise<void>

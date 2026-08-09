@@ -30,6 +30,7 @@ const api: BardApi = {
   getArtwork: (trackId) => ipcRenderer.invoke(INVOKE.getArtwork, trackId),
 
   enqueue: (trackId) => ipcRenderer.invoke(INVOKE.enqueue, trackId),
+  enqueueMany: (trackIds, startNow) => ipcRenderer.invoke(INVOKE.enqueueMany, trackIds, startNow),
   playNow: (trackId) => ipcRenderer.invoke(INVOKE.playNow, trackId),
   removeFromQueue: (queueItemId) => ipcRenderer.invoke(INVOKE.removeFromQueue, queueItemId),
   reorderQueue: (from, to) => ipcRenderer.invoke(INVOKE.reorderQueue, from, to),

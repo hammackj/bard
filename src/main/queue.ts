@@ -372,6 +372,25 @@ export function onTrackEnded(): void {
 }
 
 /**
+ * Makes `item` the current track and tells everyone.
+ *
+ * The bookkeeping playNext does around a selection, without the queue-shifting:
+ * credit a skip for whatever is being abandoned, reset the play counter,
+ * remember the track so shuffle avoids it, and push it onto the back stack.
+ */
+function startPlaying(item: QueueItem): void {
+  creditSkipIfUnplayed()
+  counted = false
+  position = 0
+  nowPlaying = item
+  remember(item.track)
+  played = pushPlayed(played, item)
+  setNowPlaying(item)
+  broadcast(EVENT.nowPlaying, item)
+  broadcast(EVENT.playTrack, item.track)
+}
+
+/**
  * Plays a specific track immediately, leaving the pending queue intact.
  *
  * The renderer used to express this as enqueue-then-skip, which cannot work:
@@ -387,18 +406,55 @@ export function onTrackEnded(): void {
 export function playNowById(trackId: string): QueueItem | null {
   const track = getTrackById(trackId)
   if (!track) return null
-
-  creditSkipIfUnplayed()
-  counted = false
-  position = 0
-
   const item: QueueItem = { id: randomUUID(), track, addedAt: Date.now() }
-  nowPlaying = item
-  remember(track)
-  played = pushPlayed(played, item)
-  setNowPlaying(item)
-  broadcast(EVENT.nowPlaying, item)
-  broadcast(EVENT.playTrack, track)
+  startPlaying(item)
   topUpEndless()
   return item
+}
+
+/** Lifts an item out of the pending queue and plays it. */
+function playQueueItem(itemId: string): void {
+  const idx = queue.findIndex((i) => i.id === itemId)
+  if (idx === -1) return
+  const item = queue[idx]
+  queue = [...queue.slice(0, idx), ...queue.slice(idx + 1)]
+  startPlaying(item)
+  emitQueue()
+  topUpEndless()
+}
+
+/**
+ * Appends several tracks as one operation.
+ *
+ * One enqueue per track was not equivalent. enqueueTrack starts playback as
+ * soon as the first one lands, and playNext tops the queue up before drawing
+ * from it -- so queueing a twelve-track album appended track 1, started it,
+ * saw a queue of one against a lookahead of ten, and filled the gap with nine
+ * unrelated tracks. The rest of the album arrived behind them, and the user
+ * heard track 1, nine tracks from elsewhere in the library, then track 2.
+ *
+ * Building the whole batch before anything plays leaves the top-up nothing to
+ * do. That matters more than tidiness here: the point of a curated library is
+ * knowing what goes out on stream, and this put unvetted tracks on air without
+ * anyone choosing them.
+ */
+export function enqueueTracks(trackIds: string[], startNow = false): QueueItem[] {
+  const items: QueueItem[] = []
+  for (const id of trackIds) {
+    const track = getTrackById(id)
+    if (track) items.push({ id: randomUUID(), track, addedAt: Date.now() })
+  }
+  if (items.length === 0) return []
+
+  queue = [...queue, ...items]
+  emitQueue()
+
+  if (startNow) {
+    // Start on the batch's own first track, not on whatever was already queued
+    // ahead of it -- "play album" means play this album.
+    playQueueItem(items[0].id)
+  } else if (!nowPlaying) {
+    playNext()
+  }
+  return items
 }

@@ -12,13 +12,15 @@ const ROW_HEIGHT = 44
 type Props = {
   onEnqueue: (t: Track) => void
   onPlayNow: (t: Track) => void
+  /** Whole albums go over in one call; see BardApi.enqueueMany for why. */
+  onQueueTracks: (ts: Track[], startNow: boolean) => void
 }
 
 /**
  * Virtualised because a library of a few thousand rows will jank if every one
  * is in the DOM. Row height is fixed, so the estimate is exact.
  */
-export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element {
+export function LibraryPanel({ onEnqueue, onPlayNow, onQueueTracks }: Props): React.JSX.Element {
   const tracks = useStore((s) => s.tracks)
   const filter = useStore((s) => s.filter)
   const setFilter = useStore((s) => s.setFilter)
@@ -131,11 +133,8 @@ export function LibraryPanel({ onEnqueue, onPlayNow }: Props): React.JSX.Element
         <div className="min-h-0 flex-1 overflow-y-auto">
           <AlbumGrid
             onOpenAlbum={(a: Album) => setOpenAlbum(a.name)}
-            onQueueAlbum={(a: Album) => a.tracks.forEach((t) => onEnqueue(t))}
-            onPlayAlbum={(a: Album) => {
-              a.tracks.forEach((t) => onEnqueue(t))
-              onPlayNow(a.tracks[0])
-            }}
+            onQueueAlbum={(a: Album) => onQueueTracks(a.tracks, false)}
+            onPlayAlbum={(a: Album) => onQueueTracks(a.tracks, true)}
           />
         </div>
       ) : (

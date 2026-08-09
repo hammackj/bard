@@ -139,6 +139,11 @@ function App(): React.JSX.Element {
 
   const enqueue = (t: Track): void => void window.bard.enqueue(t.id)
   const playNow = (t: Track): void => void window.bard.playNow(t.id)
+  const queueTracks = (ts: Track[], startNow: boolean): void =>
+    void window.bard.enqueueMany(
+      ts.map((t) => t.id),
+      startNow
+    )
 
   const noLibrary = (s.config?.libraryPaths.length ?? 0) === 0
 
@@ -182,7 +187,7 @@ function App(): React.JSX.Element {
             libraryOpen ? 'flex' : 'hidden'
           }`}
         >
-          <LibraryPanel onEnqueue={enqueue} onPlayNow={playNow} />
+          <LibraryPanel onEnqueue={enqueue} onPlayNow={playNow} onQueueTracks={queueTracks} />
           <AvatarMenu
             onOpenSettings={() => setSettingsOpen(true)}
             onOpenShortcuts={() => setShortcutsOpen(true)}
