@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import { useAudio } from './audio/useAudio'
 import { useStore } from './state/store'
@@ -26,7 +26,27 @@ function App(): React.JSX.Element {
 
   // Held in refs so the transport subscription binds once instead of on every
   // callback identity change.
-  const toggleRef = useRef(toggle)
+  /**
+   * The one transport toggle, shared by the Play button, the Space key, the
+   * tray menu and the media keys.
+   *
+   * With nothing loaded, Play has to start something rather than no-op.
+   * Endless keeps the queue topped up but never selects a track itself, so the
+   * queue can hold ten items while the renderer has no audio loaded at all --
+   * and engine.togglePlay() against an element with no src does nothing.
+   *
+   * This fallback existed only on the button, so Space and the tray looked
+   * dead in exactly that state. Keeping one function for all four callers is
+   * the point: the divergence was the bug.
+   */
+  const togglePlayback = useCallback((): void => {
+    // skip() runs playNext, which takes the head of the queue and honours the
+    // auto-fill mode when the queue is empty.
+    if (!state.track) void window.bard.skip()
+    else void toggle()
+  }, [state.track, toggle])
+
+  const toggleRef = useRef(togglePlayback)
   const seekRef = useRef(seek)
   const stateRef = useRef(state)
   // Refreshed after commit rather than during render. Under concurrent
@@ -35,7 +55,7 @@ function App(): React.JSX.Element {
   // reads these -- the transport subscription, the keyboard handler -- runs
   // after commit, so a render-phase write buys nothing.
   useEffect(() => {
-    toggleRef.current = toggle
+    toggleRef.current = togglePlayback
     seekRef.current = seek
     stateRef.current = state
   })
@@ -108,7 +128,7 @@ function App(): React.JSX.Element {
         )
       } else if (e.code === 'Space' && !typing) {
         e.preventDefault()
-        void toggle()
+        toggleRef.current()
       } else if (e.key === 'ArrowRight' && !typing) {
         e.preventDefault()
         seek(Math.min(stateRef.current.duration, stateRef.current.position + 5))
@@ -210,12 +230,7 @@ function App(): React.JSX.Element {
               duration={state.duration}
               playing={state.playing}
               volume={state.volume}
-              onToggle={() => {
-                // With nothing loaded, Play should start something rather than
-                // no-op: skip() runs playNext, which honours the auto-fill mode.
-                if (!state.track) void window.bard.skip()
-                else void toggle()
-              }}
+              onToggle={togglePlayback}
               onSkip={() => void window.bard.skip()}
               onSleep={() => {
                 if (state.playing) void toggle()
