@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isInside, makeIsAllowed } from '../src/shared/paths'
+import { isInside, isRevealable, makeIsAllowed } from '../src/shared/paths'
 
 /**
  * This is the guard on the bard:// handler. A false positive here lets the
@@ -59,5 +59,40 @@ describe('makeIsAllowed', () => {
     expect(allowed('/mnt/media/a.flac')).toBe(false)
     roots = ['/mnt/media']
     expect(allowed('/mnt/media/a.flac')).toBe(true)
+  })
+})
+
+/**
+ * The guard on revealPath. shell.openPath hands the file to the desktop's
+ * default handler rather than just highlighting it, so admitting a directory
+ * the user never configured means executing whatever is dropped in it.
+ */
+describe('isRevealable', () => {
+  const roots = ['/home/user/.config/bard', '/home/user/Music']
+
+  it('accepts a root itself, so "Open config folder" still works', () => {
+    expect(isRevealable(roots, '/home/user/.config/bard')).toBe(true)
+  })
+
+  it('accepts a path beneath a root', () => {
+    expect(isRevealable(roots, '/home/user/Music/Lofi/track.flac')).toBe(true)
+  })
+
+  it('rejects a sibling that merely shares the prefix', () => {
+    expect(isRevealable(roots, '/home/user/.config/bard-evil/payload.desktop')).toBe(false)
+    expect(isRevealable(roots, '/home/user/Music-secrets/passwords.txt')).toBe(false)
+  })
+
+  it('rejects traversal back out of a root', () => {
+    expect(isRevealable(roots, '/home/user/Music/../.ssh/id_rsa')).toBe(false)
+  })
+
+  it('rejects an unrelated path and an empty one', () => {
+    expect(isRevealable(roots, '/etc/passwd')).toBe(false)
+    expect(isRevealable(roots, '')).toBe(false)
+  })
+
+  it('rejects everything when no roots are configured', () => {
+    expect(isRevealable([], '/home/user/Music/track.flac')).toBe(false)
   })
 })

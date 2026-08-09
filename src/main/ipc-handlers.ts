@@ -24,6 +24,7 @@ import { getLoved, toggleLoved } from './loved'
 import { getOverlayUrl } from './overlay'
 import { applyGlobalShortcuts } from './shortcuts'
 import { sendToMain } from './windows'
+import { isRevealable } from '../shared/paths'
 import type {
   Config,
   DeepPartial,
@@ -126,9 +127,11 @@ export function registerIpcHandlers(): void {
   )
 
   ipcMain.handle(INVOKE.revealPath, async (_e, target: string): Promise<void> => {
-    // Guard against being handed something outside our own directories.
+    // Guard against being handed something outside our own directories. Uses
+    // the shared segment-wise check, not a prefix match: startsWith admits any
+    // sibling, so a userData of ~/.config/bard also admitted ~/.config/bard-evil.
     const roots = [app.getPath('userData'), ...getConfig().libraryPaths]
-    if (!roots.some((r) => target === r || target.startsWith(r))) return
+    if (!isRevealable(roots, target)) return
     await shell.openPath(target)
   })
 

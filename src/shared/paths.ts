@@ -12,6 +12,20 @@ export function isInside(root: string, target: string): boolean {
   return rel !== '' && !rel.startsWith('..' + sep) && rel !== '..' && !isAbsolute(rel)
 }
 
+/**
+ * True when `target` is one of `roots` or sits beneath one.
+ *
+ * The guard on revealPath, which is a wider hole than it looks: shell.openPath
+ * does not merely highlight a folder, it hands the path to the desktop's
+ * default handler -- so a .desktop file under a directory we admit by mistake
+ * is executed. Unlike isInside, the roots themselves pass, because "Open
+ * config folder" reveals exactly the userData root.
+ */
+export function isRevealable(roots: string[], target: string): boolean {
+  if (!target) return false
+  return roots.some((root) => resolve(root) === resolve(target) || isInside(root, target))
+}
+
 /** Builds the guard used by the bard:// protocol handler. */
 export function makeIsAllowed(getRoots: () => string[]) {
   return (filePath: string): boolean => {
