@@ -328,7 +328,10 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
                 type="password"
                 placeholder={config.streamer.hasObsPassword ? '••••••••' : 'none'}
                 onBlur={async (e) => {
-                  const value = e.target.value
+                  // Trimmed: OBS shows the password in a field people copy, and
+                  // a pasted trailing space or newline fails authentication with
+                  // nothing on screen to suggest why.
+                  const value = e.target.value.trim()
                   if (!value) return
                   e.target.value = ''
                   const stored = await window.bard.setObsPassword(value)
