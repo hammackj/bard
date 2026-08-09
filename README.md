@@ -172,11 +172,21 @@ The version in `package.json` is the single source of truth: electron-builder
 interpolates it into every artifact name, and `app.getVersion()` reads it back
 at runtime for the About row and the startup log.
 
+Write the release's entry in `CHANGELOG.md` first, then:
+
 ```bash
-npm version patch      # or minor / major -- bumps, commits, and tags v<x.y.z>
-# write the release's entry in CHANGELOG.md, amend it into the version commit
+npm version patch --no-git-tag-version   # or minor / major; bumps package.json only
+git add -A && git commit -m "Bard 0.1.1"
+git tag -a v0.1.1 -m "Bard 0.1.1"
 npm run build:linux
+git push && git push --tags
 ```
+
+`--no-git-tag-version` is deliberate. Plain `npm version` commits _and_ tags in
+one step, so writing the changelog afterwards and amending it in would leave the
+tag pointing at the commit as it was before the amend — orphaned, and no longer
+the release. Bumping without tagging lets the changelog and the version bump
+land as one commit that the tag then points at.
 
 Bard is on a `0.x` line: minor bumps carry breaking changes, patch bumps do
 not. `npm version` refuses to move a version backwards, which is only a problem
