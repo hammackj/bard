@@ -27,6 +27,20 @@ export type AppPaths = {
   logs: string
 }
 
+/**
+ * Build identity, for the About row and for bug reports.
+ *
+ * The runtime versions matter as much as ours: an audio or rendering fault is
+ * usually a Chromium version's fault, and "which Bard?" is unanswerable from a
+ * screenshot without them.
+ */
+export type AppInfo = {
+  version: string
+  electron: string
+  chrome: string
+  node: string
+}
+
 /** Renderer -> main, expects a reply (ipcRenderer.invoke). */
 export const INVOKE = {
   scanLibrary: 'library:scan',
@@ -44,6 +58,7 @@ export const INVOKE = {
   setConfig: 'config:set',
   getOverlayUrl: 'overlay:url',
   getPaths: 'app:paths',
+  getAppInfo: 'app:info',
   revealPath: 'app:revealPath',
   secureStorageAvailable: 'app:secureStorage',
   openExternal: 'app:openExternal',
@@ -110,6 +125,8 @@ export type BardApi = {
 
   /** Where config, artwork cache and nowplaying.json live on disk. */
   getPaths: () => Promise<AppPaths>
+  /** App version plus the Electron/Chrome/Node it is running on. */
+  getAppInfo: () => Promise<AppInfo>
   /** Opens a folder in the system file manager. */
   revealPath: (path: string) => Promise<void>
 

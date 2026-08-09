@@ -46,6 +46,7 @@ const api: BardApi = {
   setConfig: (patch) => ipcRenderer.invoke(INVOKE.setConfig, patch),
   getOverlayUrl: () => ipcRenderer.invoke(INVOKE.getOverlayUrl),
   getPaths: () => ipcRenderer.invoke(INVOKE.getPaths),
+  getAppInfo: () => ipcRenderer.invoke(INVOKE.getAppInfo),
   revealPath: (path) => ipcRenderer.invoke(INVOKE.revealPath, path),
   secureStorageAvailable: () => ipcRenderer.invoke(INVOKE.secureStorageAvailable),
   openExternal: (url) => ipcRenderer.invoke(INVOKE.openExternal, url),

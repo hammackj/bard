@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DeepPartial, Config } from '@shared/types'
-import type { AppPaths } from '@shared/ipc'
+import type { AppPaths, AppInfo } from '@shared/ipc'
 import { useStore } from '../state/store'
 import * as engine from '../audio/engine'
 
@@ -13,6 +13,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
   const [copied, setCopied] = useState(false)
   const [deviceError, setDeviceError] = useState<string | null>(null)
   const [paths, setPaths] = useState<AppPaths | null>(null)
+  const [info, setInfo] = useState<AppInfo | null>(null)
 
   const patch = async (p: DeepPartial<Config>): Promise<void> => {
     setConfig(await window.bard.setConfig(p))
@@ -24,6 +25,7 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
     // audio glitch. Labels may be blank until the picker is opened.
     void engine.listOutputDevices().then(setDevices)
     void window.bard.getPaths().then(setPaths)
+    void window.bard.getAppInfo().then(setInfo)
   }, [open])
 
   // Deferred until the user actually opens the picker, because unlocking the
@@ -279,6 +281,27 @@ export function SettingsPanel({ open, onClose, overlayUrl }: Props): React.JSX.E
               className="accent-cyan"
             />
           </Row>
+        </Group>
+
+        <Group title="About">
+          {info ? (
+            <>
+              <Row label="Bard">
+                <span className="mono text-s2 text-text">{info.version}</span>
+              </Row>
+              <Row label="Runtime">
+                <span className="mono text-s1 text-muted">
+                  Electron {info.electron} · Chrome {info.chrome} · Node {info.node}
+                </span>
+              </Row>
+              <p className="text-s1 text-muted">
+                Quote these when reporting a problem — most playback faults turn out to belong to a
+                particular Chromium version rather than to Bard.
+              </p>
+            </>
+          ) : (
+            <p className="text-s2 text-muted">Loading…</p>
+          )}
         </Group>
       </div>
     </div>

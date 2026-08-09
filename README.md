@@ -145,6 +145,22 @@ launch; right-click the app and choose **Open** to get the override prompt.
 Signing and notarisation need an Apple Developer identity, which is not
 configured here.
 
+### Cutting a release
+
+The version in `package.json` is the single source of truth: electron-builder
+interpolates it into every artifact name, and `app.getVersion()` reads it back
+at runtime for the About row and the startup log.
+
+```bash
+npm version patch      # or minor / major -- bumps, commits, and tags v<x.y.z>
+# write the release's entry in CHANGELOG.md, amend it into the version commit
+npm run build:linux
+```
+
+Bard is on a `0.x` line: minor bumps carry breaking changes, patch bumps do
+not. `npm version` refuses to move a version backwards, which is only a problem
+if you ever need to undo a bump by hand.
+
 ### Pinning the tray preview (KDE/Wayland)
 
 Wayland compositors place windows themselves and ignore an application's

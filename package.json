@@ -1,6 +1,6 @@
 {
   "name": "bard",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Local music player with Twitch song requests for streamers",
   "main": "./out/main/index.js",
   "author": "hammackj <172781+hammackj@users.noreply.github.com>",

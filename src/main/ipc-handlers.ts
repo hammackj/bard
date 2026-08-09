@@ -1,5 +1,5 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron'
-import { EVENT, INVOKE, SEND, type AppPaths } from '../shared/ipc'
+import { EVENT, INVOKE, SEND, type AppPaths, type AppInfo } from '../shared/ipc'
 import { getConfig, setConfig, configPath } from './config'
 import { scanLibrary } from './library'
 import { getArtwork, artworkDir } from './artwork'
@@ -110,6 +110,18 @@ export function registerIpcHandlers(): void {
       artwork: artworkDir(),
       nowPlaying: nowPlayingPath(),
       logs: app.getPath('logs')
+    })
+  )
+
+  // app.getVersion() reads the packaged package.json, so this is correct in
+  // both dev and a built app without bundling the version in at compile time.
+  ipcMain.handle(
+    INVOKE.getAppInfo,
+    (): AppInfo => ({
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node
     })
   )
 
