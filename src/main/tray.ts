@@ -9,6 +9,8 @@ import { showMainWindow, sendToMain } from './windows'
 let tray: Tray | null = null
 let current: QueueItem | null = null
 let playing = false
+/** What the menu and tooltip were last built from; see updateTray. */
+let lastKey = ''
 
 function iconPath(): string {
   return app.isPackaged
@@ -45,6 +47,16 @@ export function updateTray(item: QueueItem | null, isPlaying: boolean, onQuit: (
   current = item
   playing = isPlaying
   if (!tray) return
+
+  // This is driven off the now-playing snapshot, which arrives about four times
+  // a second because it carries the playback position. None of that reaches the
+  // tray -- rebuilding a native menu at that rate is pure waste, and on some
+  // desktops it makes the menu flicker while it is open. Rebuild only when
+  // something the menu or the tooltip actually shows has changed.
+  const key = `${item?.track.id ?? ''}|${isPlaying}|${getQueue().length > 0}`
+  if (key === lastKey) return
+  lastKey = key
+
   tray.setToolTip(
     current ? `Bard — ${current.track.title} · ${current.track.artist}` : 'Bard — nothing playing'
   )
@@ -75,4 +87,5 @@ export function destroyTray(): void {
   destroyTrayPopup()
   tray?.destroy()
   tray = null
+  lastKey = ''
 }
