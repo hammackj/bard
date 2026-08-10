@@ -7,6 +7,49 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-08-09
+
+Streamer mode, and the window stops looking flat.
+
+### Added
+
+- **Streamer mode.** While armed, only albums checked and marked `safe` for
+  Content ID will play — `untested` is withheld along with `claimed`, on the
+  grounds that an album nobody has checked is not evidence of anything. It
+  applies to tracks you pick deliberately as well as to shuffle, fill and
+  endless, because the risk does not care who chose the track. Arming also acts
+  on the present: the queue is swept and the track on air is skipped if it is
+  not safe.
+- **Auto-arming from OBS.** Bard connects to the WebSocket server built into
+  OBS 28+ and arms itself when streaming, recording, the replay buffer or the
+  virtual camera goes active. Arming is one-directional by design — a stream
+  ending, a websocket dropping or OBS quitting never disarms it, so a lost
+  connection cannot silently remove the protection. Turning it off is always
+  deliberate. The OBS password is held by the OS keyring, not `config.json`.
+- **A banner** across the top while armed, naming what armed it — Streaming,
+  Recording, Replay buffer, Virtual camera — with its own Turn off button.
+  Blocked tracks always state a reason; a player that silently refuses is
+  indistinguishable from a broken one.
+- Every refusal and status message now reaches the notice strip.
+
+### Changed
+
+- The now-playing pane is washed with the current cover, blurred out to its own
+  colours, so each track changes the room. Tracks without artwork keep the
+  previous flat pane.
+- The library and queue panes get light from the top and a corner vignette, with
+  faint film grain over the window. The grain is a generated inline SVG rather
+  than a shipped asset, and it is static — animated grain is a full-window
+  repaint every frame in a player left running for hours.
+- Streamer mode's control moved out of the transport row, which was cramped, to
+  the banner and a Settings checkbox.
+
+### Fixed
+
+- The OBS password field saved only when it lost focus, so typing a password and
+  pressing Enter, or closing Settings with Escape, discarded it silently — and
+  the field looked identical either way. Enter now saves, and saving says so.
+
 ## [0.1.1] — 2026-08-09
 
 Follow-ups to the first release, mostly found by using the app rather than
