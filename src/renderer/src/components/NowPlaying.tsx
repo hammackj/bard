@@ -46,7 +46,8 @@ export function NowPlaying(props: Props): React.JSX.Element {
   const cover = track && art?.trackId === track.id ? art.url : null
 
   return (
-    <div className="flex min-h-0 flex-col justify-center gap-[26px] px-5 pt-[34px] pb-[22px] @2xl:px-10">
+    <div className="relative isolate flex min-h-0 flex-col justify-center gap-[26px] overflow-hidden px-5 pt-[34px] pb-[22px] @2xl:px-10">
+      <AmbientArt url={cover} />
       <div className="flex min-w-0 items-end gap-[26px]">
         {cover ? (
           <img
@@ -135,6 +136,36 @@ export function NowPlaying(props: Props): React.JSX.Element {
           <span className="mono text-s1">{Math.round(volume * 100)}</span>
         </label>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The current cover, blurred out to a wash of its own colours behind the pane.
+ *
+ * Reuses the artwork already fetched for the cover itself, so it costs no
+ * extra IPC and no decode beyond what the browser has cached.
+ *
+ * Two details do the work. The image is scaled past the edges because a heavy
+ * blur samples beyond its own bounds and would otherwise leave a soft grey
+ * border. And a scrim sits over it because covers are frequently light -- the
+ * pane's text is sized and coloured for near-black, and a pale album would
+ * leave the title barely legible.
+ *
+ * Keyed on the URL so a track change remounts it and the fade runs again;
+ * doing that with state would mean setting state in an effect, which cascades
+ * a second render on every track.
+ */
+function AmbientArt({ url }: { url: string | null }): React.JSX.Element | null {
+  if (!url) return null
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      <div
+        key={url}
+        className="ambient-in absolute inset-0 scale-110 bg-cover bg-center blur-[64px]"
+        style={{ backgroundImage: `url(${url})` }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-ink/75 via-ink/60 to-ink/90" />
     </div>
   )
 }

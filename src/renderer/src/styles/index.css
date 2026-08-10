@@ -148,6 +148,28 @@
     font-family: var(--font-display);
     letter-spacing: -0.02em;
   }
+
+  /*
+   * The blurred cover behind the now-playing pane.
+   *
+   * The resting opacity is set here rather than by a utility class because the
+   * reduced-motion block below strips the animation entirely -- and an element
+   * whose only opacity came from keyframes would then paint at full strength,
+   * turning a faint wash into a full-bleed album cover behind the text.
+   */
+  .ambient-in {
+    opacity: 0.22;
+    animation: ambient-in 700ms ease-out;
+  }
+}
+
+@keyframes ambient-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.22;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
