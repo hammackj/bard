@@ -257,6 +257,9 @@ function App(): React.JSX.Element {
 
       <StreamerBanner />
 
+      {/* Above the panes, below Settings (z-20) and the notice strip (z-40). */}
+      <div aria-hidden className="depth-overlay pointer-events-none absolute inset-0 z-[5]" />
+
       <div
         className="grid min-h-0"
         style={{
@@ -266,7 +269,7 @@ function App(): React.JSX.Element {
         }}
       >
         <aside
-          className={`min-h-0 flex-col overflow-hidden border-r border-edge ${
+          className={`pane-depth min-h-0 flex-col overflow-hidden border-r border-edge ${
             libraryOpen ? 'flex' : 'hidden'
           }`}
         >
@@ -303,7 +306,7 @@ function App(): React.JSX.Element {
         </section>
 
         <aside
-          className={`min-h-0 flex-col overflow-hidden border-l border-edge ${
+          className={`pane-depth min-h-0 flex-col overflow-hidden border-l border-edge ${
             queueOpen ? 'flex' : 'hidden'
           }`}
         >
