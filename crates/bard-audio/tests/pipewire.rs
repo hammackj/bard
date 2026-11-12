@@ -148,7 +148,7 @@ fn stream_appears_targets_and_moves_silently() {
     let mut ended = false;
     while Instant::now() < end && !ended {
         if let Ok(e) = rx.recv_timeout(Duration::from_millis(100)) {
-            ended = e == PlayerEvent::Ended;
+            ended = matches!(e, PlayerEvent::Ended { .. });
         }
     }
     assert!(ended, "Ended arrived");

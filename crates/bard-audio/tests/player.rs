@@ -72,14 +72,14 @@ fn plays_to_the_end_with_progress_and_ended() {
         while let Ok(e) = rx.try_recv() {
             events.push((Instant::now(), e));
         }
-        if events.iter().any(|(_, e)| *e == PlayerEvent::Ended) {
+        if events.iter().any(|(_, e)| matches!(e, PlayerEvent::Ended { .. })) {
             break;
         }
         std::thread::sleep(Duration::from_millis(16));
     }
     assert!(loud > 5, "analyser saw the bursts ({loud} loud frames)");
 
-    let ended_at = events.iter().position(|(_, e)| *e == PlayerEvent::Ended).expect("Ended");
+    let ended_at = events.iter().position(|(_, e)| matches!(e, PlayerEvent::Ended { .. })).expect("Ended");
     let took = events[ended_at].0 - t0;
     assert!(took > Duration::from_millis(2900) && took < Duration::from_millis(3700), "ended after {took:?}");
 
@@ -147,7 +147,7 @@ fn seek_pause_resume_toggle() {
 
     // Seek beyond the end ends the track.
     p.seek(99.0);
-    assert!(wait_for(&rx, Duration::from_secs(2), |e| *e == PlayerEvent::Ended).is_some());
+    assert!(wait_for(&rx, Duration::from_secs(2), |e| matches!(e, PlayerEvent::Ended { .. })).is_some());
     // play() after the end starts over, as a media element does.
     p.resume();
     std::thread::sleep(Duration::from_millis(200));
@@ -220,7 +220,10 @@ fn stop_unloads() {
     std::thread::sleep(Duration::from_millis(300));
     p.stop();
     let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { track_id: None, .. }));
-    assert_eq!(e, Some(PlayerEvent::Progress { position: 0.0, duration: 0.0, playing: false, track_id: None }));
+    assert!(
+        matches!(e, Some(PlayerEvent::Progress { position: 0.0, duration: 0.0, playing: false, track_id: None, .. })),
+        "{e:?}"
+    );
     assert!(!p.toggle());
     let pos = p.position();
     assert_eq!((pos.position, pos.duration, pos.playing), (0.0, 0.0, false));
@@ -229,9 +232,13 @@ fn stop_unloads() {
 #[test]
 fn errors_are_events() {
     let (p, rx) = player();
-    p.play("x".into(), PathBuf::from("/nonexistent/song.flac"), 1.0, 0.0);
-    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Error(_)));
-    assert!(matches!(e, Some(PlayerEvent::Error(m)) if m.contains("song.flac")));
+    let generation = p.play("x".into(), PathBuf::from("/nonexistent/song.flac"), 1.0, 0.0);
+    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Failed { .. }));
+    assert!(
+        matches!(&e, Some(PlayerEvent::Failed { generation: g, track_id, message })
+            if *g == generation && track_id == "x" && message.contains("song.flac")),
+        "{e:?}"
+    );
     assert!(!p.position().playing);
 
     // An unknown output falls back to the default, and says so.
@@ -251,7 +258,7 @@ fn a_track_that_runs_out_mid_fade_hands_over_without_ended() {
     // A 2 s fade-out with 0.3 s left of the track.
     p.play("b".into(), fixture("bursts.flac"), 1.0, 2.0);
     let ev = collect(&rx, Duration::from_millis(900));
-    assert!(!ev.iter().any(|(_, e)| *e == PlayerEvent::Ended), "{ev:?}");
+    assert!(!ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Ended { .. })), "{ev:?}");
     assert!(
         ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { track_id: Some(t), playing: true, .. } if t == "b")),
         "b started when a ran out: {ev:?}"
@@ -297,4 +304,52 @@ fn stopping_mid_fade_starts_nothing() {
     let ev = collect(&rx, Duration::from_millis(650));
     assert!(!p.position().playing);
     assert!(!ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { playing: true, .. })), "{ev:?}");
+}
+
+/// Every report says which request it belongs to: during a fade-out the
+/// outgoing track's reports carry the old generation, and restarting the same
+/// track is a new generation even though the track id is the same.
+#[test]
+fn reports_carry_the_generation_of_their_request() {
+    let (p, rx) = player();
+    let first = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. }));
+    assert!(matches!(e, Some(PlayerEvent::Progress { generation, .. }) if generation == first));
+
+    let again = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.4);
+    assert!(again > first);
+    let ev = collect(&rx, Duration::from_millis(700));
+    let gens: Vec<u64> = ev
+        .iter()
+        .filter_map(|(_, e)| if let PlayerEvent::Progress { generation, .. } = e { Some(*generation) } else { None })
+        .collect();
+    assert!(gens.contains(&first), "the fade-out reports as the first play: {gens:?}");
+    assert_eq!(gens.last(), Some(&again), "then the restart takes over: {gens:?}");
+    assert!(gens.windows(2).all(|w| w[0] <= w[1]), "never back to the old one: {gens:?}");
+
+    let stopped = p.stop();
+    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { track_id: None, .. }));
+    assert!(matches!(e, Some(PlayerEvent::Progress { generation, .. }) if generation == stopped));
+}
+
+/// A track that cannot be opened after one that played: the failure names
+/// its request, and the engine reports itself stopped rather than playing on.
+#[test]
+fn a_missing_file_after_a_playing_track_fails_and_stops() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let generation = p.play("gone".into(), PathBuf::from("/nonexistent/gone.wav"), 1.0, 0.0);
+    let ev = collect(&rx, Duration::from_millis(500));
+    assert!(
+        ev.iter()
+            .any(|(_, e)| matches!(e, PlayerEvent::Progress { playing: false, generation: g, .. } if *g == generation)),
+        "{ev:?}"
+    );
+    assert!(
+        ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Failed { generation: g, track_id, .. } if *g == generation && track_id == "gone")),
+        "{ev:?}"
+    );
+    assert!(!p.position().playing);
+    assert!(!p.toggle(), "nothing loaded to resume");
 }

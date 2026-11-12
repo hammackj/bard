@@ -30,13 +30,13 @@ const DEACTIVATE_AFTER: Duration = Duration::from_millis(200);
 const IDLE_POLL: Duration = Duration::from_millis(5);
 
 pub(crate) enum Cmd {
-    Play { track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32 },
+    Play { track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32, generation: u64 },
     Pause,
     Resume,
     Seek(f64),
     Volume(f32),
     Norm(f32),
-    Stop,
+    Stop(u64),
     SetTarget(Option<String>),
     Quit,
 }
@@ -53,6 +53,7 @@ struct PendingPlay {
     path: PathBuf,
     norm_gain: f32,
     crossfade_sec: f32,
+    generation: u64,
 }
 
 pub(crate) struct Engine {
@@ -68,6 +69,9 @@ pub(crate) struct Engine {
     /// it lets the caller tell "this is my current track" from "this is the
     /// tail of the one before".
     track_id: Option<String>,
+    /// The request that put the engine in its current state; every report
+    /// carries it.
+    generation: u64,
     eof_queued: bool,
     ended_reported: bool,
 
@@ -98,6 +102,7 @@ impl Engine {
             output,
             source: None,
             track_id: None,
+            generation: 0,
             eof_queued: true,
             ended_reported: true,
             volume: 1.0,
@@ -161,6 +166,7 @@ impl Engine {
             duration: self.shared.duration(),
             playing: self.shared.playing.load(Ordering::Relaxed),
             track_id: self.track_id.clone(),
+            generation: self.generation,
         });
     }
 
@@ -195,9 +201,9 @@ impl Engine {
     /// Returns false to stop the thread.
     fn handle(&mut self, cmd: Cmd) -> bool {
         match cmd {
-            Cmd::Play { track_id, path, norm_gain, crossfade_sec } => {
+            Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation } => {
                 let crossfade_sec = if crossfade_sec.is_finite() { crossfade_sec.max(0.0) } else { 0.0 };
-                let play = PendingPlay { track_id, path, norm_gain: clamp_norm(norm_gain), crossfade_sec };
+                let play = PendingPlay { track_id, path, norm_gain: clamp_norm(norm_gain), crossfade_sec, generation };
                 if crossfade_sec > 0.0 {
                     if let Some((p, _)) = &mut self.pending {
                         // Already fading out: the newest request replaces the
@@ -247,7 +253,7 @@ impl Engine {
                 self.norm_gain = clamp_norm(m);
                 self.gain_now(GainCmd::Target(self.target_gain()));
             }
-            Cmd::Stop => self.stop(),
+            Cmd::Stop(generation) => self.stop(generation),
             Cmd::SetTarget(t) => self.output.set_target(t),
             Cmd::Quit => return false,
         }
@@ -279,7 +285,8 @@ impl Engine {
             self.gain_now(GainCmd::Set(target));
         }
         let epoch = self.bump_epoch();
-        self.track_id = Some(p.track_id);
+        self.generation = p.generation;
+        self.track_id = Some(p.track_id.clone());
         self.source = None;
         self.eof_queued = true;
         self.ended_reported = true;
@@ -315,7 +322,12 @@ impl Engine {
                 self.shared.loaded.store(false, Ordering::Relaxed);
                 self.shared.playing.store(false, Ordering::Relaxed);
                 self.deactivate_soon();
-                self.emit(PlayerEvent::Error(format!("{e:#}")));
+                self.progress();
+                self.emit(PlayerEvent::Failed {
+                    generation: p.generation,
+                    track_id: p.track_id,
+                    message: format!("{e:#}"),
+                });
             }
         }
     }
@@ -354,7 +366,8 @@ impl Engine {
         self.progress();
     }
 
-    fn stop(&mut self) {
+    fn stop(&mut self, generation: u64) {
+        self.generation = generation;
         self.pending = None;
         self.bump_epoch();
         self.source = None;
@@ -391,7 +404,7 @@ impl Engine {
             self.ended_reported = true;
             self.shared.playing.store(false, Ordering::Relaxed);
             self.progress();
-            self.emit(PlayerEvent::Ended);
+            self.emit(PlayerEvent::Ended { generation: self.generation });
             self.deactivate_soon();
         }
 

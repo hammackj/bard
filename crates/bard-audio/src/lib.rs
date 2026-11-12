@@ -76,15 +76,31 @@ pub enum PlayerEvent {
     /// track most recently passed to [`Player::play`] for the length of a
     /// crossfade's fade-out, which is the point: it lets the app tell "this
     /// is my current track" from "this is the tail of the one before".
+    ///
+    /// `generation` is the [`Player::play`] or [`Player::stop`] call that put
+    /// the engine in the state reported. It tells a report from a request
+    /// the app has since replaced -- including a restart of the same track,
+    /// which `track_id` cannot.
     Progress {
         position: f64,
         duration: f64,
         playing: bool,
         track_id: Option<String>,
+        generation: u64,
     },
     /// The loaded track played to its end. Preceded by a final
     /// `Progress { playing: false, .. }`.
-    Ended,
+    Ended {
+        generation: u64,
+    },
+    /// The track asked for by that `play` could not be opened: missing,
+    /// unreadable, or not audio Bard can decode. Nothing is playing. Preceded
+    /// by a `Progress { playing: false, .. }`.
+    Failed {
+        generation: u64,
+        track_id: String,
+        message: String,
+    },
     Error(String),
 }
 
@@ -131,6 +147,8 @@ impl Default for PlayerOptions {
 
 struct Inner {
     cmd: Sender<Cmd>,
+    /// The last generation handed out by `play` or `stop`.
+    generation: std::sync::atomic::AtomicU64,
     shared: Arc<Shared>,
     analyser: Analyser,
     events: Sender<PlayerEvent>,
@@ -189,7 +207,14 @@ impl Player {
             .spawn(move || engine.run(cmd_rx))
             .context("spawning the audio engine thread")?;
 
-        let inner = Inner { cmd: cmd_tx, shared, analyser, events: ev_tx, engine: Some(thread) };
+        let inner = Inner {
+            cmd: cmd_tx,
+            generation: Default::default(),
+            shared,
+            analyser,
+            events: ev_tx,
+            engine: Some(thread),
+        };
         Ok((Player { inner: Arc::new(inner) }, ev_rx))
     }
 
@@ -203,8 +228,16 @@ impl Player {
     ///
     /// `norm_gain` is the track's normalisation multiplier (ReplayGain, as a
     /// linear factor; 1.0 for none). It replaces the previous track's.
-    pub fn play(&self, track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32) {
-        self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec });
+    ///
+    /// Returns the generation the events about this request will carry.
+    pub fn play(&self, track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32) -> u64 {
+        let generation = self.next_generation();
+        self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation });
+        generation
+    }
+
+    fn next_generation(&self) -> u64 {
+        self.inner.generation.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     /// Pauses if playing, resumes if paused; returns the new state. Does
@@ -252,8 +285,12 @@ impl Player {
     }
 
     /// Unloads the track: the queue ran dry. Position and duration go to 0.
-    pub fn stop(&self) {
-        self.send(Cmd::Stop);
+    ///
+    /// Returns the generation the stopped report will carry.
+    pub fn stop(&self) -> u64 {
+        let generation = self.next_generation();
+        self.send(Cmd::Stop(generation));
+        generation
     }
 
     pub fn position(&self) -> Position {

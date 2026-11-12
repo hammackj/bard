@@ -647,3 +647,23 @@ fn repeat_one_does_not_replay_a_track_no_longer_safe() {
     f.bard.report_ended();
     assert!(playing(&f.bard).is_none_or(|id| !id.starts_with('r')));
 }
+
+#[test]
+fn a_track_that_fails_to_open_is_skipped_or_playback_stops() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "g3"], false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.drain();
+
+    f.bard.report_failed(false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("g2"), "moves on");
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.id == "g2")));
+    assert_eq!(f.bard.track_stats("g1").skips, 0, "a track that never played is not a skip");
+
+    f.bard.report_failed(true);
+    assert!(f.bard.now_playing().is_none(), "gives up");
+    assert_eq!(queue_ids(&f.bard), ["g3"], "the queue is kept");
+    let events = f.drain();
+    assert!(events.iter().any(|e| matches!(e, CoreEvent::NowPlaying(None))), "{events:?}");
+    assert!(!events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(_))), "{events:?}");
+}

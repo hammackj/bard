@@ -371,6 +371,17 @@ impl Bard {
         self.on_track_ended();
     }
 
+    /// The current track could not be opened. Moves on to the next one, or,
+    /// with `give_up` (several failed in a row: a library on a drive that is
+    /// not mounted, say), stops rather than run through the whole queue.
+    pub fn report_failed(&mut self, give_up: bool) {
+        if give_up {
+            self.stop();
+        } else {
+            self.play_next();
+        }
+    }
+
     /// Relays a transport command (tray, media keys, MPRIS) to whoever drives
     /// the audio engine, as `EVENT.transport` did.
     pub fn transport(&self, action: TransportAction) {

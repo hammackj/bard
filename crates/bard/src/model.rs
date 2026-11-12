@@ -197,6 +197,12 @@ pub struct Ui {
     pub volume: f64,
     /// When `position` was last reported, so the string can predict between reports.
     pub position_at: Instant,
+    /// The engine request (`Player::play` or `stop`) the window is showing.
+    /// Reports from any other are stale: the fade-out of the previous track,
+    /// say, which must not pair its timing with the new track's title.
+    pub generation: u64,
+    /// Tracks that failed to open in a row; see [`Ui::open_failed`].
+    pub open_failures: u32,
 
     pub stats: StatsMap,
     pub loved: Vec<String>,
@@ -251,6 +257,8 @@ impl Ui {
             playing: false,
             volume: 0.8,
             position_at: Instant::now(),
+            generation: 0,
+            open_failures: 0,
             stats: StatsMap::default(),
             loved: Vec::new(),
             album_flags: AlbumFlags::default(),
@@ -322,5 +330,67 @@ impl Ui {
 
     pub fn armed(&self) -> bool {
         self.config.streamer.enabled
+    }
+
+    /// Whether an engine report belongs to the request on screen.
+    pub fn is_current(&self, generation: u64) -> bool {
+        generation == self.generation
+    }
+
+    /// The current track could not be opened. Shows why and returns whether
+    /// to give up: after [`MAX_OPEN_FAILURES`] in a row playback stops rather
+    /// than run through a queue that cannot play (a library on a drive that is
+    /// not mounted), and the count starts over.
+    pub fn open_failed(&mut self, message: &str) -> bool {
+        self.playing = false;
+        self.open_failures += 1;
+        let title = self.track.as_ref().map(|t| t.title.as_str()).unwrap_or("track");
+        let give_up = self.open_failures >= MAX_OPEN_FAILURES;
+        self.notice = Some(if give_up {
+            format!(
+                "Could not play \u{201c}{title}\u{201d}: {message} \u{2014} stopped after {MAX_OPEN_FAILURES} tracks in a row failed"
+            )
+        } else {
+            format!("Could not play \u{201c}{title}\u{201d}: {message} \u{2014} skipping")
+        });
+        if give_up {
+            self.open_failures = 0;
+        }
+        give_up
+    }
+}
+
+/// See [`Ui::open_failed`].
+pub const MAX_OPEN_FAILURES: u32 = 3;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ui() -> Ui {
+        Ui::new(Rc::new(NullBackend), PathBuf::new())
+    }
+
+    #[test]
+    fn only_reports_for_the_current_request_are_current() {
+        let mut u = ui();
+        u.generation = 7;
+        assert!(u.is_current(7));
+        assert!(!u.is_current(6), "the outgoing track's fade-out");
+        assert!(!u.is_current(8));
+    }
+
+    #[test]
+    fn open_failures_skip_then_give_up_and_start_over() {
+        let mut u = ui();
+        u.playing = true;
+        assert!(!u.open_failed("no such file"));
+        assert!(!u.playing);
+        assert!(u.notice.as_deref().unwrap().ends_with("skipping"));
+        assert!(!u.open_failed("no such file"));
+        assert!(u.open_failed("no such file"), "the third in a row gives up");
+        assert!(u.notice.as_deref().unwrap().contains("stopped after 3"));
+        assert_eq!(u.open_failures, 0);
+        assert!(!u.open_failed("no such file"), "and counting starts over");
     }
 }

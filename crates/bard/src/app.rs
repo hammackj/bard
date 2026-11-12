@@ -923,9 +923,15 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::QueueChanged(q) => ui.queue = q,
             CoreEvent::PlayTrack(t) => {
                 let gain = gain_multiplier(&t, ui.config.audio.normalize) as f32;
-                backend.player.play(t.id.clone(), PathBuf::from(&t.path), gain, ui.config.audio.crossfade_sec as f32);
+                ui.generation = backend.player.play(
+                    t.id.clone(),
+                    PathBuf::from(&t.path),
+                    gain,
+                    ui.config.audio.crossfade_sec as f32,
+                );
                 ui.track = Some(t);
                 ui.position = 0.;
+                ui.duration = 0.;
                 ui.position_at = Instant::now();
             }
             // Only the null case matters here: a non-null now-playing is
@@ -933,7 +939,7 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             // Without this the window kept the finished track's title and
             // cover while the overlay had already gone blank.
             CoreEvent::NowPlaying(None) => {
-                backend.player.stop();
+                ui.generation = backend.player.stop();
                 ui.track = None;
                 ui.position = 0.;
                 ui.duration = 0.;
@@ -967,16 +973,29 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::StreamerSource(s) => ui.streamer_source = s,
         },
         AppEvent::Player(ev) => match ev {
-            PlayerEvent::Progress { position, duration, playing, track_id } => {
+            // Reports from a request since replaced -- the outgoing track's
+            // fade-out, a track restarted, a stop overtaken -- are dropped
+            // before they touch anything.
+            PlayerEvent::Progress { generation, .. } | PlayerEvent::Ended { generation }
+                if !ui.is_current(generation) => {}
+            PlayerEvent::Failed { generation, .. } if !ui.is_current(generation) => {}
+            PlayerEvent::Progress { position, duration, playing, track_id, .. } => {
                 ui.position = position;
                 ui.duration = duration;
                 ui.playing = playing;
                 ui.position_at = Instant::now();
+                if playing {
+                    ui.open_failures = 0;
+                }
                 backend.with(|b| b.report_progress(PlaybackProgress { position, duration, playing, track_id }));
             }
-            PlayerEvent::Ended => {
+            PlayerEvent::Ended { .. } => {
                 ui.playing = false;
                 backend.with(|b| b.report_ended());
+            }
+            PlayerEvent::Failed { message, .. } => {
+                let give_up = ui.open_failed(&message);
+                backend.with(|b| b.report_failed(give_up));
             }
             // Worded as Electron's notice, which also said the choice stays.
             PlayerEvent::Error(msg)

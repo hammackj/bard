@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
     loop {
         while let Ok(e) = events.try_recv() {
             match e {
-                PlayerEvent::Ended => {
+                PlayerEvent::Ended { .. } => {
                     if !start_next(&player, &mut next, 0.0) {
                         println!("\ndone");
                         return Ok(());
@@ -74,6 +74,12 @@ fn main() -> anyhow::Result<()> {
                     queued_early = false;
                 }
                 PlayerEvent::Error(m) => eprintln!("\nerror: {m}"),
+                PlayerEvent::Failed { message, .. } => {
+                    eprintln!("\ncould not open: {message}");
+                    if !start_next(&player, &mut next, 0.0) {
+                        return Ok(());
+                    }
+                }
                 PlayerEvent::Progress { track_id, .. } => {
                     // A crossfaded track has taken over.
                     if track_id.as_deref() == Some(&format!("track-{}", next.saturating_sub(1))) {

@@ -462,6 +462,17 @@ impl Bard {
         self.play_next();
     }
 
+    /// Stops playback: nothing is current, the queue is left as it is.
+    pub fn stop(&mut self) {
+        self.credit_skip_if_unplayed();
+        self.counted = false;
+        self.position = 0.0;
+        self.now_playing = None;
+        let write = self.config.get().overlay.write_now_playing_json;
+        self.np.set_now_playing(None, write);
+        self.emit(CoreEvent::NowPlaying(None));
+    }
+
     /// Back one track, or restart the current one.
     ///
     /// Restarting when a few seconds in matches every other player: pressing
