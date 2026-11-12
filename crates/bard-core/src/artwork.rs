@@ -116,21 +116,35 @@ pub fn artwork_path(artwork_dir: &Path, track_id: &str) -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// What became of an embedded cover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Saved {
+    /// In the cache.
+    Cover,
+    /// Not a decodable image: the file has no usable art.
+    NotAnImage,
+    /// A good image the cache could not store -- the disk, not the file.
+    /// Says nothing about the file, so nothing is recorded and the next
+    /// scan tries again.
+    WriteFailed,
+}
+
 /// Downscales an embedded cover and writes it to the artwork cache.
 ///
 /// Same output as the Electron build: the longest edge is brought down to
 /// [`MAX_EDGE`] with the aspect ratio kept (the other edge rounded), smaller
 /// images are left at their size, and everything is re-encoded as a JPEG at
-/// quality 88 -- so a cached PNG cover is still `<id>.jpg`. Returns false when
-/// the data is not a decodable image; the scan carries on without a cover.
-pub fn save_artwork(artwork_dir: &Path, track_id: &str, data: &[u8]) -> bool {
+/// quality 88 -- so a cached PNG cover is still `<id>.jpg`. Data that is not
+/// a decodable image is [`Saved::NotAnImage`]; the scan carries on without
+/// a cover.
+pub fn save_artwork(artwork_dir: &Path, track_id: &str, data: &[u8]) -> Saved {
     let Ok(reader) = ImageReader::new(Cursor::new(data)).with_guessed_format() else {
-        return false;
+        return Saved::NotAnImage;
     };
-    let Ok(img) = reader.decode() else { return false };
+    let Ok(img) = reader.decode() else { return Saved::NotAnImage };
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
-        return false;
+        return Saved::NotAnImage;
     }
 
     let longest = w.max(h);
@@ -149,15 +163,19 @@ pub fn save_artwork(artwork_dir: &Path, track_id: &str, data: &[u8]) -> bool {
     let rgb = img.to_rgb8();
     let mut out = Vec::new();
     if JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY).encode_image(&rgb).is_err() {
-        return false;
+        return Saved::NotAnImage;
     }
     if std::fs::create_dir_all(artwork_dir).is_err() {
-        return false;
+        return Saved::WriteFailed;
     }
     // Replaced whole: anything reading the cover sees the old one or the new.
     let path = cache_path(artwork_dir, track_id);
     let tmp = path.with_extension("jpg.tmp");
-    std::fs::write(&tmp, out).is_ok() && std::fs::rename(&tmp, &path).is_ok()
+    if std::fs::write(&tmp, out).is_ok() && std::fs::rename(&tmp, &path).is_ok() {
+        return Saved::Cover;
+    }
+    let _ = std::fs::remove_file(&tmp);
+    Saved::WriteFailed
 }
 
 #[cfg(test)]
@@ -175,7 +193,7 @@ mod tests {
     #[test]
     fn downscales_the_longest_edge_and_writes_jpeg() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(save_artwork(dir.path(), "abcdef0123456789", &png(1000, 600)));
+        assert_eq!(save_artwork(dir.path(), "abcdef0123456789", &png(1000, 600)), Saved::Cover);
         let p = artwork_path(dir.path(), "abcdef0123456789").unwrap();
         let img = image::open(&p).unwrap();
         assert_eq!((img.width(), img.height()), (512, 307));
@@ -187,11 +205,11 @@ mod tests {
     #[test]
     fn portrait_scales_by_height_and_small_images_keep_their_size() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(save_artwork(dir.path(), "aaaaaa", &png(300, 900)));
+        assert_eq!(save_artwork(dir.path(), "aaaaaa", &png(300, 900)), Saved::Cover);
         let img = image::open(cache_path(dir.path(), "aaaaaa")).unwrap();
         assert_eq!((img.width(), img.height()), (171, 512));
 
-        assert!(save_artwork(dir.path(), "bbbbbb", &png(200, 100)));
+        assert_eq!(save_artwork(dir.path(), "bbbbbb", &png(200, 100)), Saved::Cover);
         let img = image::open(cache_path(dir.path(), "bbbbbb")).unwrap();
         assert_eq!((img.width(), img.height()), (200, 100));
     }
@@ -199,7 +217,7 @@ mod tests {
     #[test]
     fn refuses_garbage_and_hostile_ids() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(!save_artwork(dir.path(), "cccccc", b"not an image"));
+        assert_eq!(save_artwork(dir.path(), "cccccc", b"not an image"), Saved::NotAnImage);
         assert!(artwork_path(dir.path(), "cccccc").is_none());
         assert!(artwork_path(dir.path(), "../../etc/passwd").is_none());
         assert!(artwork_path(dir.path(), "ABCDEF").is_none());

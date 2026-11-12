@@ -160,15 +160,26 @@ pub fn read_track(path: &Path, artwork_dir: &Path) -> Track {
 
     let mut has_artwork = cached;
     if read_art {
-        has_artwork = tags
-            .iter()
-            .find_map(|t| t.pictures().first())
-            .is_some_and(|pic| artwork::save_artwork(artwork_dir, &id, pic.data()));
-        if !has_artwork {
-            // Removed from the file, or no longer decodable: so is the cover.
-            artwork::forget(artwork_dir, &id);
+        let saved = match tags.iter().find_map(|t| t.pictures().first()) {
+            Some(pic) => artwork::save_artwork(artwork_dir, &id, pic.data()),
+            None => artwork::Saved::NotAnImage,
+        };
+        match saved {
+            artwork::Saved::Cover => has_artwork = true,
+            artwork::Saved::NotAnImage => {
+                // Removed from the file, or no longer decodable: so is the cover.
+                artwork::forget(artwork_dir, &id);
+                has_artwork = false;
+            }
+            // The cache could not store it. Nothing is recorded, so the next
+            // scan reads the art again; a good cover from before stays.
+            artwork::Saved::WriteFailed => {
+                has_artwork = artwork::is_whole_jpeg(&artwork::cache_path(artwork_dir, &id));
+            }
         }
-        if let Some(fp) = source {
+        if let Some(fp) = source
+            && saved != artwork::Saved::WriteFailed
+        {
             artwork::record(artwork_dir, &id, fp, has_artwork);
         }
     }
@@ -421,6 +432,34 @@ mod tests {
         assert!(t.has_artwork);
         assert!(artwork::is_whole_jpeg(&jpg), "rewritten");
         assert!(cover_shade(&art, &id).unwrap().abs_diff(90) < 4);
+    }
+
+    /// The cache failing to store a cover says nothing about the file: it
+    /// is not recorded as having no art, and the next scan stores it once
+    /// the disk is usable. On a replacement, the old cover stays meanwhile.
+    #[test]
+    fn a_cover_the_cache_could_not_store_is_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, art) = (dir.path().join("song.flac"), dir.path().join("artwork"));
+        flac_with_art(&f, Some(128));
+        let id = track_id(&f);
+        // The temp file's name taken by a directory: the write fails.
+        let tmp = artwork::cache_path(&art, &id).with_extension("jpg.tmp");
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert!(!read_track(&f, &art).has_artwork, "first time: no cover yet");
+        std::fs::remove_dir(&tmp).unwrap();
+        assert!(read_track(&f, &art).has_artwork, "stored on the next scan of the unchanged file");
+        assert!(cover_shade(&art, &id).unwrap().abs_diff(128) < 4);
+
+        // New art, and the cache fails again: the old cover is kept and
+        // shown, and replaced once it can be.
+        flac_with_art(&f, Some(220));
+        std::fs::create_dir_all(&tmp).unwrap();
+        assert!(read_track(&f, &art).has_artwork, "the old cover still stands");
+        assert!(cover_shade(&art, &id).unwrap().abs_diff(128) < 4);
+        std::fs::remove_dir(&tmp).unwrap();
+        assert!(read_track(&f, &art).has_artwork);
+        assert!(cover_shade(&art, &id).unwrap().abs_diff(220) < 4, "replaced once the disk allows");
     }
 
     #[test]
