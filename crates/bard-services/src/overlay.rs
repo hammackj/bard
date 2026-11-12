@@ -6,7 +6,7 @@
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, RawQuery, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -169,15 +169,24 @@ async fn now_playing(State(s): State<Arc<Shared>>) -> Response {
 }
 
 /// Artwork is served from the on-disk cache written during the library scan.
-async fn art(State(s): State<Arc<Shared>>, Path(id): Path<String>) -> Response {
+///
+/// The id stays the same when a cover is replaced, so caching is by version
+/// (`?v=`, see `artwork::revision`): a URL naming the file being served is
+/// cached for good -- a new cover is a new URL -- and anything else, an old
+/// version or none, is revalidated every time, so it can never pin old art.
+async fn art(State(s): State<Arc<Shared>>, Path(id): Path<String>, RawQuery(query): RawQuery) -> Response {
     // The id is a hex hash; reject anything else rather than touching the path.
     if !bard_core::artwork::is_valid_id(&id) {
         return StatusCode::BAD_REQUEST.into_response();
     }
     let file = bard_core::artwork::cache_path(&s.artwork_dir, &id);
+    let asked = query.as_deref().and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("v=")).map(str::to_owned));
+    // Before the read: a file replaced during it is then a mismatch, not
+    // new bytes cached under the old name.
+    let current = bard_core::artwork::revision(&s.artwork_dir, &id);
+    let cache = if asked.is_some() && asked == current { "public, max-age=31536000, immutable" } else { "no-cache" };
     match tokio::fs::read(&file).await {
-        Ok(bytes) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=3600")], bytes)
-            .into_response(),
+        Ok(bytes) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, cache)], bytes).into_response(),
         Err(e) => {
             if e.kind() != std::io::ErrorKind::NotFound {
                 eprintln!("[overlay] art send failed: {e}");

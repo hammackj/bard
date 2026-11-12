@@ -98,6 +98,17 @@ fn serves_the_page_json_art_and_events() {
     assert_eq!(status, 200);
     assert!(head.contains("image/jpeg"));
     assert_eq!(body, b"\xff\xd8jpeg");
+    // Cached for good only under the version it is; anything else -- no
+    // version, an old one -- is revalidated, so it cannot pin old art.
+    assert!(head.contains("cache-control: no-cache"), "{head}");
+    let rev = bard_core::artwork::revision(&art, "0123456789abcdef").unwrap();
+    let (_, head, _) = get(port, &format!("/art/0123456789abcdef?v={rev}"));
+    assert!(head.contains("max-age=31536000, immutable"), "{head}");
+    std::thread::sleep(Duration::from_millis(20));
+    std::fs::write(art.join("0123456789abcdef.jpg"), b"\xff\xd8a new cover").unwrap();
+    let (_, head, body) = get(port, &format!("/art/0123456789abcdef?v={rev}"));
+    assert!(head.contains("cache-control: no-cache"), "the old version: {head}");
+    assert_eq!(body, b"\xff\xd8a new cover");
 
     // SSE: a first frame straight away, then one per pushed snapshot.
     let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();

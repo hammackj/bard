@@ -188,7 +188,7 @@ impl Bard {
             stats: Stats::load(data_dir.join("stats.json"), opts.stats_debounce, notify.clone()),
             albums: Albums::load(data_dir.join("albums.json"), opts.albums_debounce, notify.clone()),
             loved: Loved::load(data_dir.join("loved.json"), opts.loved_debounce, notify),
-            np: NowPlayingState::new(data_dir.join("nowplaying.json"), tx.clone()),
+            np: NowPlayingState::new(data_dir.join("nowplaying.json"), data_dir.join("artwork"), tx.clone()),
             rng: fastrand::Rng::new(),
             events: tx,
             data_dir,
@@ -315,6 +315,16 @@ impl Bard {
     /// Replaces the library with a finished scan.
     pub fn install_library(&mut self, tracks: Vec<Track>) {
         self.library = Library::new(tracks);
+        // The playing track as this scan found it: a cover replaced at the
+        // same path reaches the overlay without waiting for a track change.
+        if let Some(np) = &mut self.now_playing
+            && let Some(t) = self.library.get(&np.track.id)
+        {
+            np.track = t.clone();
+        }
+        let current = self.now_playing.as_ref().map(|n| n.track.clone());
+        let write = self.config.get().overlay.write_now_playing_json;
+        self.np.library_changed(current.as_ref(), write);
         self.emit(CoreEvent::LibraryChanged);
         // Stock the queue now the library is known.
         //

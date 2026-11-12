@@ -7,6 +7,14 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The OBS overlay shows a replaced cover.** Replacing a track's embedded
+  art and rescanning updated the window, but the overlay kept the old image
+  for as long as the track played, and could bring it back for an hour
+  after. The cover's address now changes with the cover, so the overlay
+  loads the new one at once; an unchanged cover is still loaded only once.
+
 ## [0.2.8] — 2026-11-12
 
 ### Fixed

@@ -55,6 +55,15 @@ impl Fingerprint {
     }
 }
 
+/// Names the version of a cached cover: its size and modification time,
+/// which change whenever a scan rewrites it. The overlay's art URL carries
+/// it, so a replaced cover is a new URL, and the server caches a URL for
+/// long only while it still names the file it serves.
+pub fn revision(artwork_dir: &Path, track_id: &str) -> Option<String> {
+    let fp = Fingerprint::of(&cache_path(artwork_dir, track_id))?;
+    Some(format!("{:x}-{:x}", fp.len, fp.mtime_ns))
+}
+
 /// Whether the cache can be trusted for a source file as it is now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cached {

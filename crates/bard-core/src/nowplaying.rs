@@ -10,7 +10,7 @@
 //! pushed an SSE frame) emits [`CoreEvent::Overlay`] here instead.
 
 use crate::CoreEvent;
-use crate::types::{NowPlaying, PlaybackProgress, QueueItem};
+use crate::types::{NowPlaying, PlaybackProgress, QueueItem, Track};
 use crate::util::{Indent, iso8601, now_ms, to_js_json, write_replacing};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
@@ -32,10 +32,17 @@ pub(crate) struct NowPlayingState {
     /// The current track has had no report from the engine yet; the file
     /// shows its tag duration until the first one, which is written.
     awaiting_report: bool,
+    artwork_dir: PathBuf,
+    /// Which version of the current track's cached cover the art URL names.
+    /// The track id comes from the path alone, so a cover replaced at the
+    /// same path keeps its id: without this the overlay, which loads a new
+    /// image only when the URL changes, kept the old one -- and the server
+    /// let it be cached for an hour.
+    art_rev: Option<String>,
 }
 
 impl NowPlayingState {
-    pub fn new(path: PathBuf, events: Sender<CoreEvent>) -> Self {
+    pub fn new(path: PathBuf, artwork_dir: PathBuf, events: Sender<CoreEvent>) -> Self {
         NowPlayingState {
             path,
             events,
@@ -45,6 +52,34 @@ impl NowPlayingState {
             overlay_port: None,
             last_written: String::new(),
             awaiting_report: false,
+            artwork_dir,
+            art_rev: None,
+        }
+    }
+
+    /// The cached cover's size and modification time, which change whenever
+    /// a scan rewrites it. A stat, so taken on a track change or a library
+    /// change -- not per progress tick.
+    fn art_rev_now(&self) -> Option<String> {
+        let t = self.current.as_ref().map(|c| &c.track).filter(|t| t.has_artwork)?;
+        crate::artwork::revision(&self.artwork_dir, &t.id)
+    }
+
+    /// A rescan installed: picks up the current track as the scan found it
+    /// (art added, replaced or removed) and, if its cover changed, sends the
+    /// overlay a new art URL.
+    pub fn library_changed(&mut self, track: Option<&Track>, write_file: bool) {
+        let Some(cur) = self.current.as_mut() else { return };
+        let had = cur.track.has_artwork;
+        if let Some(t) = track.filter(|t| t.id == cur.track.id) {
+            cur.track = t.clone();
+        }
+        let has = cur.track.has_artwork;
+        let rev = self.art_rev_now();
+        if rev != self.art_rev || had != has {
+            self.art_rev = rev;
+            self.emit();
+            self.write_if_interesting(true, write_file);
         }
     }
 
@@ -81,8 +116,11 @@ impl NowPlayingState {
             // session, and nowplaying.json handed the same dead URL to anything
             // else reading it. None when nothing is bound: there is no server
             // to serve the art.
-            art_url: match (track, self.overlay_port) {
-                (Some(t), Some(port)) if t.has_artwork => Some(format!("http://127.0.0.1:{port}/art/{}", t.id)),
+            art_url: match (track, self.overlay_port, &self.art_rev) {
+                (Some(t), Some(port), Some(rev)) if t.has_artwork => {
+                    Some(format!("http://127.0.0.1:{port}/art/{}?v={rev}", t.id))
+                }
+                (Some(t), Some(port), None) if t.has_artwork => Some(format!("http://127.0.0.1:{port}/art/{}", t.id)),
                 _ => None,
             },
             queue_length: self.queue_length,
@@ -117,6 +155,7 @@ impl NowPlayingState {
             }
         }
         self.current = item;
+        self.art_rev = self.art_rev_now();
         self.emit();
         self.write_if_interesting(true, write_file);
     }

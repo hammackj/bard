@@ -1122,3 +1122,58 @@ fn slider_settings_apply_at_once_and_reach_the_disk_by_shutdown() {
     f.bard.shutdown();
     assert_eq!(config_on_disk(&f).audio.crossfade_sec, 7.);
 }
+
+/// The overlay's art URL names the cached cover's version: a rescan that
+/// replaces the playing track's cover sends a new URL at once (the overlay
+/// only reloads on a new URL), one that leaves it alone sends nothing, and
+/// art removed or added follows too.
+#[test]
+fn a_rescan_that_replaces_the_current_cover_gives_the_overlay_a_new_url() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.overlay.write_now_playing_json = false);
+    f.bard.set_overlay_port(Some(4321));
+    let art = f.dir().join("artwork");
+    std::fs::create_dir_all(&art).unwrap();
+    std::fs::write(art.join("g1.jpg"), b"\xff\xd8old\xff\xd9").unwrap();
+    f.bard.play_now("g1");
+    let url = |b: &Bard| b.now_playing_snapshot().art_url;
+    let first = url(&f.bard).unwrap();
+    assert!(first.starts_with("http://127.0.0.1:4321/art/g1?v="), "{first}");
+    f.drain();
+
+    let overlay_urls = |f: &Fixture| -> Vec<Option<String>> {
+        f.drain()
+            .into_iter()
+            .filter_map(|e| if let CoreEvent::Overlay(n) = e { Some(n.art_url) } else { None })
+            .collect()
+    };
+
+    // Unchanged: no new frame.
+    f.bard.install_library(library());
+    assert!(overlay_urls(&f).is_empty());
+    assert_eq!(url(&f.bard).as_ref(), Some(&first));
+
+    // Replaced by a scan: a new URL, pushed straight away.
+    std::thread::sleep(Duration::from_millis(20));
+    std::fs::write(art.join("g1.jpg"), b"\xff\xd8the new cover\xff\xd9").unwrap();
+    f.bard.install_library(library());
+    let pushed = overlay_urls(&f);
+    let second = url(&f.bard).unwrap();
+    assert_ne!(second, first);
+    assert_eq!(pushed, [Some(second.clone())]);
+
+    // Removed from the file: the scan says no art, and the overlay hides it.
+    std::fs::remove_file(art.join("g1.jpg")).unwrap();
+    let mut lib = library();
+    lib[0].has_artwork = false;
+    f.bard.install_library(lib.clone());
+    assert_eq!(overlay_urls(&f), [None]);
+
+    // Added back.
+    std::fs::write(art.join("g1.jpg"), b"\xff\xd8again\xff\xd9").unwrap();
+    lib[0].has_artwork = true;
+    f.bard.install_library(lib);
+    let third = url(&f.bard).unwrap();
+    assert!(third.contains("?v="));
+    assert_eq!(overlay_urls(&f), [Some(third)]);
+}
