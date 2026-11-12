@@ -28,6 +28,9 @@ pub struct BardWindow {
     pub settings_scroll: ScrollHandle,
     pub crossfade_bounds: Option<Bounds<Pixels>>,
     pub filter: Entity<TextInput>,
+    /// The Content ID note for the open album, and which album it was loaded for.
+    pub note: Entity<TextInput>,
+    pub note_album: Option<String>,
     pub fields: Fields,
     /// Focus for the window itself, so shortcuts arrive with no field focused.
     pub focus: FocusHandle,
@@ -71,6 +74,24 @@ impl BardWindow {
                     }
                 }
             }
+            _ => {}
+        })
+        .detach();
+
+        let note = input(window, cx, "who claimed it, or a note", "");
+        // Saved on blur, as the Electron field was. Enter blurs, so it saves too.
+        cx.subscribe_in(&note, window, |this, input, ev, window, cx| match ev {
+            InputEvent::Blur => {
+                if let Some(album) = this.note_album.clone() {
+                    let text = input.read(cx).text().to_string();
+                    let status = this.ui.album_status(&album);
+                    let saved = this.ui.album_flags.get(&album).and_then(|f| f.note.clone()).unwrap_or_default();
+                    if text != saved {
+                        this.ui.backend.set_album_flag(&album, status, Some(text));
+                    }
+                }
+            }
+            InputEvent::Submit | InputEvent::Cancel => window.focus(&this.focus, cx),
             _ => {}
         })
         .detach();
@@ -156,6 +177,8 @@ impl BardWindow {
             settings_scroll: ScrollHandle::new(),
             crossfade_bounds: None,
             filter,
+            note,
+            note_album: None,
             fields,
             focus: {
                 let focus = cx.focus_handle();
@@ -191,7 +214,7 @@ impl BardWindow {
 
     fn typing(&self, window: &Window, cx: &App) -> bool {
         let f = &self.fields;
-        [&self.filter, &f.avoid_repeat, &f.fill_count, &f.popup_seconds, &f.obs_url, &f.obs_password]
+        [&self.filter, &self.note, &f.avoid_repeat, &f.fill_count, &f.popup_seconds, &f.obs_url, &f.obs_password]
             .iter()
             .any(|i| i.focus_handle(cx).is_focused(window))
     }

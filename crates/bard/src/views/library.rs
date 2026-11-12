@@ -137,7 +137,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
         .border_color(theme::edge())
         .child(pane_depth())
         .child(header)
-        .children(this.ui.open_album.clone().map(|a| content_id_bar(this, &a, cx)))
+        .children(this.ui.open_album.clone().map(|a| content_id_bar(this, &a, window, cx)))
         .child(filter)
         .child(body)
         .child(
@@ -404,7 +404,7 @@ pub fn love_button(track_id: &str, on: bool, size: f32, cx: &mut Context<BardWin
 }
 
 /// `ContentIdBar.tsx`.
-fn content_id_bar(this: &mut BardWindow, album: &str, cx: &mut Context<BardWindow>) -> Div {
+fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut Context<BardWindow>) -> Div {
     let flag = this.ui.album_flags.get(album).cloned();
     let status = flag.as_ref().map(|f| f.status).unwrap_or_default();
     let choices = [
@@ -443,7 +443,13 @@ fn content_id_bar(this: &mut BardWindow, album: &str, cx: &mut Context<BardWindo
                 })),
         );
     }
-    let note = flag.as_ref().and_then(|f| f.note.clone()).unwrap_or_default();
+    // The field is shared between albums; load the note when the album changes.
+    if this.note_album.as_deref() != Some(album) {
+        let note = flag.as_ref().and_then(|f| f.note.clone()).unwrap_or_default();
+        this.note.update(cx, |i, cx| i.set_text(&note, cx));
+        this.note_album = Some(album.to_string());
+    }
+    let focused = this.note.focus_handle(cx).is_focused(window);
     div()
         .border_b_1()
         .border_color(theme::edge())
@@ -467,12 +473,9 @@ fn content_id_bar(this: &mut BardWindow, album: &str, cx: &mut Context<BardWindo
                 .bg(theme::panel())
                 .px_2()
                 .py_1()
+                .when(focused, |el| el.border_color(theme::cyan()))
                 .text_size(theme::S1)
-                .child(if note.is_empty() {
-                    div().text_color(theme::muted()).child("who claimed it, or a note")
-                } else {
-                    div().child(note)
-                }),
+                .child(this.note.clone()),
         )
         .children(flag.and_then(|f| f.checked_at).map(|at| {
             mono(theme::S1)
