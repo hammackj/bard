@@ -8,5 +8,10 @@ description = "Bard's audio engine: decode, PipeWire output, gain, fades, analys
 [dependencies]
 anyhow = "1.0.104"
 opusic-sys = { version = "0.7.7", default-features = false }
+pipewire = { version = "0.10", features = ["v0_3_49"] }
+rtrb = "0.4"
 rubato = "5"
 symphonia = { version = "0.6.1", default-features = false, features = ["flac", "mp3", "pcm", "wav", "ogg", "vorbis", "isomp4", "aac", "alac", "opt-simd"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
