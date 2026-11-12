@@ -7,6 +7,20 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pause from the window holds too.** 0.2.5's fix for a pause lost when
+  the incoming track fails to open covered the tray and media keys but not
+  Space or the play button, which paused the engine directly. The engine
+  itself now remembers what a pause holds, so every way of pausing counts.
+- **Moving a slider while settings are being saved no longer stalls the
+  window.** A slider step waited for a save already in progress; on a slow
+  disk that was most of a second. Saves still happen one at a time and in
+  order.
+- **A cover decoded just before a rescan no longer brings back the old
+  art.** A decode that finished after its file changed was kept until the
+  next scan; it is now dropped and the cover decoded again.
+
 ## [0.2.5] — 2026-11-12
 
 ### Fixed

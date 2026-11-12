@@ -327,7 +327,18 @@ impl Covers {
         }
     }
 
+    /// Takes a decode back. One read from a file that has since changed --
+    /// replaced during the decode, or by a scan that finished while it ran --
+    /// is dropped, hit or miss, and the cover asked for again: accepting it
+    /// would hold the old image (or the old absence) until the next scan.
     pub fn insert(&mut self, key: CoverKey, decoded: Decoded) {
+        if !self.sync && decoded.stamp != cover_stamp(&self.dir.join(format!("{}.jpg", key.1))) {
+            self.requested.insert(key.clone());
+            if !self.wanted.contains(&key) {
+                self.wanted.push(key);
+            }
+            return;
+        }
         self.requested.remove(&key);
         let (kind, id) = key.clone();
         self.stamps.insert(key.clone(), decoded.stamp);
@@ -383,8 +394,6 @@ pub struct Ui {
     pub generation: u64,
     /// Tracks that failed to open in a row; see [`Ui::open_failed`].
     pub open_failures: u32,
-    /// The generation of a track loaded paused (a streamer cut while paused).
-    pub paused_load: Option<u64>,
     /// The next PlayTrack loads paused too: the paused load failed to open,
     /// and what core moves on to must not start playback the user stopped.
     pub next_paused: bool,
@@ -446,7 +455,6 @@ impl Ui {
             position_at: Instant::now(),
             generation: 0,
             open_failures: 0,
-            paused_load: None,
             next_paused: false,
             stats: StatsMap::default(),
             loved: Vec::new(),
@@ -703,6 +711,58 @@ mod tests {
         std::fs::remove_file(dir.path().join("same.jpg")).unwrap();
         c.revalidate();
         assert!(c.cover("same").is_none());
+    }
+
+    /// Decodes that finish after their file changed -- during the decode,
+    /// or across a rescan's revalidate -- are dropped and asked for again,
+    /// a hit or a miss; a current one is taken.
+    #[test]
+    fn a_late_decode_of_a_changed_file_is_not_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = (CoverKind::Full, "t".to_string());
+        write_cover(dir.path(), "t", 10);
+        let mut c = Covers::new(dir.path().to_path_buf());
+        assert!(c.cover("t").is_none());
+        c.take_wanted();
+        let late = Covers::load(dir.path(), CoverKind::Full, "t");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        image::RgbImage::from_pixel(16, 16, image::Rgb([0, 255, 0])).save(dir.path().join("t.jpg")).unwrap();
+        c.revalidate();
+        c.insert(key.clone(), late);
+        assert!(c.cover("t").is_none(), "the old image is not taken");
+        assert_eq!(c.take_wanted(), std::slice::from_ref(&key), "asked for again");
+        let fresh = Covers::load(dir.path(), CoverKind::Full, "t");
+        c.insert(key.clone(), fresh);
+        assert_eq!(c.cover("t").map(|i| i.size(0).width.0), Some(16), "the new one is");
+
+        // A miss read before the scan wrote the cover.
+        let mut c = Covers::new(dir.path().to_path_buf());
+        let k2 = (CoverKind::Thumb, "u".to_string());
+        assert!(c.thumb("u").is_none());
+        c.take_wanted();
+        let late_miss = Covers::load(dir.path(), CoverKind::Thumb, "u");
+        assert!(late_miss.image.is_none());
+        write_cover(dir.path(), "u", 40);
+        c.revalidate();
+        c.insert(k2.clone(), late_miss);
+        assert_eq!(c.take_wanted(), std::slice::from_ref(&k2), "the stale miss is not remembered");
+        let fresh = Covers::load(dir.path(), CoverKind::Thumb, "u");
+        c.insert(k2, fresh);
+        assert!(c.thumb("u").is_some());
+
+        // Removed while decoding: the stale image is dropped, and the miss
+        // that follows is taken.
+        let mut c = Covers::new(dir.path().to_path_buf());
+        c.cover("u");
+        c.take_wanted();
+        let late = Covers::load(dir.path(), CoverKind::Full, "u");
+        std::fs::remove_file(dir.path().join("u.jpg")).unwrap();
+        c.insert((CoverKind::Full, "u".into()), late);
+        assert!(c.cover("u").is_none());
+        let k = c.take_wanted();
+        assert_eq!(k.len(), 1);
+        c.insert(k[0].clone(), Covers::load(dir.path(), CoverKind::Full, "u"));
+        assert!(c.cover("u").is_none() && c.take_wanted().is_empty(), "the miss is remembered");
     }
 
     /// set_tracks (every LibraryChanged) is what triggers it.
