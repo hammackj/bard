@@ -8,12 +8,13 @@
 # that range up in the .chapters.txt and you know exactly which track tripped
 # it, rather than guessing whether the whole library is a problem.
 #
-#   ./scripts/make-album-videos.sh [--library DIR] [--out DIR] [--only NAME]
+#   ./scripts/make-album-videos.sh --library DIR [--out DIR] [--only NAME]
 #
-# Defaults: library ~/Music/Lofi/Harris Heller, out ~/Videos/bard-album-tests
+# DIR is a folder whose subfolders are albums (e.g. ~/Music/Some Artist);
+# each subfolder becomes one video. --out defaults to ~/Videos/bard-album-tests.
 set -euo pipefail
 
-library="$HOME/Music/Lofi/Harris Heller"
+library=""
 outdir="$HOME/Videos/bard-album-tests"
 only=""
 
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg not found" >&2; exit 1; }
+[[ -n "$library" ]] || { echo "usage: $0 --library DIR [--out DIR] [--only NAME]" >&2; exit 1; }
 [[ -d "$library" ]] || { echo "no library at $library" >&2; exit 1; }
 mkdir -p "$outdir"
 
