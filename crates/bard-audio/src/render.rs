@@ -206,7 +206,7 @@ impl Renderer {
             self.declick = 0.0;
         }
 
-        for frame in out.chunks_exact_mut(CHANNELS) {
+        for frame in out.as_chunks_mut::<CHANNELS>().0.iter_mut() {
             if self.declick < target {
                 self.declick = (self.declick + step).min(1.0);
             } else if self.declick > target {
@@ -387,7 +387,7 @@ mod tests {
         shared.playing.store(true, Ordering::Relaxed);
         gp.push(GainMsg { after_epoch: 0, cmd: GainCmd::SetLevel(0.5) }).unwrap();
         let mut c = dc(1, 0.0, 0.0, false);
-        for f in c.data.chunks_exact_mut(2) {
+        for f in c.data.as_chunks_mut::<2>().0.iter_mut() {
             f[0] = 0.8;
             f[1] = 0.4;
         }

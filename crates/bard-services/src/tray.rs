@@ -127,8 +127,10 @@ pub(crate) fn png_to_argb(bytes: &[u8]) -> Option<Icon> {
     let info = reader.next_frame(&mut buf).ok()?;
     let rgba: &[u8] = &buf[..info.buffer_size()];
     let data = match info.color_type {
-        png::ColorType::Rgba => rgba.chunks_exact(4).flat_map(|p| [p[3], p[0], p[1], p[2]]).collect(),
-        png::ColorType::GrayscaleAlpha => rgba.chunks_exact(2).flat_map(|p| [p[1], p[0], p[0], p[0]]).collect(),
+        png::ColorType::Rgba => rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[3], p[0], p[1], p[2]]).collect(),
+        png::ColorType::GrayscaleAlpha => {
+            rgba.as_chunks::<2>().0.iter().flat_map(|p| [p[1], p[0], p[0], p[0]]).collect()
+        }
         _ => return None,
     };
     Some(Icon { width: info.width as i32, height: info.height as i32, data })

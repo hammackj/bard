@@ -471,7 +471,7 @@ pub(crate) mod tests {
         let mut found = Vec::new();
         let mut quiet_since = 0usize;
         let mut last = None::<usize>;
-        for (i, f) in stereo.chunks_exact(2).enumerate() {
+        for (i, f) in stereo.as_chunks::<2>().0.iter().enumerate() {
             let loud = f[0].abs().max(f[1].abs()) > 0.2;
             if loud {
                 if last.is_none_or(|l| i - l > OUT_RATE as usize / 10) && i >= quiet_since {
