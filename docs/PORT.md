@@ -58,6 +58,15 @@ The Rust build reads and writes the same `~/.config/bard`:
 - The overlay binds 127.0.0.1, never 0.0.0.0.
 - Global media keys stay off by default.
 
+## Deliberate differences from Electron
+
+- The "Global media keys" checkbox is kept for the config file's sake but does
+  nothing: on Linux the media keys reach Bard through MPRIS like any player.
+- Tooltips are drawn in the app's panel style, not Chromium's native bubble.
+- With a track row focused, Up/Down move the selection only. Electron's
+  window-level handler also changed the volume on the same keypress.
+- A press on a scrollbar track pages once; Chromium repeats while held.
+
 ## Building and running
 
 ```
