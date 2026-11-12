@@ -178,6 +178,9 @@ fn select<T: Copy + PartialEq + 'static>(
                     .when(!active, |el| el.hover(|s| s.bg(theme::edge())))
                     .child(label)
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        // Handled here: the panel's click-away handler must
+                        // not see the click that made the choice.
+                        cx.stop_propagation();
                         this.ui.open_select = None;
                         pick(this, v);
                         cx.notify();
@@ -206,6 +209,9 @@ fn select<T: Copy + PartialEq + 'static>(
                 .child(div().flex_1().min_w_0().flex().flex_col().child(sizer).child(truncate(div().child(current))))
                 .child(super::icon("chevron", 12., theme::text()))
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    // Without this the click bubbles to the panel's
+                    // click-away handler, which closes the list it just opened.
+                    cx.stop_propagation();
                     this.ui.open_select = if this.ui.open_select == Some(id) { None } else { Some(id) };
                     cx.notify();
                 })),

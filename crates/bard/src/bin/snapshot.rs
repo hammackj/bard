@@ -60,9 +60,12 @@ struct Fixture {
     /// A left-button drag from (x0, y0) to (x1, y1), left held, in window pixels.
     #[serde(default)]
     drag: Option<[f32; 4]>,
+    /// Left clicks, in order, in window pixels.
+    #[serde(default)]
+    clicks: Vec<[f32; 2]>,
 }
 
-fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 4]>)> {
+fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 4]>, Vec<[f32; 2]>)> {
     let f: Fixture = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     let home = std::env::var("HOME")?;
     let mut ui = Ui::new(Rc::new(NullBackend), format!("{home}/.config/bard/artwork").into());
@@ -100,7 +103,7 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 
     ui.settings_open = f.settings_open;
     ui.outputs = f.outputs;
     ui.paths = f.paths;
-    Ok((ui, f.settings_scroll, f.keys, f.drag))
+    Ok((ui, f.settings_scroll, f.keys, f.drag, f.clicks))
 }
 
 struct Fonts;
@@ -139,6 +142,7 @@ fn main() -> anyhow::Result<()> {
     cx.update(|cx| fonts::load(cx))?;
     let mut keys = Vec::new();
     let mut drag = None;
+    let mut clicks: Vec<[f32; 2]> = Vec::new();
     let window: AnyWindowHandle = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
         // `popup <nowplaying.json>`: the tray preview, from a snapshot as the
@@ -159,9 +163,10 @@ fn main() -> anyhow::Result<()> {
             .into()
         }
         fixture if fixture.ends_with(".json") => {
-            let (ui, scroll, k, d) = fixture_ui(fixture)?;
+            let (ui, scroll, k, d, c) = fixture_ui(fixture)?;
             keys = k;
             drag = d;
+            clicks = c;
             cx.open_window(size(px(w), px(h)), move |window, cx| {
                 cx.new(|cx| {
                     let w = BardWindow::new(ui, window, cx);
@@ -182,6 +187,27 @@ fn main() -> anyhow::Result<()> {
             window.dispatch_keystroke(stroke, cx);
         })?;
         cx.run_until_parked();
+    }
+    for [x, y] in clicks {
+        let position = point(px(x), px(y));
+        let events = [
+            PlatformInput::MouseMove(MouseMoveEvent { position, pressed_button: None, modifiers: Modifiers::default() }),
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            PlatformInput::MouseUp(MouseUpEvent { button: MouseButton::Left, position, modifiers: Modifiers::default(), click_count: 1 }),
+        ];
+        for ev in events {
+            cx.update_window(window, |_, window, cx| {
+                window.dispatch_event(ev, cx);
+                window.refresh();
+            })?;
+            cx.run_until_parked();
+        }
     }
     if let Some([x0, y0, x1, y1]) = drag {
         let steps = 8;
