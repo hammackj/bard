@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-11-12
+
 ### Fixed
 
 - **The OBS overlay shows a replaced cover.** Replacing a track's embedded
