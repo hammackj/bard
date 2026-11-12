@@ -129,6 +129,15 @@ pub struct AppBackend {
     pub player: Arc<Player>,
     events: UnboundedSender<AppEvent>,
     services: ServicesSlot,
+    scans: Arc<Mutex<ScanState>>,
+}
+
+/// One scan at a time: a request while one runs is remembered and run once
+/// it finishes, so a burst of requests is one more scan, not a pool each.
+#[derive(Default)]
+struct ScanState {
+    running: bool,
+    again: bool,
 }
 
 impl AppBackend {
@@ -138,15 +147,36 @@ impl AppBackend {
 
     /// Scans on a worker thread: a scan takes seconds and must not hold the
     /// core's lock -- or the GPUI thread -- while it runs.
+    ///
+    /// A request while a scan runs is folded into one more scan after it,
+    /// taken then, so it sees the folders as they are by then. The core
+    /// drops any result that is no longer the newest (see
+    /// `Bard::install_scan`).
     pub fn scan(&self) {
-        let scanner = self.with(|b| b.scanner());
+        {
+            let mut st = self.scans.lock().expect("scan lock");
+            if st.running {
+                st.again = true;
+                return;
+            }
+            st.running = true;
+        }
         let bard = self.bard.clone();
         let events = self.events.clone();
+        let scans = self.scans.clone();
         std::thread::Builder::new()
             .name("bard-scan".into())
             .spawn(move || {
-                let tracks = scanner.run();
-                bard.lock().expect("core lock").install_library(tracks);
+                loop {
+                    let scanner = bard.lock().expect("core lock").scanner();
+                    let tracks = scanner.run();
+                    bard.lock().expect("core lock").install_scan(&scanner, tracks);
+                    let mut st = scans.lock().expect("scan lock");
+                    if !std::mem::take(&mut st.again) {
+                        st.running = false;
+                        break;
+                    }
+                }
                 let _ = events.unbounded_send(AppEvent::Scanned);
             })
             .expect("scan thread");
@@ -475,6 +505,7 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
         player: player.clone(),
         events: tx.clone(),
         services: services.clone(),
+        scans: Default::default(),
     });
     let mut ui = Ui::new(backend.clone(), PathBuf::from(&paths.artwork));
     ui.config = config.clone();
@@ -879,25 +910,19 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
                 prompt: Some("Add music folder".into()),
             });
             let bard = backend.bard.clone();
-            let events = backend.events.clone();
             cx.spawn(async move |_| {
                 if let Ok(Ok(Some(paths))) = picked.await {
                     // The Electron dialog allowed several folders at once.
-                    let mut b = bard.lock().expect("core lock");
-                    let mut added = false;
-                    b.update_config(|c| {
+                    // A folder actually added changes the config, which
+                    // starts the scan (see ConfigChanged).
+                    bard.lock().expect("core lock").update_config(|c| {
                         for dir in paths {
                             let dir = dir.to_string_lossy().into_owned();
                             if !c.library_paths.contains(&dir) {
                                 c.library_paths.push(dir);
-                                added = true;
                             }
                         }
                     });
-                    drop(b);
-                    if added {
-                        let _ = events.unbounded_send(AppEvent::Rescan);
-                    }
                 }
             })
             .detach();
@@ -907,12 +932,9 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             backend.scan();
         }
         AppEvent::Scanned => {
-            let b = backend.bard.lock().expect("core lock");
-            ui.tracks = b.tracks().to_vec();
-            ui.queue = b.queue().to_vec();
+            ui.queue = backend.bard.lock().expect("core lock").queue().to_vec();
             ui.scanning = false;
             ui.scan_progress = None;
-            drop(b);
             // Dev aid: start playback once the library is in, so a change can
             // be checked end to end without clicking.
             if std::env::var_os("BARD_AUTOPLAY").is_some() {
@@ -960,7 +982,15 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::Transport(TransportAction::Toggle) => backend.toggle_play(),
             CoreEvent::Transport(TransportAction::Restart) => backend.player.seek(0.),
             CoreEvent::Notice(msg) => ui.notice = Some(msg),
+            CoreEvent::LibraryChanged => ui.tracks = backend.bard.lock().expect("core lock").tracks().to_vec(),
             CoreEvent::ConfigChanged(c) => {
+                // The core has already dropped a removed folder's tracks; a
+                // scan picks up an added folder's, and a removed folder's
+                // scan in flight is discarded.
+                if c.library_paths != ui.config.library_paths {
+                    ui.scanning = true;
+                    backend.scan();
+                }
                 // Normalisation is a property of playback, not of a track, so
                 // it follows the setting rather than being applied at play time.
                 if c.audio.normalize != ui.config.audio.normalize

@@ -11,8 +11,9 @@ use crate::stores::{self, Albums, Loved, Stats};
 use crate::types::*;
 use crate::util::now_ms;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Everything the core tells the rest of the app.
@@ -48,6 +49,9 @@ pub enum CoreEvent {
     /// not only those main made on its own, so services (media keys, the OBS
     /// watcher) can react to settings without a separate path.
     ConfigChanged(Config),
+    /// The library's tracks changed (a scan installed, or a folder removed).
+    /// Re-read with [`Bard::tracks`].
+    LibraryChanged,
     /// What armed streamer mode; None when armed by hand or disarmed.
     StreamerSource(Option<StreamerSource>),
 }
@@ -124,6 +128,11 @@ pub struct Bard {
     /// and persisting it would have the banner claim a recording that stopped
     /// hours ago.
     pub(crate) streamer_source: Option<StreamerSource>,
+
+    /// The newest scan handed out by [`Bard::scanner`]. Only its result is
+    /// installed, and only it reports progress: an older scan finishing last
+    /// must not replace a newer library.
+    scan_generation: Arc<AtomicU64>,
 }
 
 impl Bard {
@@ -156,6 +165,7 @@ impl Bard {
             played: Vec::new(),
             deck: None,
             streamer_source: None,
+            scan_generation: Arc::new(AtomicU64::new(0)),
         };
         Ok((bard, rx))
     }
@@ -231,25 +241,44 @@ impl Bard {
     /// behind a mutex, `scan_library` would lock everyone else out for that
     /// long. Run the scanner on a worker thread and hand its result to
     /// [`Bard::install_library`].
-    pub fn scanner(&self) -> LibraryScanner {
+    /// A scan of the configured folders, to run off the core's lock and
+    /// install with [`Bard::install_scan`]. Taking one makes every scan taken
+    /// before it obsolete.
+    pub fn scanner(&mut self) -> LibraryScanner {
+        let generation = self.scan_generation.fetch_add(1, Ordering::AcqRel) + 1;
         LibraryScanner {
             roots: self.config.get().library_paths.clone(),
             artwork_dir: self.artwork_dir(),
             events: self.events.clone(),
+            generation,
+            current: self.scan_generation.clone(),
         }
+    }
+
+    /// Installs a finished scan, unless a newer scan has been taken or the
+    /// library folders changed since: then the result describes a library
+    /// that no longer is, and is dropped. Returns whether it was installed.
+    pub fn install_scan(&mut self, scanner: &LibraryScanner, tracks: Vec<Track>) -> bool {
+        if !scanner.is_current() {
+            return false;
+        }
+        self.install_library(tracks);
+        true
     }
 
     /// Scans the configured folders and installs the result. Blocking; sends
     /// [`CoreEvent::ScanProgress`] as it goes.
     pub fn scan_library(&mut self) -> Vec<Track> {
-        let tracks = self.scanner().run();
-        self.install_library(tracks.clone());
+        let scanner = self.scanner();
+        let tracks = scanner.run();
+        self.install_scan(&scanner, tracks.clone());
         tracks
     }
 
     /// Replaces the library with a finished scan.
     pub fn install_library(&mut self, tracks: Vec<Track>) {
         self.library = Library::new(tracks);
+        self.emit(CoreEvent::LibraryChanged);
         // Stock the queue now the library is known.
         //
         // Endless only ever reacted to something happening -- a track ending,
@@ -318,6 +347,11 @@ impl Bard {
             return before;
         }
         let after = self.config.get().clone();
+        if before.library_paths != after.library_paths {
+            // A scan in flight was of the old folders.
+            self.scan_generation.fetch_add(1, Ordering::AcqRel);
+            self.prune_library_to(&after.library_paths);
+        }
         if before.playback.endless != after.playback.endless
             || before.playback.endless_lookahead != after.playback.endless_lookahead
         {
@@ -328,6 +362,28 @@ impl Bard {
             self.refresh_streamer_mode();
         }
         self.config.get().clone()
+    }
+
+    /// Drops tracks outside `roots` from the library and the pending queue,
+    /// so a removed folder's music stops being picked straight away rather
+    /// than at the next scan. The track on air finishes: cutting it off would
+    /// be a surprise, and nothing from the folder follows it.
+    fn prune_library_to(&mut self, roots: &[String]) {
+        let inside = |t: &Track| crate::paths::is_allowed(roots, &t.path);
+        if self.library.tracks().iter().all(inside) {
+            return;
+        }
+        let kept: Vec<Track> = self.library.tracks().iter().filter(|t| inside(t)).cloned().collect();
+        // The shuffle deck drops ids that are gone when it next deals.
+        self.library = Library::new(kept);
+        self.emit(CoreEvent::LibraryChanged);
+        let before = self.queue.len();
+        self.queue.retain(|i| inside(&i.track));
+        if self.queue.len() != before {
+            self.emit(CoreEvent::QueueChanged(self.queue.clone()));
+            self.np.set_queue_length(self.queue.len());
+        }
+        self.refresh_endless();
     }
 
     /// Stores a config and announces it. Returns whether it changed.
@@ -485,9 +541,16 @@ pub struct LibraryScanner {
     pub roots: Vec<String>,
     pub artwork_dir: PathBuf,
     events: Sender<CoreEvent>,
+    generation: u64,
+    current: Arc<AtomicU64>,
 }
 
 impl LibraryScanner {
+    /// Whether this is still the newest scan of the current folders.
+    pub fn is_current(&self) -> bool {
+        self.current.load(Ordering::Acquire) == self.generation
+    }
+
     /// Scans, sending [`CoreEvent::ScanProgress`] at most every 100ms (and
     /// always for the last file) -- one message per file would flood the UI
     /// on a large library and make the progress bar the slow part.
@@ -501,7 +564,11 @@ impl LibraryScanner {
                 return;
             }
             *last = Some(now);
-            let _ = events.send(CoreEvent::ScanProgress(p));
+            // A superseded scan runs to its end, but the progress shown is
+            // the newest scan's.
+            if self.is_current() {
+                let _ = events.send(CoreEvent::ScanProgress(p));
+            }
         })
     }
 }

@@ -667,3 +667,58 @@ fn a_track_that_fails_to_open_is_skipped_or_playback_stops() {
     assert!(events.iter().any(|e| matches!(e, CoreEvent::NowPlaying(None))), "{events:?}");
     assert!(!events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(_))), "{events:?}");
 }
+
+#[test]
+fn an_older_scan_finishing_last_is_not_installed() {
+    let mut f = fixture(false);
+    let slow = f.bard.scanner();
+    let fast = f.bard.scanner();
+    assert!(!slow.is_current() && fast.is_current());
+
+    let newer = vec![track("n1", "New", 1)];
+    assert!(f.bard.install_scan(&fast, newer));
+    assert!(!f.bard.install_scan(&slow, library()), "the older result is dropped");
+    let ids: Vec<&str> = f.bard.tracks().iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["n1"]);
+}
+
+#[test]
+fn changing_the_folders_makes_a_scan_in_flight_obsolete() {
+    let mut f = fixture(false);
+    let in_flight = f.bard.scanner();
+    f.bard.update_config(|c| c.library_paths = vec!["/elsewhere".into()]);
+    assert!(!in_flight.is_current());
+    assert!(!f.bard.install_scan(&in_flight, library()));
+}
+
+#[test]
+fn removing_a_folder_drops_its_tracks_from_the_library_and_queue() {
+    let mut f = fixture(false);
+    let mut tracks = library();
+    for t in &mut tracks {
+        // Gold lives in one folder, everything else in another.
+        let root = if t.album == "Gold" { "/music/a" } else { "/music/b" };
+        t.path = format!("{root}/{}", t.path.trim_start_matches("/music/"));
+    }
+    f.bard.update_config(|c| c.library_paths = vec!["/music/a".into(), "/music/b".into()]);
+    f.bard.install_library(tracks);
+    f.bard.enqueue_many(&["r1", "g1", "m1", "g2"], false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"));
+    f.drain();
+
+    f.bard.update_config(|c| c.library_paths.retain(|p| p != "/music/b"));
+    assert!(f.bard.tracks().iter().all(|t| t.album == "Gold"), "only the kept folder's tracks remain");
+    assert_eq!(queue_ids(&f.bard), ["g1", "g2"]);
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"), "the track on air finishes");
+    let events = f.drain();
+    assert!(events.iter().any(|e| matches!(e, CoreEvent::LibraryChanged)), "{events:?}");
+
+    // Nothing from the removed folder is picked automatically.
+    f.bard.update_config(|c| c.playback.auto_fill = AutoFillMode::Shuffle);
+    for _ in 0..12 {
+        f.bard.report_ended();
+        if let Some(id) = playing(&f.bard) {
+            assert!(id.starts_with('g'), "{id}");
+        }
+    }
+}
