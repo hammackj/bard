@@ -7,6 +7,18 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bard again refuses to start where it cannot lock its data folder.**
+  0.2.7 let it start without the lock on filesystems that do not support
+  locking, which also let a second copy start and overwrite the first one's
+  play counts, loves and flags. It now stops with a message; setting
+  `BARD_DATA_DIR` to a folder on a local disk runs it.
+- **A cover the cache could not save is tried again.** A failed write to
+  the cover cache was recorded as the file having no art, so later scans
+  never looked again. Now nothing is recorded, an older cover stays, and
+  the next scan saves it.
+
 ## [0.2.7] — 2026-11-12
 
 ### Fixed

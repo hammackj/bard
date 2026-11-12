@@ -17,6 +17,11 @@
 //!
 //! Raising the running window is a separate courtesy (see the app's launch);
 //! failing to raise it never grants a second writer.
+//!
+//! No lock, no start: a filesystem that cannot lock (ENOLCK, EOPNOTSUPP --
+//! some network homes) is an error, not a pass. Running unlocked there would
+//! admit every launch as a writer, which is the data loss this exists to
+//! stop. `BARD_DATA_DIR` on a local disk is the way round it.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
@@ -28,32 +33,33 @@ pub struct DataDirLock {
     path: PathBuf,
 }
 
-/// The filesystem does not do locks, as opposed to the lock being refused.
-fn locks_unsupported(e: &std::io::Error) -> bool {
-    const ENOLCK: i32 = 37;
-    const EOPNOTSUPP: i32 = 95;
-    e.kind() == std::io::ErrorKind::Unsupported || matches!(e.raw_os_error(), Some(ENOLCK | EOPNOTSUPP))
-}
-
 impl DataDirLock {
     /// Takes the lock for `data_dir`, creating the directory if needed.
-    /// `Ok(None)` when another process holds it.
+    /// `Ok(None)` when another process holds it; an error -- never a lock --
+    /// when it cannot be taken at all.
     pub fn acquire(data_dir: &Path) -> std::io::Result<Option<DataDirLock>> {
+        Self::acquire_with(data_dir, |f| f.try_lock())
+    }
+
+    fn acquire_with(
+        data_dir: &Path,
+        try_lock: impl FnOnce(&File) -> Result<(), TryLockError>,
+    ) -> std::io::Result<Option<DataDirLock>> {
         std::fs::create_dir_all(data_dir)?;
         let path = data_dir.join("bard.lock");
         // Never truncated or written: the lock is the point, not the contents.
         let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&path)?;
-        match file.try_lock() {
+        match try_lock(&file) {
             Ok(()) => Ok(Some(DataDirLock { _file: file, path })),
             Err(TryLockError::WouldBlock) => Ok(None),
-            // A filesystem with no locks at all (some network homes): run as
-            // before the lock existed rather than not at all. The window
-            // raise over the session bus still stops most second launches.
-            Err(TryLockError::Error(e)) if locks_unsupported(&e) => {
-                eprintln!("[bard] {} cannot be locked ({e}); running without the single-instance lock", path.display());
-                Ok(Some(DataDirLock { _file: file, path }))
-            }
-            Err(TryLockError::Error(e)) => Err(e),
+            Err(TryLockError::Error(e)) => Err(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "{} cannot be locked ({e}); another Bard could be writing the same data. \
+                     Set BARD_DATA_DIR to a folder on a local disk to run",
+                    path.display()
+                ),
+            )),
         }
     }
 
@@ -66,12 +72,20 @@ impl DataDirLock {
 mod tests {
     use super::*;
 
+    /// A filesystem that cannot lock, for whatever reason, admits no one --
+    /// not even the first -- rather than everyone.
     #[test]
-    fn only_a_filesystem_without_locks_runs_unlocked() {
-        assert!(locks_unsupported(&std::io::Error::from_raw_os_error(37)));
-        assert!(locks_unsupported(&std::io::Error::from_raw_os_error(95)));
-        assert!(locks_unsupported(&std::io::Error::from(std::io::ErrorKind::Unsupported)));
-        assert!(!locks_unsupported(&std::io::Error::from_raw_os_error(13)), "permission denied still stops");
-        assert!(!locks_unsupported(&std::io::Error::from_raw_os_error(5)), "an I/O error still stops");
+    fn a_lock_that_cannot_be_taken_admits_no_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        for errno in [37 /* ENOLCK */, 95 /* EOPNOTSUPP */, 5 /* EIO */] {
+            let fail = || Err(TryLockError::Error(std::io::Error::from_raw_os_error(errno)));
+            let first = DataDirLock::acquire_with(dir.path(), |_| fail());
+            let second = DataDirLock::acquire_with(dir.path(), |_| fail());
+            let e = first.expect_err("no writer");
+            assert!(second.is_err());
+            assert_eq!(e.raw_os_error(), None, "wrapped with the way round it");
+            assert!(e.to_string().contains("BARD_DATA_DIR"), "{e}");
+        }
+        assert!(DataDirLock::acquire(dir.path()).unwrap().is_some(), "a working lock still admits one");
     }
 }
