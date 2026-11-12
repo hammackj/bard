@@ -564,3 +564,34 @@ fn gain_multiplier_is_exported() {
     assert!((gain_multiplier(&t, NormalizeMode::Track) - 0.5).abs() < 1e-4);
     assert_eq!(gain_multiplier(&t, NormalizeMode::Off), 1.0);
 }
+
+/// A setting that cannot be saved is not applied: the live config, the
+/// returned config and the events all agree with the file, and the same
+/// change made again once saving works goes through.
+#[test]
+fn a_setting_that_fails_to_save_is_not_applied() {
+    let mut f = fixture(false);
+    let before = f.bard.config().streamer.enabled;
+    // The atomic write goes through config.json.tmp; a directory there makes
+    // it fail.
+    let blocker = f.dir().join("config.json.tmp");
+    std::fs::create_dir(&blocker).unwrap();
+
+    let returned = f.bard.update_config(|c| c.streamer.enabled = !before);
+    assert_eq!(returned.streamer.enabled, before, "returns the config in force");
+    assert_eq!(f.bard.config().streamer.enabled, before, "the live config is unchanged");
+    let events = f.drain();
+    assert!(!events.iter().any(|e| matches!(e, CoreEvent::ConfigChanged(_))), "{events:?}");
+    assert!(
+        events.iter().any(|e| matches!(e, CoreEvent::Notice(n) if n.starts_with("Could not save settings"))),
+        "{events:?}"
+    );
+    let on_disk = std::fs::read_to_string(f.dir().join("config.json")).unwrap();
+    assert_eq!(on_disk.contains("\"enabled\": true"), before);
+
+    std::fs::remove_dir(&blocker).unwrap();
+    let returned = f.bard.update_config(|c| c.streamer.enabled = !before);
+    assert_eq!(returned.streamer.enabled, !before, "the retry is a change");
+    assert_eq!(f.bard.config().streamer.enabled, !before);
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.streamer.enabled == !before)));
+}

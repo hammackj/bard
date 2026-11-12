@@ -37,11 +37,10 @@ impl ConfigStore {
             Err(e) => return Err(e.into()),
         };
         let config = raw.as_ref().map(parse_lenient).unwrap_or_default();
-        let store = ConfigStore { path, config };
         if raw.as_ref().is_none_or(needs_rewrite) {
-            store.write()?;
+            write(&path, &config)?;
         }
-        Ok(store)
+        Ok(ConfigStore { path, config })
     }
 
     pub fn path(&self) -> &Path {
@@ -52,20 +51,23 @@ impl ConfigStore {
         &self.config
     }
 
-    /// Replaces the config and writes it. Returns whether anything changed.
+    /// Writes the config and, once it is on disk, replaces the one in
+    /// memory. Returns whether anything changed. A failed write changes
+    /// nothing, so the app never runs on settings that a restart would lose,
+    /// and retrying the same change is still a change.
     pub fn set(&mut self, next: Config) -> anyhow::Result<bool> {
         if next == self.config {
             return Ok(false);
         }
+        write(&self.path, &next)?;
         self.config = next;
-        self.write()?;
         Ok(true)
     }
+}
 
-    fn write(&self) -> anyhow::Result<()> {
-        write_atomic(&self.path, &to_js_json(&self.config, Indent::Tab)?)?;
-        Ok(())
-    }
+fn write(path: &Path, config: &Config) -> anyhow::Result<()> {
+    write_atomic(path, &to_js_json(config, Indent::Tab)?)?;
+    Ok(())
 }
 
 /// Reads a config value, section by section.
