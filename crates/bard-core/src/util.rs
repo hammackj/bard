@@ -88,7 +88,14 @@ pub fn write_atomic(target: &Path, body: &str) -> std::io::Result<()> {
     }
     let mut tmp = target.as_os_str().to_owned();
     tmp.push(".tmp");
-    std::fs::write(&tmp, body)?;
+    // On disk before the rename, so a crash or power cut leaves the old file
+    // or the new one, never an empty one in its place.
+    {
+        use std::io::Write;
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(body.as_bytes())?;
+        f.sync_all()?;
+    }
     std::fs::rename(&tmp, target)
 }
 

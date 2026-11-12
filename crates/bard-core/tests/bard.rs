@@ -1072,3 +1072,29 @@ fn every_track_that_may_still_be_fading_is_checked() {
     f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
     assert_eq!(cut_fades(&f.drain()), 1);
 }
+
+/// A damaged store at startup: Bard opens, says so, keeps the bytes, and
+/// plays on.
+#[test]
+fn a_damaged_store_at_startup_is_reported_and_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("albums.json"), r#"{"version":1,"albums":{"Rain":{"status":"cla"#).unwrap();
+    let (mut bard, rx) = Bard::open(dir.path().to_path_buf()).unwrap();
+    let notices: Vec<String> =
+        rx.try_iter().filter_map(|e| if let CoreEvent::Notice(n) = e { Some(n) } else { None }).collect();
+    assert!(notices.iter().any(|n| n.contains("albums.json") && n.contains("set aside")), "{notices:?}");
+    let states = bard.store_states();
+    assert!(matches!(&states[1], ("albums.json", bard_core::LoadState::Recovered { .. })), "{states:?}");
+    assert!(matches!(&states[0], ("stats.json", bard_core::LoadState::Ok)));
+    let kept: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("albums.json.corrupt-"))
+        .collect();
+    assert_eq!(kept.len(), 1);
+    bard.update_config(|c| c.playback.endless = false);
+    bard.install_library(library());
+    bard.enqueue("g1");
+    assert_eq!(playing(&bard).as_deref(), Some("g1"));
+    assert!(bard.flush());
+}

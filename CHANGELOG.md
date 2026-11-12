@@ -7,6 +7,16 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A damaged stats, album-flag or loved file is no longer silently replaced.**
+  Any read failure used to load as empty, and the next play, flag or love
+  wrote that empty store over the file. Now a file that is not valid JSON is
+  set aside as `<name>.corrupt-<time>` with its bytes intact, and one that
+  cannot be read is left alone for the session. Either way Bard says so and
+  keeps playing. Saves that fail are retried, with a notice, and every save
+  reaches the disk before it replaces the old file.
+
 ## [0.2.4] — 2026-11-12
 
 ### Fixed

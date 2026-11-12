@@ -7,7 +7,7 @@ use crate::library::{self, Library};
 use crate::nowplaying::NowPlayingState;
 use crate::paths::{is_revealable, resolve};
 use crate::search::{self, Matcher};
-use crate::stores::{self, Albums, Loved, Stats};
+use crate::stores::{self, Albums, LoadState, Loved, Stats};
 use crate::types::*;
 use crate::util::now_ms;
 use std::path::{Path, PathBuf};
@@ -172,12 +172,20 @@ impl Bard {
     pub fn open_with(data_dir: PathBuf, opts: Options) -> anyhow::Result<(Bard, Receiver<CoreEvent>)> {
         std::fs::create_dir_all(&data_dir)?;
         let (tx, rx) = channel();
+        // A store that could not be used as it was says so as it loads; the
+        // notices wait in the channel for the app.
+        let notify: stores::Notify = {
+            let tx = Mutex::new(tx.clone());
+            Arc::new(move |msg| {
+                let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send(CoreEvent::Notice(msg));
+            })
+        };
         let bard = Bard {
             config: ConfigStore::open(data_dir.join("config.json"))?,
             library: Library::default(),
-            stats: Stats::load(data_dir.join("stats.json"), opts.stats_debounce),
-            albums: Albums::load(data_dir.join("albums.json"), opts.albums_debounce),
-            loved: Loved::load(data_dir.join("loved.json"), opts.loved_debounce),
+            stats: Stats::load(data_dir.join("stats.json"), opts.stats_debounce, notify.clone()),
+            albums: Albums::load(data_dir.join("albums.json"), opts.albums_debounce, notify.clone()),
+            loved: Loved::load(data_dir.join("loved.json"), opts.loved_debounce, notify),
             np: NowPlayingState::new(data_dir.join("nowplaying.json"), tx.clone()),
             rng: fastrand::Rng::new(),
             events: tx,
@@ -554,10 +562,23 @@ impl Bard {
     // --- lifecycle --------------------------------------------------------------
 
     /// Writes any pending stats, album flags and loved tracks now.
-    pub fn flush(&self) {
-        self.stats.flush();
-        self.albums.flush();
-        self.loved.flush();
+    /// Writes the stores now. Returns whether all of them are saved.
+    pub fn flush(&self) -> bool {
+        // Each is tried whatever the others do.
+        let stats = self.stats.flush();
+        let albums = self.albums.flush();
+        let loved = self.loved.flush();
+        stats && albums && loved
+    }
+
+    /// How each store loaded: stats, album flags, loved -- whether one was
+    /// set aside as damaged or is not being saved this session.
+    pub fn store_states(&self) -> [(&'static str, LoadState); 3] {
+        [
+            ("stats.json", self.stats.state().clone()),
+            ("albums.json", self.albums.state().clone()),
+            ("loved.json", self.loved.state().clone()),
+        ]
     }
 
     /// What `before-quit` did: flush the stores, and leave nowplaying.json in
