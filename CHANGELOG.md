@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-11-12
+
 ### Fixed
 
 - **Streamer mode takes a track off the air at once**, even with a
