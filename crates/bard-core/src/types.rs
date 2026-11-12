@@ -183,10 +183,12 @@ pub enum RepeatMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PlaybackConfig {
+    // Field order is serialisation order; it follows DEFAULT_CONFIG so a
+    // rewritten config.json keeps the layout the Electron build gave it.
     pub auto_fill: AutoFillMode,
+    pub repeat: RepeatMode,
     pub avoid_repeat: u32,
     pub fill_count: u32,
-    pub repeat: RepeatMode,
     pub max_queue_length: u32,
     pub endless: bool,
     pub endless_lookahead: u32,
