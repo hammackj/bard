@@ -102,11 +102,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
             .px(px(10.))
             .py(px(7.))
             .text_size(theme::S2)
-            .child(if ui.filter.is_empty() {
-                div().text_color(theme::muted()).child("Filter tracks…")
-            } else {
-                div().child(ui.filter.clone())
-            }),
+            .child(this.filter.clone()),
     );
 
     let body = if albums_view {
@@ -508,7 +504,7 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
     let open = ui.menu_open;
     let count = fmt_count(ui.tracks.len());
 
-    let item = |id: &'static str, label: &'static str, hint: String, cx: &mut Context<BardWindow>, f: fn(&mut BardWindow)| {
+    let item = |id: &'static str, label: &'static str, hint: String, cx: &mut Context<BardWindow>, f: fn(&mut BardWindow, &mut Context<BardWindow>)| {
         div()
             .id(id)
             .flex()
@@ -524,7 +520,7 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .child(mono(theme::S1).text_color(theme::muted()).child(hint))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.ui.menu_open = false;
-                f(this);
+                f(this, cx);
                 cx.notify();
             }))
     };
@@ -542,9 +538,9 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .py_1()
             .shadow_2xl()
             .occlude()
-            .child(item("menu-settings", "Settings", "Ctrl ,".into(), cx, |w| w.ui.settings_open = true))
-            .child(item("menu-rescan", "Rescan library", format!("{count} tracks"), cx, |w| w.ui.backend.rescan()))
-            .child(item("menu-shortcuts", "Keyboard shortcuts", "?".into(), cx, |w| w.ui.shortcuts_open = true))
+            .child(item("menu-settings", "Settings", "Ctrl ,".into(), cx, |w, cx| w.open_settings(cx)))
+            .child(item("menu-rescan", "Rescan library", format!("{count} tracks"), cx, |w, _| w.ui.backend.rescan()))
+            .child(item("menu-shortcuts", "Keyboard shortcuts", "?".into(), cx, |w, _| w.ui.shortcuts_open = true))
             .child(
                 div()
                     .mt_1()

@@ -45,9 +45,18 @@ struct Fixture {
     library_open: Option<bool>,
     #[serde(default)]
     queue_open: Option<bool>,
+    #[serde(default)]
+    settings_open: bool,
+    /// Pixels scrolled down the settings body.
+    #[serde(default)]
+    settings_scroll: f32,
+    #[serde(default)]
+    outputs: Vec<(String, String)>,
+    #[serde(default)]
+    paths: Option<bard_core::types::AppPaths>,
 }
 
-fn fixture_ui(path: &str) -> anyhow::Result<Ui> {
+fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32)> {
     let f: Fixture = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     let home = std::env::var("HOME")?;
     let mut ui = Ui::new(Rc::new(NullBackend), format!("{home}/.config/bard/artwork").into());
@@ -82,7 +91,10 @@ fn fixture_ui(path: &str) -> anyhow::Result<Ui> {
     ui.shortcuts_open = f.shortcuts_open;
     ui.library_open = f.library_open.unwrap_or(true);
     ui.queue_open = f.queue_open.unwrap_or(true);
-    Ok(ui)
+    ui.settings_open = f.settings_open;
+    ui.outputs = f.outputs;
+    ui.paths = f.paths;
+    Ok((ui, f.settings_scroll))
 }
 
 struct Fonts;
@@ -120,8 +132,15 @@ fn main() -> anyhow::Result<()> {
     let window = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
         fixture if fixture.ends_with(".json") => {
-            let ui = fixture_ui(fixture)?;
-            cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| BardWindow::new(ui)))?.into()
+            let (ui, scroll) = fixture_ui(fixture)?;
+            cx.open_window(size(px(w), px(h)), move |window, cx| {
+                cx.new(|cx| {
+                    let w = BardWindow::new(ui, window, cx);
+                    w.settings_scroll.set_offset(point(px(0.), px(-scroll)));
+                    w
+                })
+            })?
+            .into()
         }
         other => anyhow::bail!("unknown scene {other}"),
     };

@@ -17,7 +17,7 @@ macro_rules! icons {
 const FILES: &[(&str, &[u8])] = icons![
     "dock-left-open", "dock-left-closed", "dock-right-open", "dock-right-closed",
     "prev", "play", "pause", "skip", "volume", "repeat", "endless", "moon",
-    "heart", "heart-filled", "shield", "avatar", "placeholder",
+    "heart", "heart-filled", "shield", "avatar", "placeholder", "chevron", "check",
 ];
 
 pub fn bytes(path: &str) -> Option<&'static [u8]> {

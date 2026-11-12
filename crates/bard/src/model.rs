@@ -38,6 +38,15 @@ pub trait Backend {
     fn toggle_loved(&self, track_id: &str);
     fn rescan(&self);
     fn choose_library_folder(&self);
+    /// Output sinks as (id, name), without the "System default" row.
+    fn outputs(&self) -> Vec<(String, String)>;
+    /// Applies an output device. Err carries the message to show.
+    fn set_output(&self, id: &str) -> Result<(), String>;
+    fn paths(&self) -> Option<bard_core::types::AppPaths>;
+    fn reveal(&self, path: &str);
+    /// Stores the OBS password in the keyring, or clears it when empty.
+    /// False when no keyring is available -- it is never written as plaintext.
+    fn set_obs_password(&self, password: &str) -> bool;
 }
 
 /// Does nothing. The snapshot tool renders with this.
@@ -62,6 +71,19 @@ impl Backend for NullBackend {
     fn toggle_loved(&self, _: &str) {}
     fn rescan(&self) {}
     fn choose_library_folder(&self) {}
+    fn outputs(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn set_output(&self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn paths(&self) -> Option<bard_core::types::AppPaths> {
+        None
+    }
+    fn reveal(&self, _: &str) {}
+    fn set_obs_password(&self, _: &str) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,6 +221,16 @@ pub struct Ui {
     pub menu_open: bool,
     pub sleep_open: bool,
     pub sleep_ends_at: Option<Instant>,
+    /// Which settings select has its list open.
+    pub open_select: Option<&'static str>,
+    /// Result of the last device switch, shown under the picker.
+    pub device_error: Option<String>,
+    /// Result of the last OBS password save.
+    pub obs_message: Option<String>,
+    pub copied: bool,
+    /// Filled from the backend when Settings opens, as the Electron panel did.
+    pub outputs: Vec<(String, String)>,
+    pub paths: Option<bard_core::types::AppPaths>,
 
     pub covers: Covers,
     /// The clock `position_at` is measured against, for the string's prediction.
@@ -240,6 +272,12 @@ impl Ui {
             menu_open: false,
             sleep_open: false,
             sleep_ends_at: None,
+            open_select: None,
+            device_error: None,
+            obs_message: None,
+            copied: false,
+            outputs: Vec::new(),
+            paths: None,
             covers: Covers::new(artwork_dir),
             epoch: Instant::now(),
             string: Default::default(),

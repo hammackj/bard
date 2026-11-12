@@ -5,7 +5,9 @@ pub mod now_playing;
 pub mod overlays;
 pub mod queue;
 pub mod root;
+pub mod settings;
 pub mod string_bar;
+pub mod text_input;
 
 use crate::{fonts, theme};
 use gpui::*;

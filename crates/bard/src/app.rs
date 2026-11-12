@@ -11,7 +11,7 @@ use crate::views::root::BardWindow;
 use crate::views::string_bar::Analyser as StringAnalyser;
 use bard_audio::{Player, PlayerEvent, PlayerOptions};
 use bard_core::types::{
-    Config, ContentIdStatus, PlaybackProgress, TransportAction,
+    AppPaths, Config, ContentIdStatus, PlaybackProgress, TransportAction,
 };
 use bard_core::{Bard, CoreEvent, gain_multiplier};
 use futures::StreamExt;
@@ -26,6 +26,9 @@ pub enum AppEvent {
     Core(CoreEvent),
     Player(PlayerEvent),
     Scanned,
+    /// Open the folder picker; it needs the App context, so it goes through the loop.
+    ChooseFolder,
+    Rescan,
 }
 
 /// The window's intents, carried out against the core and the engine.
@@ -120,8 +123,33 @@ impl Backend for AppBackend {
         self.scan();
     }
     fn choose_library_folder(&self) {
-        // Settings and first run share this; the folder picker is wired
-        // with the settings panel.
+        let _ = self.events.unbounded_send(AppEvent::ChooseFolder);
+    }
+    fn outputs(&self) -> Vec<(String, String)> {
+        self.player.outputs().into_iter().map(|d| (d.id, d.name)).collect()
+    }
+    fn set_output(&self, id: &str) -> Result<(), String> {
+        self.player.set_output(id).map_err(|e| e.to_string())
+    }
+    fn paths(&self) -> Option<AppPaths> {
+        Some(self.with(|b| b.paths()))
+    }
+    /// Only the paths Settings lists may be opened: this hands a path to the
+    /// desktop's file manager, and nothing else should be able to.
+    fn reveal(&self, path: &str) {
+        let paths = self.with(|b| b.paths());
+        let allowed = [&paths.config_dir, &paths.config, &paths.artwork, &paths.now_playing, &paths.logs];
+        if !allowed.iter().any(|p| p.as_str() == path) {
+            return;
+        }
+        let target = std::path::Path::new(path);
+        let dir = if target.is_dir() { target } else { target.parent().unwrap_or(target) };
+        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+    }
+    fn set_obs_password(&self, password: &str) -> bool {
+        // The keyring and OBS client arrive with bard-services.
+        let _ = password;
+        false
     }
 }
 
@@ -210,7 +238,7 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
             window_background: WindowBackgroundAppearance::Opaque,
             ..Default::default()
         },
-        |_, cx| cx.new(|_| BardWindow::new(ui)),
+        |window, cx| cx.new(|cx| BardWindow::new(ui, window, cx)),
     )?;
     let view = window.update(cx, |_, _, cx| cx.entity())?;
 
@@ -234,6 +262,40 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
 fn apply(w: &mut BardWindow, backend: &AppBackend, ev: AppEvent, cx: &mut Context<BardWindow>) {
     let ui = &mut w.ui;
     match ev {
+        AppEvent::ChooseFolder => {
+            let picked = cx.prompt_for_paths(PathPromptOptions {
+                files: false,
+                directories: true,
+                multiple: false,
+                prompt: Some("Add music folder".into()),
+            });
+            let bard = backend.bard.clone();
+            let events = backend.events.clone();
+            cx.spawn(async move |_, _| {
+                if let Ok(Ok(Some(paths))) = picked.await {
+                    if let Some(dir) = paths.into_iter().next() {
+                        let dir = dir.to_string_lossy().into_owned();
+                        let mut b = bard.lock().expect("core lock");
+                        let mut added = false;
+                        b.update_config(|c| {
+                            if !c.library_paths.contains(&dir) {
+                                c.library_paths.push(dir);
+                                added = true;
+                            }
+                        });
+                        drop(b);
+                        if added {
+                            let _ = events.unbounded_send(AppEvent::Rescan);
+                        }
+                    }
+                }
+            })
+            .detach();
+        }
+        AppEvent::Rescan => {
+            ui.scanning = true;
+            backend.scan();
+        }
         AppEvent::Scanned => {
             let b = backend.bard.lock().expect("core lock");
             ui.tracks = b.tracks().to_vec();

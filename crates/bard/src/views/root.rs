@@ -1,7 +1,9 @@
 //! `App.tsx`: the title bar, the streamer banner, the three docks and the
 //! layers over and under them.
 
-use super::{icon, library, now_playing, overlays, queue, truncate};
+use super::settings::Fields;
+use super::text_input::{InputEvent, TextInput};
+use super::{icon, library, now_playing, overlays, queue, settings, truncate};
 use crate::backdrop;
 use crate::model::Ui;
 use crate::{fonts, theme};
@@ -23,6 +25,10 @@ pub struct BardWindow {
     pub album_scroll: ScrollHandle,
     pub tracks_scroll: UniformListScrollHandle,
     pub queue_scroll: ScrollHandle,
+    pub settings_scroll: ScrollHandle,
+    pub crossfade_bounds: Option<Bounds<Pixels>>,
+    pub filter: Entity<TextInput>,
+    pub fields: Fields,
     /// Backdrop bitmaps, rebuilt when the window's device size changes.
     layers: Option<((u32, u32), Layers)>,
 }
@@ -34,8 +40,120 @@ struct Layers {
 }
 
 impl BardWindow {
-    pub fn new(ui: Ui) -> Self {
-        Self { ui, layers: None, string_bounds: None, volume_bounds: None, album_scroll: ScrollHandle::new(), tracks_scroll: UniformListScrollHandle::new(), queue_scroll: ScrollHandle::new() }
+    pub fn new(ui: Ui, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let c = ui.config.clone();
+        let input = |window: &mut Window, cx: &mut Context<Self>, placeholder: &str, value: &str| {
+            cx.new(|cx| TextInput::new(window, cx, placeholder, value))
+        };
+        let filter = input(window, cx, "Filter tracks…", &ui.filter);
+        cx.subscribe(&filter, |this, input, ev, cx| match ev {
+            InputEvent::Changed => {
+                this.ui.filter = input.read(cx).text().to_string();
+                this.ui.selected = 0;
+                cx.notify();
+            }
+            InputEvent::Cancel => {
+                input.update(cx, |i, cx| i.set_text("", cx));
+                this.ui.filter.clear();
+                cx.notify();
+            }
+            _ => {}
+        })
+        .detach();
+
+        let fields = Fields {
+            avoid_repeat: input(window, cx, "", &c.playback.avoid_repeat.to_string()),
+            fill_count: input(window, cx, "", &c.playback.fill_count.to_string()),
+            popup_seconds: input(window, cx, "", &c.window.tray_popup_seconds.to_string()),
+            obs_url: input(window, cx, "", &c.streamer.obs_url),
+            obs_password: input(window, cx, if c.streamer.has_obs_password { "••••••••" } else { "none" }, ""),
+        };
+        fields.obs_password.update(cx, |i, _| i.masked = true);
+
+        // Number fields commit on blur, as `NumberRow` did: a value that is
+        // not a whole number >= 0 is dropped rather than saved.
+        let number = |cx: &mut Context<Self>, field: &Entity<TextInput>, set: fn(&mut bard_core::types::Config, u32)| {
+            cx.subscribe(field, move |this, input, ev, cx| {
+                if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
+                    if let Ok(v) = input.read(cx).text().trim().parse::<f64>() {
+                        if v.is_finite() && v >= 0. {
+                            let v = v.floor() as u32;
+                            this.ui.backend.update_config(Box::new(move |c| set(c, v)));
+                        }
+                    }
+                }
+            })
+            .detach();
+        };
+        number(cx, &fields.avoid_repeat, |c, v| c.playback.avoid_repeat = v);
+        number(cx, &fields.fill_count, |c, v| c.playback.fill_count = v);
+        number(cx, &fields.popup_seconds, |c, v| c.window.tray_popup_seconds = v);
+        cx.subscribe(&fields.obs_url, |this, input, ev, cx| {
+            if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
+                let url = input.read(cx).text().trim().to_string();
+                this.ui.backend.update_config(Box::new(move |c| c.streamer.obs_url = url));
+            }
+        })
+        .detach();
+        // Enter saves as well as blur: saving only on blur discarded a password
+        // typed and confirmed with Enter, and the field looks the same either way.
+        cx.subscribe(&fields.obs_password, |this, input, ev, cx| {
+            if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
+                // Trimmed: a pasted trailing space fails authentication with
+                // nothing on screen to suggest why.
+                let value = input.read(cx).text().trim().to_string();
+                if value.is_empty() {
+                    return;
+                }
+                input.update(cx, |i, cx| i.set_text("", cx));
+                let stored = this.ui.backend.set_obs_password(&value);
+                this.ui.obs_message = Some(if stored {
+                    format!("Password saved ({} characters) — reconnecting to OBS", value.chars().count())
+                } else {
+                    "No OS keyring available — password not stored".into()
+                });
+                cx.notify();
+            }
+        })
+        .detach();
+
+        Self {
+            ui,
+            layers: None,
+            string_bounds: None,
+            volume_bounds: None,
+            album_scroll: ScrollHandle::new(),
+            tracks_scroll: UniformListScrollHandle::new(),
+            queue_scroll: ScrollHandle::new(),
+            settings_scroll: ScrollHandle::new(),
+            crossfade_bounds: None,
+            filter,
+            fields,
+        }
+    }
+
+    /// Opens Settings, refreshing what the panel reads from the system and
+    /// resetting its fields to the saved values, as the remounted React panel did.
+    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.ui.settings_open = true;
+        self.ui.outputs = self.ui.backend.outputs();
+        self.ui.paths = self.ui.backend.paths();
+        self.ui.device_error = None;
+        self.ui.obs_message = None;
+        let c = self.ui.config.clone();
+        let f = &self.fields;
+        for (field, value) in [
+            (&f.avoid_repeat, c.playback.avoid_repeat.to_string()),
+            (&f.fill_count, c.playback.fill_count.to_string()),
+            (&f.popup_seconds, c.window.tray_popup_seconds.to_string()),
+            (&f.obs_url, c.streamer.obs_url.clone()),
+            (&f.obs_password, String::new()),
+        ] {
+            field.update(cx, |i, cx| i.set_text(&value, cx));
+        }
+        let placeholder = if c.streamer.has_obs_password { "••••••••" } else { "none" };
+        f.obs_password.update(cx, |i, _| i.placeholder = placeholder.into());
+        cx.notify();
     }
 
     fn layers(&mut self, window: &Window) -> &Layers {
@@ -116,6 +234,7 @@ impl Render for BardWindow {
             .child(full(grain))
             .children(overlays::notice(self, cx))
             .children(overlays::shortcuts(self, cx))
+            .children(settings::panel(self, cx))
     }
 }
 
