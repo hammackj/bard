@@ -1,0 +1,111 @@
+name: Release
+
+# Builds the Linux x86_64 binary for a version tag and publishes it as a
+# GitHub Release, with that version's CHANGELOG section as the notes.
+#
+# Runs on pushing a tag (vX.Y.Z), or by hand for a tag that already exists:
+#   gh workflow run Release -f tag=v0.2.14
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, e.g. v0.2.14
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config clang libclang-dev \
+            libpipewire-0.3-dev libspa-0.2-dev libopus-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev \
+            libfontconfig-dev libfreetype-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version="$(cargo metadata --format-version 1 --no-deps \
+            | python3 -c 'import json,sys; print({p["name"]: p["version"] for p in json.load(sys.stdin)["packages"]}["bard"])')"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          export BARD_COMMIT="$(git rev-parse --short HEAD)"
+          cargo build --release --locked -p bard
+
+      - name: Package
+        run: |
+          name="bard-$VERSION-x86_64-linux"
+          mkdir -p "dist/$name/scripts" "dist/$name/resources"
+          install -m 755 target/release/bard "dist/$name/bard"
+          install -m 755 scripts/install-desktop.sh "dist/$name/scripts/"
+          cp -r resources/icons resources/icon.svg "dist/$name/resources/"
+          cp README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          echo "ASSET=dist/$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::no CHANGELOG section for $VERSION"
+            exit 1
+          fi
+          cat >> notes.md <<'EOF'
+
+          ---
+
+          **Install:** download `bard-*-x86_64-linux.tar.gz`, extract it, and from
+          inside the folder run:
+
+          ```bash
+          install -Dm755 bard ~/.local/bin/bard
+          ./scripts/install-desktop.sh ~/.local/bin/bard
+          ```
+
+          That adds a launcher and icons for your user. Bard needs Linux with
+          PipeWire, and the `libpipewire`, `libopus` and `libxkbcommon` runtime
+          libraries, which most desktops already have.
+          EOF
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" "$ASSET" "$ASSET.sha256" \
+              --title "Bard $VERSION" --notes-file notes.md --verify-tag
+          fi
