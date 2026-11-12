@@ -1,0 +1,11 @@
+[package]
+name = "bard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bard-core = { path = "../bard-core" }
+gpui = { package = "gpui-pre", version = "=0.3.12" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12" }
+gpui-component = "0.9.1"
