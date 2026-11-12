@@ -123,9 +123,11 @@ impl Render for Fonts {
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let scene = args.get(1).map(String::as_str).unwrap_or("fonts");
-    let out = args.get(2).cloned().unwrap_or_else(|| format!("{scene}.png"));
+    // `popup` takes its snapshot as an extra argument before the output.
+    let shift = if scene == "popup" { 1 } else { 0 };
+    let out = args.get(2 + shift).cloned().unwrap_or_else(|| format!("{scene}.png"));
     let (w, h) = args
-        .get(3)
+        .get(3 + shift)
         .and_then(|s| s.split_once('x'))
         .map(|(w, h)| (w.parse().unwrap(), h.parse().unwrap()))
         .unwrap_or((600.0f32, 260.0f32));
@@ -139,6 +141,23 @@ fn main() -> anyhow::Result<()> {
     let mut drag = None;
     let window: AnyWindowHandle = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
+        // `popup <nowplaying.json>`: the tray preview, from a snapshot as the
+        // overlay server serves it. Covers come from $BARD_ART.
+        "popup" => {
+            let np: bard_core::types::NowPlaying =
+                serde_json::from_str(&std::fs::read_to_string(args.get(2).expect("snapshot json"))?)?;
+            let art = std::env::var("BARD_ART").unwrap_or_default();
+            let track = np.art_url.as_deref().and_then(|u| u.rsplit('/').next()).map(str::to_string);
+            cx.open_window(size(px(w), px(h)), move |_, cx| {
+                cx.new(|_| {
+                    let mut p = bard::views::popup::Popup::new(art.into());
+                    p.now = Some(np);
+                    p.track_id = track;
+                    p
+                })
+            })?
+            .into()
+        }
         fixture if fixture.ends_with(".json") => {
             let (ui, scroll, k, d) = fixture_ui(fixture)?;
             keys = k;

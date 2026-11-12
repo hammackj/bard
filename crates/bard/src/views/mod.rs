@@ -3,6 +3,7 @@
 pub mod library;
 pub mod now_playing;
 pub mod overlays;
+pub mod popup;
 pub mod queue;
 pub mod root;
 pub mod settings;

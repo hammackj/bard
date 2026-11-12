@@ -562,6 +562,7 @@ dependencies = [
  "anyhow",
  "bard-audio",
  "bard-core",
+ "bard-services",
  "futures",
  "gpui-pre",
  "gpui-pre-platform",
@@ -569,6 +570,7 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -618,6 +620,7 @@ dependencies = [
  "ksni",
  "mpris-server",
  "pbkdf2 0.13.0",
+ "png 0.18.1",
  "secret-service",
  "serde_json",
  "sha1",

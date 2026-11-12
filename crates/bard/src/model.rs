@@ -44,9 +44,10 @@ pub trait Backend {
     fn set_output(&self, id: &str) -> Result<(), String>;
     fn paths(&self) -> Option<bard_core::types::AppPaths>;
     fn reveal(&self, path: &str);
-    /// Stores the OBS password in the keyring, or clears it when empty.
-    /// False when no keyring is available -- it is never written as plaintext.
-    fn set_obs_password(&self, password: &str) -> bool;
+    /// Stores the OBS password in the keyring, or clears it when empty, in
+    /// the background. The outcome arrives later and lands in
+    /// `Ui::obs_message`; it is never written as plaintext.
+    fn set_obs_password(&self, password: &str);
 }
 
 /// Does nothing. The snapshot tool renders with this.
@@ -81,9 +82,7 @@ impl Backend for NullBackend {
         None
     }
     fn reveal(&self, _: &str) {}
-    fn set_obs_password(&self, _: &str) -> bool {
-        false
-    }
+    fn set_obs_password(&self, _: &str) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -155,12 +155,8 @@ impl BardWindow {
                     return;
                 }
                 input.update(cx, |i, cx| i.set_text("", cx));
-                let stored = this.ui.backend.set_obs_password(&value);
-                this.ui.obs_message = Some(if stored {
-                    format!("Password saved ({} characters) — reconnecting to OBS", value.chars().count())
-                } else {
-                    "No OS keyring available — password not stored".into()
-                });
+this.ui.backend.set_obs_password(&value);
+                this.ui.obs_message = None;
                 cx.notify();
             }
         })
