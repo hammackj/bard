@@ -146,7 +146,7 @@ impl AppControls for NoControls {
     fn previous(&self) {}
     fn seek(&self, _: f64) {}
     fn set_volume(&self, _: f64) {}
-    fn show_window(&self) {}
+    fn show_window(&self, _: Option<String>) {}
     fn show_popup(&self) {}
     fn quit(&self) {}
 }

@@ -51,7 +51,7 @@ impl AppControls for Print {
     fn set_volume(&self, v: f64) {
         println!("control: volume {v}")
     }
-    fn show_window(&self) {
+    fn show_window(&self, _: Option<String>) {
         println!("control: show window")
     }
     fn show_popup(&self) {

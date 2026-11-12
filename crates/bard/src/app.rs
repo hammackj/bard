@@ -51,7 +51,7 @@ pub enum AppEvent {
     ObsSaved { stored: bool, chars: usize },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Control {
     Play,
     Pause,
@@ -60,7 +60,8 @@ pub enum Control {
     Previous,
     Seek(f64),
     SetVolume(f64),
-    ShowWindow,
+    /// With the xdg-activation token the request carried, if any.
+    ShowWindow(Option<String>),
     ShowPopup,
     Quit,
 }
@@ -96,8 +97,8 @@ impl AppControls for Controls {
     fn set_volume(&self, volume: f64) {
         self.send(Control::SetVolume(volume))
     }
-    fn show_window(&self) {
-        self.send(Control::ShowWindow)
+    fn show_window(&self, activation_token: Option<String>) {
+        self.send(Control::ShowWindow(activation_token))
     }
     fn show_popup(&self) {
         self.send(Control::ShowPopup)
@@ -299,8 +300,22 @@ impl Launch {
             let conn = zbus::blocking::Connection::session()?;
             let dbus = zbus::blocking::fdo::DBusProxy::new(&conn)?;
             let bus_name = zbus::names::BusName::try_from(name.as_str())?;
-            if !dbus.name_has_owner(bus_name)? {
+            if !dbus.name_has_owner(bus_name.clone())? {
                 return Ok(false);
+            }
+            // The launcher gave this process an activation token; MPRIS Raise
+            // cannot carry it, so it goes to the running instance's tray item,
+            // as a tray click's would, and the window comes to the front.
+            if let Some(token) = std::env::var("XDG_ACTIVATION_TOKEN").ok().filter(|t| !t.is_empty()) {
+                let pid = dbus.get_connection_unix_process_id(bus_name)?;
+                let tray = format!("org.kde.StatusNotifierItem-{pid}-1");
+                let sni = Some("org.kde.StatusNotifierItem");
+                let raised = conn
+                    .call_method(Some(tray.as_str()), "/StatusNotifierItem", sni, "ProvideXdgActivationToken", &(token,))
+                    .and_then(|_| conn.call_method(Some(tray.as_str()), "/StatusNotifierItem", sni, "Activate", &(0i32, 0i32)));
+                if raised.is_ok() {
+                    return Ok(true);
+                }
             }
             conn.call_method(Some(name.as_str()), "/org/mpris/MediaPlayer2", Some("org.mpris.MediaPlayer2"), "Raise", &())?;
             Ok(true)
@@ -469,7 +484,7 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
         artwork_dir: PathBuf::from(&paths.artwork),
         quitting: false,
     }));
-    show_main(&shell, cx);
+    show_main(&shell, None, cx);
 
     cx.spawn(async move |cx| {
         while let Some(ev) = rx.next().await {
@@ -482,9 +497,19 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
 }
 
 /// Opens the main window from the parked model, or raises it if it is open.
-fn show_main(shell: &ShellRef, cx: &mut App) {
-    if let Some(handle) = shell.borrow().main {
-        let _ = handle.update(cx, |_, window, _| window.activate_window());
+///
+/// `token` is the xdg-activation token the request came with. KWin will not
+/// raise a window on a request it cannot tie to a user action -- a tray click
+/// happens in the panel, not here -- so without it the window could open or
+/// stay behind others.
+fn show_main(shell: &ShellRef, token: Option<String>, cx: &mut App) {
+    let main = shell.borrow().main;
+    if let Some(handle) = main {
+        let _ = handle.update(cx, |_, window, _| {
+            if !token.as_deref().is_some_and(|t| crate::activation::activate(window, t)) {
+                window.activate_window();
+            }
+        });
         return;
     }
     let Some(ui) = shell.borrow_mut().parked.take() else { return };
@@ -509,6 +534,9 @@ fn show_main(shell: &ShellRef, cx: &mut App) {
     };
     let s = shell.clone();
     let view = handle.update(cx, move |_, window, cx| {
+        if let Some(t) = token.as_deref() {
+            crate::activation::activate(window, t);
+        }
         window.on_window_should_close(cx, move |_, cx| on_close(&s, cx));
         cx.entity().downgrade()
     });
@@ -699,7 +727,7 @@ fn current_ui(s: &Shell, cx: &App) -> Option<(Config, Option<String>)> {
 /// open window or the parked model.
 fn dispatch(shell: &ShellRef, ev: AppEvent, cx: &mut App) {
     match ev {
-        AppEvent::Control(Control::ShowWindow) => return show_main(shell, cx),
+        AppEvent::Control(Control::ShowWindow(token)) => return show_main(shell, token, cx),
         AppEvent::Control(Control::ShowPopup) => return toggle_popup(shell, cx),
         AppEvent::Control(Control::Quit) => return quit(shell, cx),
         AppEvent::Core(CoreEvent::Overlay(ref np)) => {
@@ -760,7 +788,7 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
                 backend.set_volume(ui.volume);
             }
             // Handled by dispatch.
-            Control::ShowWindow | Control::ShowPopup | Control::Quit => {}
+            Control::ShowWindow(_) | Control::ShowPopup | Control::Quit => {}
         },
         AppEvent::OutputAppeared(id) => {
             if ui.config.audio.output_device_id == id && backend.set_output(&id).is_ok() {

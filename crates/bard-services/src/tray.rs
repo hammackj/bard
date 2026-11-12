@@ -73,7 +73,7 @@ impl ksni::Tray for BardTray {
     // Left click restores the window -- that is what a tray icon is expected
     // to do, and routing it to the preview instead left no way back to the app.
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.controls.show_window();
+        self.controls.show_window(ksni::current_xdg_activation_token());
     }
     // Middle click: the now-playing preview.
     fn secondary_activate(&mut self, _x: i32, _y: i32) {
@@ -92,7 +92,7 @@ impl ksni::Tray for BardTray {
         vec![
             item(&self.state.heading(), false, |_| {}),
             MenuItem::Separator,
-            item("Show Bard", true, |t| t.controls.show_window()),
+            item("Show Bard", true, |t| t.controls.show_window(ksni::current_xdg_activation_token())),
             item("Now playing preview", true, |t| t.controls.show_popup()),
             MenuItem::Separator,
             item(if self.state.playing { "Pause" } else { "Play" }, true, |t| t.controls.toggle()),

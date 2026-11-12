@@ -662,9 +662,13 @@ dependencies = [
  "gpui-pre-platform",
  "gpui-pre-wgpu",
  "image",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "unicode-segmentation",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
  "zbus 5.19.0",
 ]
 

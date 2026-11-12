@@ -270,7 +270,7 @@ impl Imp {
 
 impl RootInterface for Imp {
     async fn raise(&self) -> fdo::Result<()> {
-        self.controls.show_window();
+        self.controls.show_window(None);
         Ok(())
     }
     async fn quit(&self) -> fdo::Result<()> {

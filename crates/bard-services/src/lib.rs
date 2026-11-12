@@ -87,7 +87,12 @@ pub trait AppControls: Send + Sync + 'static {
     /// resulting `ConfigChanged` updates MPRIS.
     fn set_volume(&self, volume: f64);
     /// Show and raise the main window (tray click, "Show Bard", MPRIS Raise).
-    fn show_window(&self);
+    ///
+    /// `activation_token` is the Wayland xdg-activation token the request
+    /// came with, when it had one: KDE's tray hands one over with each click
+    /// (`ProvideXdgActivationToken`), and without it KWin's focus-stealing
+    /// prevention may leave the window behind others.
+    fn show_window(&self, activation_token: Option<String>);
     /// Toggle the tray's now-playing preview window (middle click, menu item).
     fn show_popup(&self);
     /// Quit the app (tray menu, MPRIS Quit).

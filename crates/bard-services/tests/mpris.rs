@@ -41,7 +41,7 @@ impl AppControls for Recorder {
     fn set_volume(&self, v: f64) {
         self.push(format!("volume {v:.2}"))
     }
-    fn show_window(&self) {
+    fn show_window(&self, _: Option<String>) {
         self.push("show")
     }
     fn show_popup(&self) {
