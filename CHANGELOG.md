@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-11-12
+
 ### Fixed
 
 - **Volume applies at once during a crossfade.** Turning it down, or to
