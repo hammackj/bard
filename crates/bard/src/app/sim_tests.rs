@@ -285,7 +285,7 @@ impl Effects for Fx {
     fn seek(&self, s: f64) {
         self.engine.borrow_mut().seek(s)
     }
-    fn set_norm_gain(&self, _: f32) {}
+    fn set_norm_gain(&self, _: u64, _: f32) {}
     fn set_output(&self, _: &str) -> Result<(), String> {
         Ok(())
     }

@@ -33,7 +33,8 @@ pub(super) trait Effects {
     fn held(&self) -> Option<u64>;
     fn pause(&self);
     fn seek(&self, seconds: f64);
-    fn set_norm_gain(&self, gain: f32);
+    /// For the request `generation`.
+    fn set_norm_gain(&self, generation: u64, gain: f32);
     fn set_output(&self, id: &str) -> Result<(), String>;
     // intents
     fn toggle_play(&self);
@@ -197,7 +198,7 @@ fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
             if c.audio.normalize != ui.config.audio.normalize
                 && let Some(t) = &ui.track
             {
-                fx.set_norm_gain(gain_multiplier(t, c.audio.normalize) as f32);
+                fx.set_norm_gain(ui.generation, gain_multiplier(t, c.audio.normalize) as f32);
             }
             ui.config = c;
         }
@@ -308,7 +309,7 @@ mod tests {
         fn seek(&self, s: f64) {
             self.log(format!("seek {s}"))
         }
-        fn set_norm_gain(&self, _: f32) {
+        fn set_norm_gain(&self, _: u64, _: f32) {
             self.log("norm")
         }
         fn set_output(&self, id: &str) -> Result<(), String> {

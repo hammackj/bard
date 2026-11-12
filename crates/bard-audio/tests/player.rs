@@ -194,7 +194,7 @@ fn crossfade_fades_out_swaps_then_fades_in() {
 #[test]
 fn volume_and_normalisation_ramp_into_one_gain() {
     let (p, _rx) = player();
-    p.play("a".into(), fixture("bursts.wav"), 2.0, 0.0);
+    let a = p.play("a".into(), fixture("bursts.wav"), 2.0, 0.0);
     std::thread::sleep(Duration::from_millis(200));
     assert!((p.current_gain() - 2.0).abs() < 0.01);
     p.set_volume(0.5);
@@ -203,7 +203,7 @@ fn volume_and_normalisation_ramp_into_one_gain() {
     assert!(g > 1.0, "ramped, not snapped: {g}");
     std::thread::sleep(Duration::from_millis(300));
     assert!((p.current_gain() - 1.0).abs() < 0.01);
-    p.set_norm_gain(10.0);
+    p.set_norm_gain(a, 10.0);
     std::thread::sleep(Duration::from_millis(300));
     assert!((p.current_gain() - 4.0).abs() < 0.01, "clamped to 4");
     p.set_volume(0.0);

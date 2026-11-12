@@ -327,10 +327,13 @@ impl Player {
         self.send(Cmd::Volume(v));
     }
 
-    /// The current track's normalisation multiplier, e.g. when the
-    /// normalisation setting changes mid-track. Ramped like volume.
-    pub fn set_norm_gain(&self, m: f32) {
-        self.send(Cmd::Norm(m));
+    /// The normalisation multiplier of the track `generation` asked for (as
+    /// returned by [`play`](Self::play)), e.g. when the normalisation setting
+    /// changes mid-track. Ramped like volume. During a crossfade it is the
+    /// incoming track's, kept for when it starts; for a request since
+    /// replaced it does nothing.
+    pub fn set_norm_gain(&self, generation: u64, m: f32) {
+        self.send(Cmd::Norm(generation, m));
     }
 
     /// Unloads the track: the queue ran dry. Position and duration go to 0.

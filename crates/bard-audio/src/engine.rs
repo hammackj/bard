@@ -43,7 +43,8 @@ pub(crate) enum Cmd {
     Resume,
     Seek(f64),
     Volume(f32),
-    Norm(f32),
+    /// A request's normalisation multiplier: (generation, multiplier).
+    Norm(u64, f32),
     Stop(u64),
     /// Ends a fade-out now: the incoming track starts at once.
     CutFade,
@@ -285,10 +286,20 @@ impl Engine {
                 // Ramped rather than set, so volume changes don't click.
                 self.gain_now(GainCmd::Level(self.target_gain()));
             }
-            Cmd::Norm(m) => {
-                self.norm_gain = clamp_norm(m);
-                self.gain_now(GainCmd::Level(self.target_gain()));
-            }
+            // For the request it names. During a fade-out that is the
+            // incoming track, still pending: it takes the multiplier when it
+            // starts -- applied to the outgoing one instead, it was then
+            // overwritten by the one captured at the request. The outgoing
+            // track keeps its own for the rest of its fade.
+            Cmd::Norm(generation, m) => match &mut self.pending {
+                Some((p, _)) if p.generation == generation => p.norm_gain = clamp_norm(m),
+                _ if self.generation == generation => {
+                    self.norm_gain = clamp_norm(m);
+                    self.gain_now(GainCmd::Level(self.target_gain()));
+                }
+                // A request since replaced.
+                _ => {}
+            },
             Cmd::Stop(generation) => self.stop(generation),
             Cmd::CutFade => {
                 if let Some((mut p, _)) = self.pending.take() {

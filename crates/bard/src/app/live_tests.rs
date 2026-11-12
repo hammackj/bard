@@ -486,3 +486,114 @@ fn a_retag_while_paused_fading_or_alone_is_handled_like_a_flag() {
     assert_eq!(l.heard_since(t), ["s1"], "uninterrupted");
     assert_eq!(l.ui.generation, generation, "no new request");
 }
+
+impl Live {
+    /// s1 and s2 with these ReplayGain track and album gains (dB).
+    fn gains(&mut self, s1: f64, s2: f64) {
+        self.core(|b| {
+            let with = |id: &str, db: f64| {
+                let mut t = track(id, SAFE);
+                t.track_gain_db = Some(db);
+                t.album_gain_db = Some(db);
+                t
+            };
+            b.install_library(vec![with("s1", s1), with("s2", s2)]);
+        });
+    }
+
+    fn normalize(&mut self, mode: bard_core::types::NormalizeMode) {
+        self.core(|b| b.update_config(|c| c.audio.normalize = mode));
+    }
+
+    /// The loudest gain over `d`: what the fade-out reaches.
+    fn peak_gain(&mut self, d: Duration) -> f32 {
+        let end = Instant::now() + d;
+        let mut most = 0f32;
+        while Instant::now() < end {
+            self.pump(Duration::from_millis(10));
+            most = most.max(self.fx.player.current_gain());
+        }
+        most
+    }
+}
+
+/// The reviewer's reproduction: normalisation turned off during a fade
+/// reaches the incoming track, which used to start at the multiplier
+/// captured when it was asked for.
+#[test]
+fn review_normalization_change_survives_pending_fade() {
+    let mut l = Live::new(0.3);
+    l.core(|b| {
+        let mut incoming = track("s2", SAFE);
+        incoming.track_gain_db = Some(-20.0);
+        b.install_library(vec![track("s1", SAFE), incoming]);
+    });
+    l.start("s1", &["s2"]);
+    l.core(|b| b.skip());
+    l.pump(Duration::from_millis(80));
+    l.core(|b| {
+        b.update_config(|c| c.audio.normalize = bard_core::types::NormalizeMode::Off);
+    });
+    l.pump(Duration::from_millis(850));
+    assert!(l.heard("s2"));
+    let gain = l.fx.player.current_gain();
+    assert!(gain > 0.9, "normalization is Off but pending track restored old multiplier: {gain}");
+}
+
+/// Changed during a fade, the setting reaches the incoming track -- off to
+/// on and on to off, track and album -- and leaves the outgoing one at its
+/// own level; through a pause mid-fade and a cut too.
+#[test]
+fn a_normalisation_change_during_a_fade_belongs_to_the_incoming_track() {
+    use bard_core::types::NormalizeMode::{Album, Off, Track};
+    // (from, to, s1 dB, s2 dB, s2's level after)
+    for (from, to, s1, s2, want) in
+        [(Track, Off, -20., -20., 1.0), (Off, Track, 0., -20., 0.1), (Off, Album, 0., -20., 0.1)]
+    {
+        let mut l = Live::new(1.0);
+        l.normalize(from);
+        l.gains(s1, s2);
+        l.start("s1", &["s2"]);
+        let outgoing = l.fx.player.current_gain();
+        l.core(|b| b.skip());
+        l.pump(Duration::from_millis(80));
+        l.normalize(to);
+        let during = l.peak_gain(Duration::from_millis(300));
+        assert!(
+            during <= outgoing + 0.01,
+            "{from:?}->{to:?}: the outgoing track keeps its level: {during} > {outgoing}"
+        );
+        l.pump(Duration::from_millis(2000));
+        assert!(l.heard("s2"));
+        let g = l.fx.player.current_gain();
+        assert!((g - want).abs() < 0.02, "{from:?}->{to:?}: s2 at {g}, want {want}");
+    }
+
+    // Paused mid-fade after the change: resumed at the new level.
+    let mut l = Live::new(1.0);
+    l.normalize(Off);
+    l.gains(0., -20.);
+    l.start("s1", &["s2"]);
+    l.core(|b| b.skip());
+    l.pump(Duration::from_millis(80));
+    l.normalize(Track);
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Pause));
+    l.pump(Duration::from_millis(100));
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Play));
+    l.pump(Duration::from_millis(400));
+    assert!(l.heard("s2"));
+    assert!((l.fx.player.current_gain() - 0.1).abs() < 0.02, "paused: {}", l.fx.player.current_gain());
+
+    // Cut short (streamer mode) after the change: straight in at the new level.
+    let mut l = Live::new(1.0);
+    l.normalize(Off);
+    l.gains(0., -20.);
+    l.start("s1", &["s2"]);
+    l.core(|b| b.skip());
+    l.pump(Duration::from_millis(80));
+    l.normalize(Track);
+    l.fx.player.cut_fade();
+    l.pump(Duration::from_millis(300));
+    assert!(l.heard("s2"));
+    assert!((l.fx.player.current_gain() - 0.1).abs() < 0.02, "cut: {}", l.fx.player.current_gain());
+}

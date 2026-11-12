@@ -211,8 +211,8 @@ impl super::reduce::Effects for AppBackend {
     fn seek(&self, seconds: f64) {
         self.player.seek(seconds)
     }
-    fn set_norm_gain(&self, gain: f32) {
-        self.player.set_norm_gain(gain)
+    fn set_norm_gain(&self, generation: u64, gain: f32) {
+        self.player.set_norm_gain(generation, gain)
     }
     fn set_output(&self, id: &str) -> Result<(), String> {
         Backend::set_output(self, id)

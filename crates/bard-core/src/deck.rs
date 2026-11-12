@@ -101,7 +101,7 @@ pub fn new_deck(ids: &[String], rng: Rng, avoid_first: Option<&str>, weight_of: 
 /// only joining its ends); then a swap with a slot holding another track
 /// that leaves none; then any such swap. With one distinct track there is
 /// nothing else to deal, and the deck stays as it is.
-fn avoid_seam(deck: &mut Vec<String>, avoid: &str, rng: Rng) {
+fn avoid_seam(deck: &mut [String], avoid: &str, rng: Rng) {
     let n = deck.len();
     // Equal neighbours, counted once; a rotation or a swap changes only a
     // few pairs, so each candidate is checked in O(1), not by rebuilding.
@@ -270,7 +270,8 @@ mod tests {
         let deck = new_deck(&abc, &mut || 0.5, Some("a"), Some(&w2));
         assert_ne!(deck.remaining[0], "a", "{:?}", deck.remaining);
 
-        let cases: [(&[&str], fn(&str) -> f64); 3] = [
+        type Case<'a> = (&'a [&'a str], fn(&str) -> f64);
+        let cases: [Case; 3] = [
             (&["a", "b", "c"], |id| if id == "a" { 2.0 } else { 1.0 }),
             (&["a", "b", "c", "d", "e"], |id| if id == "a" { 3.0 } else { 1.0 }),
             (&["a", "b"], |id| if id == "a" { 3.0 } else { 1.0 }),
