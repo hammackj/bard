@@ -240,3 +240,79 @@ fn an_ordinary_skip_still_crossfades() {
     l.pump(Duration::from_millis(300));
     assert!(l.heard("s1"), "s1 still fading out");
 }
+
+/// Several requests within one fade: the engine still has the first track
+/// fading out. Revoking it cuts it, however many requests came after.
+#[test]
+fn revoking_the_real_outgoing_track_after_several_requests_cuts_it() {
+    for chain in [&["s1", "s2"][..], &["s1", "s2", "s3"][..]] {
+        let mut l = Live::new(2.0);
+        l.start("r1", &[]);
+        l.core(|b| b.arm(None));
+        for id in chain {
+            l.core(|b| b.play_now(id));
+            l.pump(Duration::from_millis(50));
+        }
+        assert!(l.heard("r1"), "r1 is what is fading out");
+        let t = Instant::now();
+        l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+        l.assert_cut("r1", chain.last().unwrap(), t);
+    }
+}
+
+/// Paused during the fade: the engine loads the incoming track paused and
+/// says so, which ends the fade. A revocation then has nothing to cut and
+/// nothing is heard.
+#[test]
+fn a_pause_during_the_fade_ends_it_and_nothing_is_heard_after() {
+    let mut l = Live::new(2.0);
+    l.start("r1", &[]);
+    l.core(|b| b.arm(None));
+    l.core(|b| b.play_now("s1"));
+    l.pump(Duration::from_millis(80));
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Pause));
+    l.pump(Duration::from_millis(150));
+    let t = Instant::now();
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.pump(Duration::from_millis(400));
+    assert!(l.heard_since(t).is_empty(), "{:?}", l.heard_since(t));
+    assert!(!l.fx.player.position().playing);
+}
+
+/// A seek during the fade, then the outgoing track revoked: cut, and the
+/// incoming one starts where the seek put it.
+#[test]
+fn a_seek_during_the_fade_survives_a_cut() {
+    let mut l = Live::new(2.0);
+    l.start("r1", &[]);
+    l.core(|b| b.arm(None));
+    l.core(|b| b.play_now("s1"));
+    l.pump(Duration::from_millis(80));
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Seek(1.5)));
+    l.pump(Duration::from_millis(50));
+    let t = Instant::now();
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.assert_cut("r1", "s1", t);
+    let first = l.reports.iter().find_map(|(at, e)| match e {
+        PlayerEvent::Progress { track_id: Some(id), position, .. } if *at >= t && id == "s1" => Some(*position),
+        _ => None,
+    });
+    assert!(first.is_some_and(|p| p >= 1.5), "{first:?}");
+}
+
+/// Once the fade has finished, revoking the track that faded out changes
+/// nothing: the safe track plays on, uninterrupted.
+#[test]
+fn revoking_a_track_that_already_faded_out_leaves_playback_alone() {
+    let mut l = Live::new(0.3);
+    l.start("r1", &[]);
+    l.core(|b| b.arm(None));
+    l.core(|b| b.play_now("s1"));
+    l.pump(Duration::from_millis(600));
+    assert!(l.heard("s1"));
+    let gen_before = l.ui.generation;
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.pump(Duration::from_millis(200));
+    assert_eq!(l.ui.generation, gen_before, "no new request to the engine");
+    assert!(l.heard("s1"));
+}

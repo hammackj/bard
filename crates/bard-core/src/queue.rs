@@ -376,9 +376,12 @@ impl Bard {
             self.cut_to_next();
             return;
         }
-        // The track before may still be fading out under a permitted one.
-        if self.fading_from.as_ref().is_some_and(|t| self.blocked_reason(t).is_some()) {
-            self.fading_from = None;
+        // A track before it may still be fading out under a permitted one.
+        let current = self.now_playing.as_ref().map(|n| n.track.id.clone());
+        let fading_blocked =
+            self.maybe_audible.iter().any(|t| Some(&t.id) != current.as_ref() && self.blocked_reason(t).is_some());
+        if fading_blocked {
+            self.maybe_audible.retain(|t| Some(&t.id) == current.as_ref());
             self.emit(CoreEvent::CutFade);
         }
         self.top_up_endless();
@@ -396,15 +399,17 @@ impl Bard {
     /// what may still be fading out is always known.
     fn emit_play(&mut self, track: Track) {
         let cut = std::mem::take(&mut self.cutting);
-        let before = self.on_air.replace(track.clone());
-        self.fading_from = if cut { None } else { before };
+        if cut {
+            self.maybe_audible.clear();
+        }
+        self.maybe_audible.retain(|t| t.id != track.id);
+        self.maybe_audible.push(track.clone());
         self.emit(CoreEvent::PlayTrack(track, if cut { Transition::Cut } else { Transition::Normal }));
     }
 
     /// Playback stopped; the engine's stop ends any fade too.
     fn went_off_air(&mut self) {
-        self.on_air = None;
-        self.fading_from = None;
+        self.maybe_audible.clear();
     }
 
     /// Whether a track may play again from history (Repeat One, Repeat All,
@@ -526,10 +531,15 @@ impl Bard {
         // the mode was armed. Prune before stepping rather than refusing at the
         // end, so Previous walks to the most recent *permitted* track instead
         // of dead-ending.
-        if self.is_streamer_armed() {
-            let played = std::mem::take(&mut self.played);
-            self.played = played.into_iter().filter(|i| self.blocked_reason(&i.track).is_none()).collect();
-        }
+        //
+        // The same for tracks no longer in the library (a removed folder),
+        // including the entry kept for a removed track while it finished: once
+        // something else is playing it is just history. The current entry
+        // stays, as the point Previous steps back from.
+        let current = self.now_playing.as_ref().map(|n| n.id.clone());
+        let played = std::mem::take(&mut self.played);
+        self.played =
+            played.into_iter().filter(|i| Some(&i.id) == current.as_ref() || self.may_replay(&i.track)).collect();
 
         // A track whose folder was removed is let finish, not restarted: back
         // goes to the one before it instead, wherever it is in the track.

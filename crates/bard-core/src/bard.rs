@@ -133,11 +133,16 @@ pub struct Bard {
     pub(crate) played: Vec<QueueItem>,
     /// Shuffle deck: dealt through completely before any track repeats.
     pub(crate) deck: Option<Deck>,
-    /// The track of the latest PlayTrack, and the one it replaced with a
-    /// normal transition -- which may still be fading out. None after a cut
-    /// or a stop.
-    pub(crate) on_air: Option<Track>,
-    pub(crate) fading_from: Option<Track>,
+    /// Every track the engine may still be sounding, newest (the latest
+    /// PlayTrack) last.
+    ///
+    /// Not just the one before: the engine fades out the source it actually
+    /// has, and a second request during the fade replaces only the pending
+    /// one, so after A -> B -> C it is A still fading, not B. Core cannot see
+    /// which, so it keeps every candidate until the engine says it has
+    /// swapped: a report for the current request (one decoder, so nothing
+    /// else is left), a cut, or a stop.
+    pub(crate) maybe_audible: Vec<Track>,
     /// The next PlayTrack is a cut.
     pub(crate) cutting: bool,
 
@@ -183,8 +188,7 @@ impl Bard {
             position: 0.0,
             history: Vec::new(),
             played: Vec::new(),
-            on_air: None,
-            fading_from: None,
+            maybe_audible: Vec::new(),
             cutting: false,
             deck: None,
             streamer_source: None,
@@ -442,6 +446,8 @@ impl Bard {
         if !self.is_current_track(p.track_id.as_deref()) {
             return;
         }
+        // The engine is on the current request: whatever was fading out is gone.
+        self.maybe_audible.retain(|t| Some(&t.id) == p.track_id.as_ref());
         let write = self.config.get().overlay.write_now_playing_json;
         let (position, duration, playing) = (p.position, p.duration, p.playing);
         self.np.set_progress(p, write);

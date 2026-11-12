@@ -125,7 +125,8 @@ impl Engine {
     }
 
     pub fn run(mut self, rx: Receiver<Cmd>) {
-        self.gain_now(GainCmd::Set(combined_gain(self.volume, self.norm_gain)));
+        self.gain_now(GainCmd::SetLevel(combined_gain(self.volume, self.norm_gain)));
+        self.gain_now(GainCmd::SetEnvelope(1.0));
         loop {
             let timeout = self.timeout();
             match rx.recv_timeout(timeout) {
@@ -235,7 +236,7 @@ impl Engine {
                         // in: it removes the hard edge between tracks, which is
                         // what the seam actually sounds like, without a second
                         // audio path to keep in sync.
-                        self.gain_now(GainCmd::Linear { to: 0.0, secs: crossfade_sec, retarget: false });
+                        self.gain_now(GainCmd::Fade { to: 0.0, secs: crossfade_sec });
                         let at = Instant::now() + Duration::from_secs_f32(crossfade_sec);
                         self.pending = Some((play, at));
                         return true;
@@ -274,11 +275,11 @@ impl Engine {
             Cmd::Volume(v) => {
                 self.volume = clamp_volume(v);
                 // Ramped rather than set, so volume changes don't click.
-                self.gain_now(GainCmd::Target(self.target_gain()));
+                self.gain_now(GainCmd::Level(self.target_gain()));
             }
             Cmd::Norm(m) => {
                 self.norm_gain = clamp_norm(m);
-                self.gain_now(GainCmd::Target(self.target_gain()));
+                self.gain_now(GainCmd::Level(self.target_gain()));
             }
             Cmd::Stop(generation) => self.stop(generation),
             Cmd::CutFade => {
@@ -308,17 +309,14 @@ impl Engine {
         // Set the level before the audio starts, or the first moments of a
         // loud track play at the previous track's gain.
         //
-        // When crossfading, that level is silence. The Electron engine once
+        // When crossfading, the envelope starts closed. The Electron engine once
         // used fadeIn(0) here, which snapped the gain straight to full --
         // undoing the fade-out that had just finished -- and the incoming
         // track began at full volume in the gap before the fade-in was
         // scheduled: the hard edge the crossfade exists to remove. Here the
         // fade-in is also held until the new track's first chunk is played.
-        if p.crossfade_sec > 0.0 {
-            self.gain_now(GainCmd::Set(0.0));
-        } else {
-            self.gain_now(GainCmd::Set(target));
-        }
+        self.gain_now(GainCmd::SetLevel(target));
+        self.gain_now(GainCmd::SetEnvelope(if p.crossfade_sec > 0.0 { 0.0 } else { 1.0 }));
         let epoch = self.bump_epoch();
         self.generation = p.generation;
         self.track_id = Some(p.track_id.clone());
@@ -350,10 +348,9 @@ impl Engine {
                     return;
                 }
                 if p.crossfade_sec > 0.0 {
-                    let _ = self.gains.push(GainMsg {
-                        after_epoch: epoch,
-                        cmd: GainCmd::Linear { to: target, secs: p.crossfade_sec, retarget: true },
-                    });
+                    let _ = self
+                        .gains
+                        .push(GainMsg { after_epoch: epoch, cmd: GainCmd::Fade { to: 1.0, secs: p.crossfade_sec } });
                 }
                 self.decode_some();
                 self.activate();
@@ -421,7 +418,8 @@ impl Engine {
         self.shared.playing.store(false, Ordering::Relaxed);
         self.shared.set_position(0.0);
         self.shared.set_duration(0.0);
-        self.gain_now(GainCmd::Set(self.target_gain()));
+        self.gain_now(GainCmd::SetLevel(self.target_gain()));
+        self.gain_now(GainCmd::SetEnvelope(1.0));
         self.deactivate_soon();
         self.progress();
     }

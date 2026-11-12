@@ -941,3 +941,134 @@ fn nowplaying_json_timing_follows_the_track() {
     report(&mut f.bard, "g2", 0.0, 119.0, false);
     assert_eq!(read_np(&f)["durationSec"], 119.0, "the paused track's first report is written too");
 }
+
+/// Two folders: a's tracks a1/a2, b's b1/b2.
+fn two_folders(armed: bool) -> Fixture {
+    let mut f = fixture(false);
+    let mut v = Vec::new();
+    for (root, id, n) in [("a", "a1", 1), ("a", "a2", 2), ("b", "b1", 1), ("b", "b2", 2)] {
+        let mut t = track(id, &root.to_uppercase(), n);
+        t.path = format!("/music/{root}/{id}.flac");
+        v.push(t);
+    }
+    f.bard.update_config(|c| {
+        c.library_paths = vec!["/music/a".into(), "/music/b".into()];
+        c.playback.auto_fill = AutoFillMode::Off;
+    });
+    f.bard.install_library(v);
+    if armed {
+        f.bard.set_album_flag("A", ContentIdStatus::Safe, None);
+        f.bard.set_album_flag("B", ContentIdStatus::Safe, None);
+        f.bard.arm(None);
+    }
+    f.drain();
+    f
+}
+
+/// The entry kept for a removed track while it finished is not a way back
+/// to it: after the next track starts -- by finishing, a skip or Play now --
+/// Previous goes to valid history, or restarts what is playing if there is
+/// none. Armed and not.
+#[test]
+fn a_removed_track_that_finished_is_not_reached_by_previous() {
+    enum Leave {
+        Finish,
+        Skip,
+        PlayNow,
+    }
+    for armed in [false, true] {
+        for leave in [Leave::Finish, Leave::Skip, Leave::PlayNow] {
+            for earlier in [false, true] {
+                let mut f = two_folders(armed);
+                if earlier {
+                    f.bard.play_now("b2"); // valid history before a1
+                }
+                f.bard.play_now("a1");
+                f.bard.enqueue("b1");
+                f.bard.update_config(|c| c.library_paths.retain(|p| p != "/music/a"));
+                assert!(f.bard.track("a1").is_none());
+                match leave {
+                    Leave::Finish => f.bard.report_ended(),
+                    Leave::Skip => f.bard.skip(),
+                    Leave::PlayNow => {
+                        f.bard.play_now("b1");
+                    }
+                }
+                assert_eq!(playing(&f.bard).as_deref(), Some("b1"));
+                f.drain();
+                f.bard.previous();
+                let now = playing(&f.bard);
+                assert_ne!(now.as_deref(), Some("a1"), "armed {armed}, earlier history {earlier}");
+                assert_eq!(now.as_deref(), Some(if earlier { "b2" } else { "b1" }));
+                assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "a1"));
+                assert!(!queue_ids(&f.bard).contains(&"a1".to_string()));
+            }
+        }
+    }
+}
+
+/// Previous walks back over several stale entries to the newest valid one.
+#[test]
+fn previous_skips_any_number_of_stale_entries() {
+    let mut f = two_folders(false);
+    for id in ["b1", "a1", "a2", "b2"] {
+        f.bard.play_now(id);
+    }
+    f.bard.update_config(|c| c.library_paths.retain(|p| p != "/music/a"));
+    f.drain();
+    f.bard.previous();
+    assert_eq!(playing(&f.bard).as_deref(), Some("b1"));
+}
+
+fn cut_fades(events: &[CoreEvent]) -> usize {
+    events.iter().filter(|e| matches!(e, CoreEvent::CutFade)).count()
+}
+
+/// The engine fades out the source it has, which after several requests in
+/// one fade is the first, not the one before last. Every track that may
+/// still be heard is checked until the engine reports on the current request.
+#[test]
+fn every_track_that_may_still_be_fading_is_checked() {
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Safe, None);
+    f.drain();
+    // r1 on air; m1 then g1 requested within one fade.
+    f.bard.play_now("m1");
+    f.bard.play_now("g1");
+    f.drain();
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    let events = f.drain();
+    assert_eq!(cut_fades(&events), 1, "r1, two requests back, is cut: {events:?}");
+    assert!(transitions(&events).is_empty(), "g1 plays on");
+
+    // Longer chains, and the middle one revoked.
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Safe, None);
+    for id in ["m1", "r2", "g1", "g2"] {
+        f.bard.play_now(id);
+    }
+    f.drain();
+    f.bard.set_album_flag("Moon", ContentIdStatus::Claimed, None);
+    assert_eq!(cut_fades(&f.drain()), 1);
+
+    // Once the engine reports on the current request nothing else is heard,
+    // so a revocation then cuts nothing.
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Safe, None);
+    f.bard.play_now("m1");
+    f.bard.play_now("g1");
+    report(&mut f.bard, "g1", 0.1, 120.0, true);
+    f.drain();
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    assert_eq!(cut_fades(&f.drain()), 0);
+
+    // A report from a track no longer current acknowledges nothing.
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Safe, None);
+    f.bard.play_now("m1");
+    f.bard.play_now("g1");
+    report(&mut f.bard, "r1", 2.0, 120.0, true);
+    f.drain();
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    assert_eq!(cut_fades(&f.drain()), 1);
+}

@@ -7,6 +7,18 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Volume applies at once during a crossfade.** Turning it down, or to
+  zero, during a fade-out used to be ignored until the fade finished, up to
+  12 seconds; it was also delayed during a fade-in. The fade and the volume
+  are now separate stages, so neither can undo the other.
+- **Streamer mode cuts the right track after several skips in one fade.**
+  Skipping twice during a crossfade left the first track fading out, and
+  revoking it did not stop it.
+- **Previous no longer returns to a removed folder's track** that was let
+  finish, once something else has started.
+
 ## [0.2.3] — 2026-11-12
 
 ### Fixed

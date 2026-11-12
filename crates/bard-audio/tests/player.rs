@@ -462,3 +462,129 @@ fn an_immediate_play_during_a_fade_cuts_the_outgoing_track() {
     assert!(progress_of(&ev, b).is_empty(), "b never played: {ev:?}");
     assert!((p.current_gain() - 1.0).abs() < 0.01, "{}", p.current_gain());
 }
+
+/// Loudest rendered sample over `d`, read from the analyser: what is heard,
+/// not what the gain says.
+fn loudest_for(p: &Player, d: Duration) -> u8 {
+    let end = Instant::now() + d;
+    let mut most = 0;
+    while Instant::now() < end {
+        most = most.max(peak(p));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    most
+}
+
+/// Volume 0 during a fade-out silences at once; the fade does not hold it
+/// back. (bursts.wav is loud throughout its bursts, so a silent stretch of
+/// the analyser means silence, not a gap in the music.)
+#[test]
+fn zero_volume_during_a_fade_out_is_silent_at_once() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 2.0);
+    std::thread::sleep(Duration::from_millis(100));
+    p.set_volume(0.0);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(p.current_gain() < 0.001, "gain {}", p.current_gain());
+    assert!(loudest_for(&p, Duration::from_millis(400)) <= 1, "rendered samples are silent");
+
+    // Through the swap and the fade-in too.
+    std::thread::sleep(Duration::from_millis(1600));
+    assert!(p.current_gain() < 0.001, "gain {}", p.current_gain());
+    assert!(loudest_for(&p, Duration::from_millis(500)) <= 1);
+}
+
+/// A volume change during a fade-out sets the level the rest of the fade
+/// runs at; raising it cannot undo the fade.
+#[test]
+fn volume_changes_during_a_fade_out_apply_and_the_fade_still_ends() {
+    let (p, rx) = player();
+    p.set_volume(0.5);
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 1.0);
+    std::thread::sleep(Duration::from_millis(250));
+    let before = p.current_gain();
+    p.set_volume(0.25);
+    std::thread::sleep(Duration::from_millis(100));
+    let lower = p.current_gain();
+    assert!(lower < before * 0.6, "lower at once: {before} -> {lower}");
+
+    p.set_volume(1.0);
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(p.current_gain() < 0.6, "still fading out: {}", p.current_gain());
+    // At ~1 s the swap; b fades in towards the new volume.
+    let e = wait_for(
+        &rx,
+        Duration::from_secs(1),
+        |e| matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "b"),
+    );
+    assert!(e.is_some());
+    assert!(p.current_gain() < 0.2, "b starts from silence: {}", p.current_gain());
+    std::thread::sleep(Duration::from_millis(1300));
+    assert!((p.current_gain() - 1.0).abs() < 0.01, "settles at the volume set: {}", p.current_gain());
+}
+
+/// During the fade-in, volume 0 is silent at once and stays so.
+#[test]
+fn zero_volume_during_a_fade_in_is_silent_at_once() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 0.3);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "b"))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    p.set_volume(0.0);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(p.current_gain() < 0.001, "{}", p.current_gain());
+    assert!(loudest_for(&p, Duration::from_millis(400)) <= 1);
+}
+
+/// Rapid skips during a fade with the volume at 0, then a pause and resume:
+/// silent throughout, and resume plays at the volume, not over it.
+#[test]
+fn zero_volume_holds_through_skips_pause_and_resume() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 1.0);
+    p.set_volume(0.0);
+    p.play("c".into(), fixture("bursts.wav"), 1.0, 1.0);
+    p.play("d".into(), fixture("bursts.wav"), 1.0, 0.0);
+    assert!(loudest_for(&p, Duration::from_millis(300)) <= 1);
+    p.pause();
+    std::thread::sleep(Duration::from_millis(100));
+    p.resume();
+    assert!(loudest_for(&p, Duration::from_millis(300)) <= 1);
+    assert!(p.current_gain() < 0.001);
+    p.set_volume(0.5);
+    std::thread::sleep(Duration::from_millis(150));
+    assert!((p.current_gain() - 0.5).abs() < 0.01, "{}", p.current_gain());
+}
+
+/// Raising the volume right after a cut cannot bring the cut track back.
+#[test]
+fn volume_up_after_a_cut_does_not_revive_the_outgoing_track() {
+    let (p, rx) = player();
+    let a = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.set_volume(0.3);
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 2.0);
+    std::thread::sleep(Duration::from_millis(100));
+    p.cut_fade();
+    p.set_volume(1.0);
+    let ev = collect(&rx, Duration::from_millis(500));
+    let after_b = ev
+        .iter()
+        .skip_while(|(_, e)| !matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "b"))
+        .collect::<Vec<_>>();
+    assert!(!after_b.is_empty(), "{ev:?}");
+    assert!(
+        !after_b.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { generation, .. } if *generation == a)),
+        "{ev:?}"
+    );
+    assert!((p.current_gain() - 1.0).abs() < 0.01);
+}

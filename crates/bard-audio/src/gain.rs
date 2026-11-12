@@ -1,13 +1,20 @@
-//! The engine's single gain stage: volume x normalisation, with ramps.
+//! The engine's gain stage: a *level* (volume x normalisation) times an
+//! *envelope* (the crossfade), each with its own automation.
 //!
-//! This stands in for the Web Audio GainNode in the Electron engine and keeps
-//! its three kinds of automation, because each one exists for a reason:
+//! The Electron engine had one GainNode for both, and so did this engine at
+//! first: a fade-out was a ramp of the one gain, and a volume change during
+//! it had to be ignored -- applying it would have cancelled the fade -- so
+//! turning the volume to zero left the outgoing track playing for the rest of
+//! the fade, up to twelve seconds. Two stages, multiplied per frame, keep the
+//! two apart: the level answers the volume at once, the envelope finishes its
+//! fade, and nothing done to one can undo the other.
 //!
-//! - `Set` -- `setValueAtTime`: a jump, for the start of a track, so the
-//!   first moments of a loud track don't play at the previous track's gain;
-//! - `Target` -- `setTargetAtTime(v, now, 0.015)`: an exponential approach,
+//! - `SetLevel` -- a jump, for the start of a track, so the first moments of
+//!   a loud track don't play at the previous track's gain;
+//! - `Level` -- `setTargetAtTime(v, now, 0.015)`: an exponential approach,
 //!   for volume and normalisation changes, so they don't click;
-//! - `Linear` -- `linearRampToValueAtTime`: the crossfade's fade out / in.
+//! - `SetEnvelope` / `Fade` -- the envelope jumped, or ramped linearly
+//!   (`linearRampToValueAtTime`): the crossfade's fade out / in.
 //!
 //! The Web Audio version ramped to 0.0001 rather than 0, because a linear
 //! ramp toward an exact zero is degenerate there. Here zero is fine, and
@@ -40,67 +47,71 @@ pub(crate) fn clamp_norm(m: f32) -> f32 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum GainCmd {
-    Set(f32),
-    Target(f32),
-    /// `retarget`: a `Target` arriving mid-ramp moves this ramp's end point
-    /// (a volume change during a fade-in) instead of being dropped (a volume
-    /// change during a fade-out, which the swap will apply anyway).
-    Linear {
+    SetLevel(f32),
+    Level(f32),
+    /// 0 silent, 1 open.
+    SetEnvelope(f32),
+    Fade {
         to: f32,
         secs: f32,
-        retarget: bool,
     },
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Mode {
+enum LevelMode {
     Hold,
     Target { to: f32, coef: f32 },
-    Linear { to: f32, step: f32, left: u32, retarget: bool },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum EnvMode {
+    Hold,
+    Linear { to: f32, step: f32, left: u32 },
 }
 
 /// Per-frame gain automation. Runs on the audio thread: no allocation.
 #[derive(Clone, Debug)]
 pub(crate) struct GainRamp {
-    value: f32,
-    mode: Mode,
+    level: f32,
+    level_mode: LevelMode,
+    env: f32,
+    env_mode: EnvMode,
     rate: f32,
 }
 
 impl GainRamp {
-    pub fn new(rate: u32, value: f32) -> GainRamp {
-        GainRamp { value, mode: Mode::Hold, rate: rate as f32 }
+    /// At `level`, envelope open.
+    pub fn new(rate: u32, level: f32) -> GainRamp {
+        GainRamp { level, level_mode: LevelMode::Hold, env: 1.0, env_mode: EnvMode::Hold, rate: rate as f32 }
     }
 
+    /// The gain applied: level x envelope.
     pub fn value(&self) -> f32 {
-        self.value
+        self.level * self.env
     }
 
     pub fn apply(&mut self, cmd: GainCmd) {
         match cmd {
-            GainCmd::Set(v) => {
-                self.value = v;
-                self.mode = Mode::Hold;
+            GainCmd::SetLevel(v) => {
+                self.level = v;
+                self.level_mode = LevelMode::Hold;
             }
-            GainCmd::Target(v) => match &mut self.mode {
-                Mode::Linear { to, step, left, retarget: true } => {
-                    *to = v;
-                    *step = (v - self.value) / (*left).max(1) as f32;
-                }
-                Mode::Linear { retarget: false, .. } => {}
-                mode => {
-                    let coef = 1.0 - (-1.0 / (VOLUME_TAU_SEC * self.rate)).exp();
-                    *mode = Mode::Target { to: v, coef };
-                }
-            },
-            GainCmd::Linear { to, secs, retarget } => {
+            GainCmd::Level(v) => {
+                let coef = 1.0 - (-1.0 / (VOLUME_TAU_SEC * self.rate)).exp();
+                self.level_mode = LevelMode::Target { to: v, coef };
+            }
+            GainCmd::SetEnvelope(v) => {
+                self.env = v;
+                self.env_mode = EnvMode::Hold;
+            }
+            GainCmd::Fade { to, secs } => {
                 let left = (secs * self.rate).round() as u32;
                 if left == 0 {
-                    self.value = to;
-                    self.mode = Mode::Hold;
+                    self.env = to;
+                    self.env_mode = EnvMode::Hold;
                 } else {
-                    let step = (to - self.value) / left as f32;
-                    self.mode = Mode::Linear { to, step, left, retarget };
+                    let step = (to - self.env) / left as f32;
+                    self.env_mode = EnvMode::Linear { to, step, left };
                 }
             }
         }
@@ -109,27 +120,24 @@ impl GainRamp {
     /// The gain for the next frame.
     #[inline]
     pub fn next(&mut self) -> f32 {
-        match &mut self.mode {
-            Mode::Hold => {}
-            Mode::Target { to, coef } => {
-                self.value += (*to - self.value) * *coef;
-                // f32 stalls a hair short of the target; snap once inaudibly close.
-                if (*to - self.value).abs() < 1e-4 {
-                    self.value = *to;
-                    self.mode = Mode::Hold;
-                }
-            }
-            Mode::Linear { to, step, left, .. } => {
-                *left -= 1;
-                if *left == 0 {
-                    self.value = *to;
-                    self.mode = Mode::Hold;
-                } else {
-                    self.value += *step;
-                }
+        if let LevelMode::Target { to, coef } = self.level_mode {
+            self.level += (to - self.level) * coef;
+            // f32 stalls a hair short of the target; snap once inaudibly close.
+            if (to - self.level).abs() < 1e-4 {
+                self.level = to;
+                self.level_mode = LevelMode::Hold;
             }
         }
-        self.value
+        if let EnvMode::Linear { to, step, left } = &mut self.env_mode {
+            *left -= 1;
+            if *left == 0 {
+                self.env = *to;
+                self.env_mode = EnvMode::Hold;
+            } else {
+                self.env += *step;
+            }
+        }
+        self.value()
     }
 }
 
@@ -160,15 +168,15 @@ mod tests {
     }
 
     #[test]
-    fn target_is_a_15ms_exponential() {
+    fn level_is_a_15ms_exponential() {
         let mut g = GainRamp::new(RATE, 0.0);
-        g.apply(GainCmd::Target(1.0));
+        g.apply(GainCmd::Level(1.0));
         // One time constant: 1 - 1/e of the way there.
         let v = run(&mut g, (VOLUME_TAU_SEC * RATE as f32) as usize);
         assert!((v - (1.0 - (-1f32).exp())).abs() < 0.01, "{v}");
         // No step anywhere along the way: that is the point.
         let mut g = GainRamp::new(RATE, 0.0);
-        g.apply(GainCmd::Target(1.0));
+        g.apply(GainCmd::Level(1.0));
         let mut prev = 0.0;
         for _ in 0..RATE / 10 {
             let v = g.next();
@@ -179,42 +187,58 @@ mod tests {
     }
 
     #[test]
-    fn linear_ramp_hits_target_on_time() {
+    fn a_fade_hits_its_end_on_time() {
         let mut g = GainRamp::new(RATE, 0.8);
-        g.apply(GainCmd::Linear { to: 0.0, secs: 2.0, retarget: false });
+        g.apply(GainCmd::Fade { to: 0.0, secs: 2.0 });
         let mid = run(&mut g, RATE as usize);
         assert!((mid - 0.4).abs() < 1e-3, "{mid}");
         let end = run(&mut g, RATE as usize);
         assert_eq!(end, 0.0);
     }
 
+    /// The bug the split exists for: volume during a fade-out applied at once.
     #[test]
-    fn volume_change_during_fade_out_is_held_back() {
+    fn volume_zero_during_a_fade_out_silences_at_once() {
         let mut g = GainRamp::new(RATE, 1.0);
-        g.apply(GainCmd::Linear { to: 0.0, secs: 1.0, retarget: false });
+        g.apply(GainCmd::Fade { to: 0.0, secs: 2.0 });
+        run(&mut g, RATE as usize / 10);
+        g.apply(GainCmd::Level(0.0));
+        // The usual 15 ms approach, so it does not click: -58 dB by 100 ms,
+        // exact silence once it snaps, about 140 ms in.
+        assert!(run(&mut g, RATE as usize / 10) < 0.0015);
+        assert_eq!(run(&mut g, RATE as usize / 10), 0.0, "silent within 200 ms");
+    }
+
+    /// And the other way: raising the volume cannot undo the fade.
+    #[test]
+    fn volume_up_during_a_fade_out_still_ends_silent() {
+        let mut g = GainRamp::new(RATE, 0.5);
+        g.apply(GainCmd::Fade { to: 0.0, secs: 1.0 });
         run(&mut g, RATE as usize / 2);
-        g.apply(GainCmd::Target(1.0));
+        g.apply(GainCmd::Level(1.0));
+        let v = run(&mut g, RATE as usize / 10);
+        assert!(v < 0.5, "louder, still fading: {v}");
         assert_eq!(run(&mut g, RATE as usize), 0.0);
     }
 
     #[test]
-    fn volume_change_during_fade_in_moves_the_end_point() {
-        let mut g = GainRamp::new(RATE, 0.0);
-        g.apply(GainCmd::Linear { to: 1.0, secs: 1.0, retarget: true });
+    fn volume_during_a_fade_in_moves_where_it_ends() {
+        let mut g = GainRamp::new(RATE, 1.0);
+        g.apply(GainCmd::SetEnvelope(0.0));
+        g.apply(GainCmd::Fade { to: 1.0, secs: 1.0 });
         run(&mut g, RATE as usize / 2);
-        g.apply(GainCmd::Target(0.5));
+        g.apply(GainCmd::Level(0.5));
         let v = run(&mut g, RATE as usize / 4);
         assert!(v < 0.5 && v > 0.25, "{v}");
         assert_eq!(run(&mut g, RATE as usize), 0.5);
     }
 
     #[test]
-    fn set_cancels_a_ramp() {
-        // silenceNow(): cancel whatever is in flight and drop to silence.
+    fn set_envelope_cancels_a_fade() {
         let mut g = GainRamp::new(RATE, 0.3);
-        g.apply(GainCmd::Linear { to: 1.0, secs: 1.0, retarget: true });
+        g.apply(GainCmd::Fade { to: 0.0, secs: 1.0 });
         run(&mut g, 100);
-        g.apply(GainCmd::Set(0.0));
-        assert_eq!(run(&mut g, 1000), 0.0);
+        g.apply(GainCmd::SetEnvelope(1.0));
+        assert_eq!(run(&mut g, 1000), 0.3);
     }
 }

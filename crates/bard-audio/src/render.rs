@@ -313,8 +313,8 @@ mod tests {
         let mut t = rig();
         t.shared.epoch.store(1, Ordering::Release);
         t.shared.playing.store(true, Ordering::Relaxed);
-        t.gains.push(GainMsg { after_epoch: 0, cmd: GainCmd::Set(0.0) }).unwrap();
-        t.gains.push(GainMsg { after_epoch: 1, cmd: GainCmd::Linear { to: 1.0, secs: 0.1, retarget: true } }).unwrap();
+        t.gains.push(GainMsg { after_epoch: 0, cmd: GainCmd::SetEnvelope(0.0) }).unwrap();
+        t.gains.push(GainMsg { after_epoch: 1, cmd: GainCmd::Fade { to: 1.0, secs: 0.1 } }).unwrap();
         let mut out = vec![0.0; 480 * 2];
         // No chunk yet: the fade-in must not start in the gap.
         t.r.render(&mut out);
@@ -336,7 +336,7 @@ mod tests {
         let mut cp = cp;
         shared.epoch.store(1, Ordering::Release);
         shared.playing.store(true, Ordering::Relaxed);
-        gp.push(GainMsg { after_epoch: 0, cmd: GainCmd::Set(0.5) }).unwrap();
+        gp.push(GainMsg { after_epoch: 0, cmd: GainCmd::SetLevel(0.5) }).unwrap();
         let mut c = dc(1, 0.0, 0.0, false);
         for f in c.data.chunks_exact_mut(2) {
             f[0] = 0.8;
