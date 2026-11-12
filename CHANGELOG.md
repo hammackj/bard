@@ -7,6 +7,26 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.15] — 2026-11-12
+
+The first release published on GitHub, with a prebuilt Linux binary.
+
+### Added
+
+- **Prebuilt releases.** Each version is published on GitHub Releases as a
+  Linux x86_64 tarball with the install script and icons.
+- **Licence.** Bard is MIT-licensed; the bundled fonts (Inter, Fira Code)
+  and two adapted Feather icons keep their own licences, listed in
+  `THIRD-PARTY.md`.
+- `CONTRIBUTING.md` and `SECURITY.md`, with private vulnerability reporting.
+
+### Changed
+
+- The README covers installing from a release or from source, with the build
+  packages for Debian/Ubuntu and Arch, and a screenshot.
+- `scripts/make-album-videos.sh` now asks for the album folder with
+  `--library` rather than defaulting to one particular artist's folder.
+
 ## [0.2.14] — 2026-11-12
 
 ### Fixed
