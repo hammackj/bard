@@ -170,6 +170,20 @@ git push origin master v0.2.1
 Bard is on a `0.x` line: minor versions may carry breaking changes, patch
 versions don't.
 
+## Built with Claude
+
+Bard was written with a lot of help from
+[Claude Code](https://claude.com/claude-code), Anthropic's coding agent. That
+covers the original Electron app, the port to Rust and GPUI, and most of the
+bug fixes since. The maintainer sets the design and features, and decides
+what ships in each release.
+
+Most bug reports came from code reviews filed as tickets. Each fix comes with
+a test that reproduces the bug and fails without it. Everything has to pass
+the same checks before it is committed: the test suite, `cargo clippy` with
+warnings as errors, and `cargo fmt`. Commits don't carry AI co-author
+trailers; this section is the disclosure instead.
+
 ## Licence
 
 Bard's code is MIT-licensed; see [`LICENSE`](LICENSE). The bundled fonts
