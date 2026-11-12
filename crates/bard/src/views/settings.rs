@@ -256,9 +256,9 @@ impl BardWindow {
         if let Some(b) = self.crossfade_bounds {
             let v = (((x - b.origin.x) - px(THUMB / 2.)) / (b.size.width - px(THUMB))).clamp(0., 1.);
             let secs = (v * 12.).round() as f64;
-            // Only on a change: each one rewrites config.json.
+            // Only on a change; written behind, coalesced, off this thread.
             if secs != self.ui.config.audio.crossfade_sec {
-                self.ui.backend.update_config(Box::new(move |c| c.audio.crossfade_sec = secs));
+                self.ui.backend.adjust_config(Box::new(move |c| c.audio.crossfade_sec = secs));
             }
         }
     }

@@ -22,6 +22,13 @@ so minor bumps are where breaking changes land.
   directory before opening anything; a second launch raises the running
   window and exits, and exits even when the raise fails.
 
+### Changed
+
+- **Dragging the volume or crossfade slider no longer writes settings on
+  every step.** The change is heard at once and saved in the background, one
+  write per pause in the drag; a failed save says so and is retried, and the
+  last value is saved on quit.
+
 ## [0.2.4] — 2026-11-12
 
 ### Fixed

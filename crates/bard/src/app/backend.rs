@@ -121,10 +121,14 @@ impl Backend for AppBackend {
     }
     fn set_volume(&self, v: f64) {
         self.player.set_volume(v as f32);
-        self.with(|b| b.update_config(|c| c.audio.volume = v));
+        // Heard at once; saved behind, so a drag never waits on the disk.
+        self.with(|b| b.adjust_config(|c| c.audio.volume = v));
     }
     fn update_config(&self, f: Box<dyn FnOnce(&mut Config)>) {
         self.with(|b| b.update_config(f));
+    }
+    fn adjust_config(&self, f: Box<dyn FnOnce(&mut Config)>) {
+        self.with(|b| b.adjust_config(f));
     }
     fn set_album_flag(&self, album: &str, status: ContentIdStatus, note: Option<String>) {
         self.with(|b| b.set_album_flag(album, status, note.as_deref()));

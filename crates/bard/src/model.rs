@@ -31,6 +31,10 @@ pub trait Backend {
     fn seek(&self, seconds: f64);
     fn set_volume(&self, volume: f64);
     fn update_config(&self, f: Box<dyn FnOnce(&mut Config)>);
+    /// For continuous controls (sliders): applied at once, written behind.
+    fn adjust_config(&self, f: Box<dyn FnOnce(&mut Config)>) {
+        self.update_config(f)
+    }
     fn set_album_flag(&self, album: &str, status: ContentIdStatus, note: Option<String>);
     fn toggle_loved(&self, track_id: &str);
     fn rescan(&self);

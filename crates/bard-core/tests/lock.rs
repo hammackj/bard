@@ -8,6 +8,22 @@ use std::sync::{Arc, Barrier};
 
 const CHILD_DIR: &str = "BARD_LOCK_TEST_DIR";
 
+/// Takes the lock once it is free. Other tests here spawn processes, and a
+/// child holds a copy of every open file between fork and exec, which can
+/// keep a just-released lock held for that instant.
+fn acquire_once_free(dir: &Path) -> Option<DataDirLock> {
+    let end = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if let Some(l) = DataDirLock::acquire(dir).unwrap() {
+            return Some(l);
+        }
+        if std::time::Instant::now() > end {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 /// Run as a child process (see `spawn`): waits for "go" on stdin, tries the
 /// lock, prints `lock:got` or `lock:busy`, then holds it until stdin closes.
 /// Does nothing in an ordinary test run.
@@ -102,7 +118,7 @@ fn of_simultaneous_processes_exactly_one_becomes_the_writer() {
     for k in kids {
         k.release();
     }
-    assert!(DataDirLock::acquire(dir.path()).unwrap().is_some(), "free once they exit");
+    assert!(acquire_once_free(dir.path()).is_some(), "free once they exit");
 }
 
 #[test]
@@ -115,7 +131,7 @@ fn a_crashed_holder_leaves_no_stale_lock() {
     k.child.kill().unwrap(); // SIGKILL: no cleanup runs
     k.child.wait().unwrap();
     assert!(dir.path().join("bard.lock").exists(), "the file stays; the lock does not");
-    assert!(DataDirLock::acquire(dir.path()).unwrap().is_some());
+    assert!(acquire_once_free(dir.path()).is_some());
 }
 
 #[test]
@@ -127,27 +143,26 @@ fn aliases_of_one_directory_are_one_lock() {
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&data, &link).unwrap();
 
-    let held = DataDirLock::acquire(&data).unwrap().expect("first");
+    let held = acquire_once_free(&data).expect("first");
     assert!(DataDirLock::acquire(&link).unwrap().is_none(), "through a symlink");
     assert!(DataDirLock::acquire(&data.join("sub/..")).unwrap().is_none(), "through ..");
     assert!(DataDirLock::acquire(&data.join(".")).unwrap().is_none(), "through .");
     drop(held);
-    assert!(DataDirLock::acquire(&link).unwrap().is_some(), "released on drop");
+    assert!(acquire_once_free(&link).is_some(), "released on drop");
 }
 
 #[test]
 fn different_directories_do_not_block_each_other() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
-    let _la = DataDirLock::acquire(a.path()).unwrap().expect("a");
-    let lb = DataDirLock::acquire(b.path()).unwrap();
-    assert!(lb.is_some());
+    let _la = acquire_once_free(a.path()).expect("a");
+    assert!(acquire_once_free(b.path()).is_some());
 }
 
 #[test]
 fn a_missing_directory_is_created() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("new/bard");
-    let l = DataDirLock::acquire(&data).unwrap().expect("lock");
+    let l = acquire_once_free(&data).expect("lock");
     assert_eq!(l.path(), data.join("bard.lock"));
 }

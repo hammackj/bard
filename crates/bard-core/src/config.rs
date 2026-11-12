@@ -10,10 +10,115 @@ use crate::types::Config;
 use crate::util::{Indent, to_js_json, write_atomic};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
+
+/// How long a continuous control (a slider drag) settles before its value
+/// is written: one write per pause, not one per pixel.
+pub(crate) const SETTLE: Duration = Duration::from_millis(250);
+const MAX_RETRY: Duration = Duration::from_secs(30);
+
+type WriteFn = dyn Fn(&Path, &Config) -> anyhow::Result<()> + Send + Sync;
+
+/// Every write to config.json goes through here, in order.
+///
+/// Two kinds of change reach the file. Discrete ones (a folder, streamer
+/// mode, a device) are transactional: written first, applied only once on
+/// disk ([`ConfigStore::set`]). Continuous ones -- the volume and crossfade
+/// sliders -- apply at once and are written behind, on this thread
+/// ([`ConfigStore::set_deferred`]): writing each slider step on the UI thread,
+/// under the core lock, put a create/write/rename in the path of every frame
+/// of a drag.
+///
+/// Each change takes a version; a write records the newest version it
+/// carried, and an older one is never written after it. Both kinds take the
+/// same lock to write, so they cannot interleave on the temp file either.
+struct Writer {
+    state: Mutex<WriterState>,
+    wake: Condvar,
+    path: PathBuf,
+    write: Box<WriteFn>,
+    notify: Mutex<Option<crate::stores::Notify>>,
+}
+
+#[derive(Default)]
+struct WriterState {
+    /// The newest deferred change not yet on disk.
+    pending: Option<(u64, Config)>,
+    /// The newest version on disk.
+    written: u64,
+    failing: bool,
+    quit: bool,
+    running: bool,
+}
+
+impl Writer {
+    fn lock(&self) -> MutexGuard<'_, WriterState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn tell(&self, msg: String) {
+        if let Some(n) = self.notify.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            n(msg);
+        }
+    }
+
+    /// Writes what is pending, if it is newer than what is on disk. Called
+    /// with the lock held. Returns whether nothing is left to write.
+    fn write_pending(&self, st: &mut WriterState) -> bool {
+        let Some((version, config)) = st.pending.take() else { return true };
+        if version <= st.written {
+            return true;
+        }
+        match (self.write)(&self.path, &config) {
+            Ok(()) => {
+                st.written = version;
+                if std::mem::take(&mut st.failing) {
+                    self.tell("Settings are saving again".into());
+                }
+                true
+            }
+            Err(e) => {
+                // Unless something newer arrived meanwhile, keep it to retry.
+                if st.pending.is_none() {
+                    st.pending = Some((version, config));
+                }
+                if !std::mem::replace(&mut st.failing, true) {
+                    self.tell(format!("Could not save settings: {e:#} \u{2014} will keep trying"));
+                }
+                false
+            }
+        }
+    }
+
+    fn run(self: Arc<Self>) {
+        let mut wait = SETTLE;
+        loop {
+            {
+                let mut st = self.lock();
+                while st.pending.is_none() && !st.quit {
+                    st = self.wake.wait(st).unwrap_or_else(|e| e.into_inner());
+                }
+                if st.quit {
+                    // Drop flushes; nothing to do here.
+                    st.running = false;
+                    return;
+                }
+            }
+            // Let a drag settle, without holding the lock.
+            std::thread::sleep(wait);
+            let mut st = self.lock();
+            wait = if self.write_pending(&mut st) { SETTLE } else { (wait * 2).min(MAX_RETRY) };
+        }
+    }
+}
 
 pub(crate) struct ConfigStore {
     path: PathBuf,
     config: Config,
+    /// Version of `config`.
+    version: u64,
+    writer: Arc<Writer>,
 }
 
 impl ConfigStore {
@@ -40,7 +145,23 @@ impl ConfigStore {
         if raw.as_ref().is_none_or(needs_rewrite) {
             write(&path, &config)?;
         }
-        Ok(ConfigStore { path, config })
+        Ok(Self::with_writer(path, config, Box::new(write)))
+    }
+
+    fn with_writer(path: PathBuf, config: Config, write: Box<WriteFn>) -> Self {
+        let writer = Arc::new(Writer {
+            state: Mutex::new(WriterState::default()),
+            wake: Condvar::new(),
+            path: path.clone(),
+            write,
+            notify: Mutex::new(None),
+        });
+        ConfigStore { path, config, version: 0, writer }
+    }
+
+    /// Where a deferred write's failure (and recovery) is told.
+    pub fn set_notify(&self, notify: crate::stores::Notify) {
+        *self.writer.notify.lock().unwrap_or_else(|e| e.into_inner()) = Some(notify);
     }
 
     pub fn path(&self) -> &Path {
@@ -59,13 +180,66 @@ impl ConfigStore {
         if next == self.config {
             return Ok(false);
         }
-        write(&self.path, &next)?;
+        let mut st = self.writer.lock();
+        (self.writer.write)(&self.path, &next)?;
+        self.version += 1;
+        // Carries every deferred change too (they are in `config` already),
+        // so anything pending is now older than the file.
+        st.written = self.version;
+        st.pending = None;
+        drop(st);
         self.config = next;
         Ok(true)
+    }
+
+    /// Applies at once and writes behind, coalesced, on the writer thread.
+    /// For continuous controls only: the value is in use before it is on
+    /// disk. Returns whether anything changed.
+    pub fn set_deferred(&mut self, next: Config) -> bool {
+        if next == self.config {
+            return false;
+        }
+        self.version += 1;
+        self.config = next.clone();
+        let mut st = self.writer.lock();
+        st.pending = Some((self.version, next));
+        if !st.running {
+            st.running = true;
+            let w = Arc::clone(&self.writer);
+            let spawned = std::thread::Builder::new().name("bard-config-writer".into()).spawn(move || w.run());
+            if spawned.is_err() {
+                // No thread: write now rather than not at all.
+                st.running = false;
+                self.writer.write_pending(&mut st);
+                return true;
+            }
+        }
+        self.writer.wake.notify_one();
+        true
+    }
+
+    /// Writes any deferred change now. Returns whether the file is current.
+    pub fn flush(&self) -> bool {
+        let mut st = self.writer.lock();
+        self.writer.write_pending(&mut st)
+    }
+}
+
+impl Drop for ConfigStore {
+    /// The last slider position is not lost on quit.
+    fn drop(&mut self) {
+        self.flush();
+        let mut st = self.writer.lock();
+        st.quit = true;
+        self.writer.wake.notify_one();
     }
 }
 
 fn write(path: &Path, config: &Config) -> anyhow::Result<()> {
+    // Debug aid for checking the UI stays responsive on a slow disk.
+    if let Some(ms) = std::env::var("BARD_SLOW_CONFIG_WRITE_MS").ok().and_then(|v| v.parse().ok()) {
+        std::thread::sleep(Duration::from_millis(ms));
+    }
     write_atomic(path, &to_js_json(config, Indent::Tab)?)?;
     Ok(())
 }
@@ -184,6 +358,122 @@ mod tests {
         std::fs::write(&path, "{ nope").unwrap();
         assert!(ConfigStore::open(path.clone()).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ nope");
+    }
+
+    type Log<T> = Arc<Mutex<Vec<T>>>;
+
+    /// A store whose writes are recorded (volume of each), optionally slow,
+    /// failing the first `fail` times; the file itself is written too.
+    fn recording(delay: Duration, fail: usize) -> (tempfile::TempDir, ConfigStore, Log<f64>, Log<String>) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let left = Arc::new(Mutex::new(fail));
+        let w = writes.clone();
+        let store = ConfigStore::with_writer(
+            path,
+            Config::default(),
+            Box::new(move |p, c| {
+                std::thread::sleep(delay);
+                let mut left = left.lock().unwrap();
+                if *left > 0 {
+                    *left -= 1;
+                    anyhow::bail!("disk full");
+                }
+                w.lock().unwrap().push(c.audio.volume);
+                write(p, c)
+            }),
+        );
+        let said = Arc::new(Mutex::new(Vec::new()));
+        let s2 = said.clone();
+        store.set_notify(Arc::new(move |m| s2.lock().unwrap().push(m)));
+        (dir, store, writes, said)
+    }
+
+    fn on_disk(dir: &tempfile::TempDir) -> Config {
+        serde_json::from_str(&std::fs::read_to_string(dir.path().join("config.json")).unwrap()).unwrap()
+    }
+
+    fn wait_until(f: impl Fn() -> bool) {
+        let end = std::time::Instant::now() + Duration::from_secs(5);
+        while !f() && std::time::Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// A drag on a slow disk: every step applies at once, nothing waits on
+    /// the write, and the last value is what lands -- in one or two writes.
+    #[test]
+    fn slider_steps_apply_at_once_and_coalesce_into_the_last_value() {
+        let (dir, mut store, writes, _) = recording(Duration::from_millis(300), 0);
+        let t = std::time::Instant::now();
+        for i in 0..=100 {
+            let mut next = store.get().clone();
+            next.audio.volume = i as f64 / 100.;
+            assert!(store.set_deferred(next));
+            assert_eq!(store.get().audio.volume, i as f64 / 100., "in use at once");
+        }
+        assert!(t.elapsed() < Duration::from_millis(100), "never waited on the disk: {:?}", t.elapsed());
+        wait_until(|| writes.lock().unwrap().last() == Some(&1.0));
+        assert_eq!(on_disk(&dir).audio.volume, 1.0);
+        assert!(writes.lock().unwrap().len() <= 2, "coalesced: {:?}", writes.lock().unwrap());
+    }
+
+    /// A discrete change while a slider value is being written behind: it
+    /// waits its turn, lands with the slider value in it, and the older
+    /// pending write never lands after it.
+    #[test]
+    fn a_transactional_change_is_never_overwritten_by_an_older_deferred_write() {
+        let (dir, mut store, writes, _) = recording(Duration::from_millis(150), 0);
+        let mut next = store.get().clone();
+        next.audio.volume = 0.3;
+        store.set_deferred(next);
+        // The writer is (or soon will be) mid-write of 0.3.
+        std::thread::sleep(SETTLE + Duration::from_millis(50));
+        let mut next = store.get().clone();
+        next.audio.volume = 0.6;
+        store.set_deferred(next);
+        let mut next = store.get().clone();
+        next.streamer.enabled = true;
+        assert!(store.set(next).unwrap());
+        std::thread::sleep(SETTLE * 3);
+        let disk = on_disk(&dir);
+        assert!(disk.streamer.enabled);
+        assert_eq!(disk.audio.volume, 0.6, "the slider value rode along");
+        assert_eq!(writes.lock().unwrap().last(), Some(&0.6), "{:?}", writes.lock().unwrap());
+    }
+
+    /// A failing disk: the value stays in use, the user is told once, the
+    /// write is retried on its own, and recovery is said.
+    #[test]
+    fn a_failing_deferred_write_is_retried_and_reported() {
+        let (dir, mut store, _, said) = recording(Duration::ZERO, 2);
+        let mut next = store.get().clone();
+        next.audio.crossfade_sec = 5.;
+        store.set_deferred(next);
+        wait_until(|| dir.path().join("config.json").exists() && on_disk(&dir).audio.crossfade_sec == 5.);
+        assert_eq!(on_disk(&dir).audio.crossfade_sec, 5.);
+        let said = said.lock().unwrap().clone();
+        assert_eq!(said.iter().filter(|m| m.starts_with("Could not save settings")).count(), 1, "{said:?}");
+        assert!(said.iter().any(|m| m.contains("saving again")), "{said:?}");
+    }
+
+    /// Quitting right after a drag keeps its last value.
+    #[test]
+    fn the_last_value_is_written_on_shutdown() {
+        let (dir, mut store, _, _) = recording(Duration::ZERO, 0);
+        let mut next = store.get().clone();
+        next.audio.volume = 0.42;
+        store.set_deferred(next);
+        drop(store); // before the writer's settle time
+        assert_eq!(on_disk(&dir).audio.volume, 0.42);
+
+        let (dir, mut store, _, _) = recording(Duration::ZERO, 0);
+        let mut next = store.get().clone();
+        next.audio.volume = 0.24;
+        store.set_deferred(next);
+        assert!(store.flush());
+        assert_eq!(on_disk(&dir).audio.volume, 0.24);
     }
 
     #[test]

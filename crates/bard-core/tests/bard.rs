@@ -1098,3 +1098,27 @@ fn a_damaged_store_at_startup_is_reported_and_kept() {
     assert_eq!(playing(&bard).as_deref(), Some("g1"));
     assert!(bard.flush());
 }
+
+fn config_on_disk(f: &Fixture) -> Config {
+    serde_json::from_str(&std::fs::read_to_string(f.dir().join("config.json")).unwrap()).unwrap()
+}
+
+/// Slider changes are in effect and announced at once, and written behind;
+/// anything else asked of adjust_config is written before it applies.
+#[test]
+fn slider_settings_apply_at_once_and_reach_the_disk_by_shutdown() {
+    let mut f = fixture(false);
+    let c = f.bard.adjust_config(|c| c.audio.volume = 0.37);
+    assert_eq!(c.audio.volume, 0.37);
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.audio.volume == 0.37)));
+
+    // Not a slider: transactional, on disk on return.
+    f.bard.adjust_config(|c| c.playback.repeat = RepeatMode::All);
+    let disk = config_on_disk(&f);
+    assert_eq!(disk.playback.repeat, RepeatMode::All);
+    assert_eq!(disk.audio.volume, 0.37, "the pending slider value went with it");
+
+    f.bard.adjust_config(|c| c.audio.crossfade_sec = 7.);
+    f.bard.shutdown();
+    assert_eq!(config_on_disk(&f).audio.crossfade_sec, 7.);
+}

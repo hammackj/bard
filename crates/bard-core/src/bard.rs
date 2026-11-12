@@ -180,8 +180,10 @@ impl Bard {
                 let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send(CoreEvent::Notice(msg));
             })
         };
+        let config = ConfigStore::open(data_dir.join("config.json"))?;
+        config.set_notify(notify.clone());
         let bard = Bard {
-            config: ConfigStore::open(data_dir.join("config.json"))?,
+            config,
             library: Library::default(),
             stats: Stats::load(data_dir.join("stats.json"), opts.stats_debounce, notify.clone()),
             albums: Albums::load(data_dir.join("albums.json"), opts.albums_debounce, notify.clone()),
@@ -426,6 +428,28 @@ impl Bard {
         self.refresh_endless();
     }
 
+    /// A change from a continuous control -- the volume or crossfade slider
+    /// -- applied and announced at once, and written behind on the config
+    /// writer, coalesced (see `ConfigStore::set_deferred`). Neither setting
+    /// sets off anything else in the core, so nothing waits on the disk.
+    ///
+    /// Anything else in `f` goes the transactional way, [`Bard::update_config`].
+    pub fn adjust_config(&mut self, f: impl FnOnce(&mut Config)) -> Config {
+        let before = self.config.get().clone();
+        let mut next = before.clone();
+        f(&mut next);
+        let mut only_sliders = next.clone();
+        only_sliders.audio.volume = before.audio.volume;
+        only_sliders.audio.crossfade_sec = before.audio.crossfade_sec;
+        if only_sliders != before {
+            return self.update_config(|c| *c = next);
+        }
+        if self.config.set_deferred(next) {
+            self.emit(CoreEvent::ConfigChanged(self.config.get().clone()));
+        }
+        self.config.get().clone()
+    }
+
     /// Stores a config and announces it. Returns whether it changed.
     pub(crate) fn write_config(&mut self, next: Config) -> bool {
         match self.config.set(next) {
@@ -562,13 +586,15 @@ impl Bard {
     // --- lifecycle --------------------------------------------------------------
 
     /// Writes any pending stats, album flags and loved tracks now.
-    /// Writes the stores now. Returns whether all of them are saved.
+    /// Writes the stores, and any setting still being written behind, now.
+    /// Returns whether all of them are saved.
     pub fn flush(&self) -> bool {
         // Each is tried whatever the others do.
+        let config = self.config.flush();
         let stats = self.stats.flush();
         let albums = self.albums.flush();
         let loved = self.loved.flush();
-        stats && albums && loved
+        config && stats && albums && loved
     }
 
     /// How each store loaded: stats, album flags, loved -- whether one was
