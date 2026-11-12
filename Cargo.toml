@@ -8,7 +8,6 @@ edition = "2024"
 license = "MIT"
 authors = ["hammackj"]
 repository = "https://github.com/hammackj/bard"
-homepage = "https://github.com/hammackj/bard"
 publish = false
 
 [profile.dev.package."*"]
