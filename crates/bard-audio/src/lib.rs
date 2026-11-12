@@ -149,6 +149,8 @@ struct Inner {
     cmd: Sender<Cmd>,
     /// The last generation handed out by `play` or `stop`.
     generation: std::sync::atomic::AtomicU64,
+    /// The generation the user's pause holds; 0 for none. See [`Player::held`].
+    held: std::sync::atomic::AtomicU64,
     shared: Arc<Shared>,
     analyser: Analyser,
     events: Sender<PlayerEvent>,
@@ -210,6 +212,7 @@ impl Player {
         let inner = Inner {
             cmd: cmd_tx,
             generation: Default::default(),
+            held: Default::default(),
             shared,
             analyser,
             events: ev_tx,
@@ -232,6 +235,7 @@ impl Player {
     /// Returns the generation the events about this request will carry.
     pub fn play(&self, track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32) -> u64 {
         let generation = self.next_generation();
+        self.inner.held.store(0, Ordering::Relaxed);
         self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation, start: true });
         generation
     }
@@ -243,18 +247,13 @@ impl Player {
     /// Returns the generation the events about this request will carry.
     pub fn load_paused(&self, track_id: String, path: PathBuf, norm_gain: f32) -> u64 {
         let generation = self.next_generation();
+        self.inner.held.store(generation, Ordering::Relaxed);
         self.inner.shared.playing.store(false, Ordering::Relaxed);
         self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec: 0.0, generation, start: false });
         generation
     }
 
     /// Something is loaded and not playing: paused by the user, or ended.
-    /// Playing, or fading towards a track that will play. Set by the call
-    /// that changes it, not by a later report.
-    pub fn is_playing(&self) -> bool {
-        self.inner.shared.loaded.load(Ordering::Relaxed) && self.inner.shared.playing.load(Ordering::Relaxed)
-    }
-
     pub fn is_paused(&self) -> bool {
         self.inner.shared.loaded.load(Ordering::Relaxed) && !self.inner.shared.playing.load(Ordering::Relaxed)
     }
@@ -278,12 +277,25 @@ impl Player {
         !was
     }
 
+    /// Pauses, and holds the newest request paused: see [`Player::held`].
     pub fn pause(&self) {
+        self.inner.held.store(self.inner.generation.load(Ordering::Relaxed), Ordering::Relaxed);
         self.inner.shared.playing.store(false, Ordering::Relaxed);
         self.send(Cmd::Pause);
     }
 
+    /// The request a pause holds -- set by [`pause`](Self::pause) and
+    /// [`load_paused`](Self::load_paused), cleared by resume, play and stop.
+    /// Whatever replaces a held request because it failed or ended should
+    /// wait paused too. Kept here, not by the caller, because every pause
+    /// passes through here: the window's button and Space, the tray, media
+    /// keys, the sleep timer.
+    pub fn held(&self) -> Option<u64> {
+        Some(self.inner.held.load(Ordering::Relaxed)).filter(|g| *g != 0)
+    }
+
     pub fn resume(&self) {
+        self.inner.held.store(0, Ordering::Relaxed);
         if self.inner.shared.loaded.load(Ordering::Relaxed) {
             self.inner.shared.playing.store(true, Ordering::Relaxed);
         }
@@ -320,6 +332,7 @@ impl Player {
     /// Returns the generation the stopped report will carry.
     pub fn stop(&self) -> u64 {
         let generation = self.next_generation();
+        self.inner.held.store(0, Ordering::Relaxed);
         self.send(Cmd::Stop(generation));
         generation
     }

@@ -681,3 +681,27 @@ fn zero_volume_is_silent_through_generated_sequences() {
         }
     });
 }
+
+/// A pause holds the newest request -- mid-fade, the incoming one -- and
+/// a paused load holds itself; resume, play and stop let go.
+#[test]
+fn held_follows_the_users_pause() {
+    let (p, rx) = player();
+    assert_eq!(p.held(), None);
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let b = p.play("b".into(), fixture("bursts.wav"), 1.0, 2.0);
+    p.pause();
+    assert_eq!(p.held(), Some(b), "the incoming track");
+    p.resume();
+    assert_eq!(p.held(), None);
+    p.toggle();
+    assert_eq!(p.held(), Some(b), "toggle pauses through pause");
+    let c = p.load_paused("c".into(), fixture("bursts.wav"), 1.0);
+    assert_eq!(p.held(), Some(c));
+    p.play("d".into(), fixture("bursts.wav"), 1.0, 0.0);
+    assert_eq!(p.held(), None, "play lets go");
+    p.pause();
+    p.stop();
+    assert_eq!(p.held(), None, "stop lets go");
+}

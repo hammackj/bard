@@ -102,6 +102,8 @@ struct Engine {
     requests: Vec<(Track, bool)>,
     /// Request generation, and its track (None for a stop).
     latest: (u64, Option<String>),
+    /// As `Player::held`.
+    held: u64,
 }
 
 impl Engine {
@@ -142,6 +144,7 @@ impl Engine {
         self.next_generation += 1;
         let g = self.next_generation;
         self.latest = (g, Some(track.id.clone()));
+        self.held = if start { 0 } else { g };
         self.requests.push((track.clone(), start));
         let fade_ms = (crossfade_sec * 1000.) as u64;
         if start && fade_ms > 0 {
@@ -162,6 +165,7 @@ impl Engine {
     fn stop(&mut self) -> u64 {
         self.next_generation += 1;
         self.latest = (self.next_generation, None);
+        self.held = 0;
         self.pending = None;
         self.source = None;
         self.playing = false;
@@ -176,6 +180,7 @@ impl Engine {
     }
 
     fn pause(&mut self) {
+        self.held = self.latest.0;
         if let Some((t, g, _, seek)) = self.pending.take() {
             self.swap(t, g, false, seek);
             return;
@@ -187,6 +192,7 @@ impl Engine {
     }
 
     fn resume(&mut self) {
+        self.held = 0;
         let Some(s) = &mut self.source else { return };
         if s.ended {
             s.pos_ms = 0;
@@ -270,8 +276,8 @@ impl Effects for Fx {
         let e = self.engine.borrow();
         e.source.is_some() && !e.playing
     }
-    fn playing(&self) -> bool {
-        self.engine.borrow().playing
+    fn held(&self) -> Option<u64> {
+        Some(self.engine.borrow().held).filter(|g| *g != 0)
     }
     fn pause(&self) {
         self.engine.borrow_mut().pause()
@@ -341,6 +347,9 @@ enum Action {
     Next,
     Previous,
     Toggle,
+    /// Space or the play button: straight to the backend, not through the
+    /// reducer.
+    WindowToggle,
     Pause,
     Play,
     Seek(f64),
@@ -381,7 +390,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
     let statuses = [ContentIdStatus::Safe, ContentIdStatus::Claimed, ContentIdStatus::Untested];
     let repeats = [RepeatMode::Off, RepeatMode::One, RepeatMode::All];
     (0..steps)
-        .map(|_| match r.below(22) {
+        .map(|_| match r.below(23) {
             0 | 1 => Action::PlayNow(r.below(TRACKS.len())),
             2 | 3 => Action::Enqueue(r.below(TRACKS.len())),
             4 => Action::Next,
@@ -400,6 +409,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
             18 => Action::Rescan(r.below(ROOTS.len())),
             19 => Action::ClearQueue,
             20 => Action::Wait([50, 400, 1500, 30_000][r.below(4)]),
+            21 => Action::WindowToggle,
             _ => {
                 if r.below(2) == 0 {
                     Action::Deliver(1 + r.below(3))
@@ -489,8 +499,10 @@ impl World {
     }
 
     fn apply(&mut self, a: &Action) {
-        let user_plays =
-            matches!(a, Action::PlayNow(_) | Action::Next | Action::Previous | Action::Toggle | Action::Play);
+        let user_plays = matches!(
+            a,
+            Action::PlayNow(_) | Action::Next | Action::Previous | Action::Toggle | Action::WindowToggle | Action::Play
+        );
         // Nothing loaded: a pause has nothing left to hold, and enqueueing
         // into an idle player starts it.
         let idle = self.fx.bard.borrow().now_playing().is_none() && self.fx.engine.borrow().source.is_none();
@@ -510,6 +522,13 @@ impl World {
                 // A toggle that pauses is a pause.
                 let was = self.fx.engine.borrow().playing;
                 self.control(Control::Toggle);
+                if was {
+                    self.oracle.paused = true;
+                }
+            }
+            Action::WindowToggle => {
+                let was = self.fx.engine.borrow().playing;
+                self.fx.toggle_play();
                 if was {
                     self.oracle.paused = true;
                 }

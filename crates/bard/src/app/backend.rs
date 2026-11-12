@@ -202,8 +202,8 @@ impl super::reduce::Effects for AppBackend {
     fn paused(&self) -> bool {
         self.player.is_paused()
     }
-    fn playing(&self) -> bool {
-        self.player.is_playing()
+    fn held(&self) -> Option<u64> {
+        self.player.held()
     }
     fn pause(&self) {
         self.player.pause()

@@ -337,3 +337,44 @@ fn a_revocation_while_paused_stays_paused() {
     l.pump(Duration::from_millis(300));
     assert!(l.heard("s1"));
 }
+
+/// Paused from the window (Space, the play button), the tray or a media
+/// key -- none of which goes through the reducer -- during a fade onto a
+/// file that cannot open: what replaces it waits, paused. The reviewer's
+/// reproduction, and the same through each other way of pausing.
+#[test]
+fn a_pause_from_anywhere_survives_a_failed_incoming_track() {
+    type Pause = fn(&mut Live);
+    let ways: [(&str, Pause); 4] = [
+        ("window", |l| crate::model::Backend::toggle_play(&l.fx)),
+        ("core transport", |l| {
+            reduce(&mut l.ui, &l.fx, AppEvent::Core(CoreEvent::Transport(bard_core::types::TransportAction::Toggle)))
+        }),
+        ("control toggle", |l| reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Toggle))),
+        ("control pause", |l| reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Pause))),
+    ];
+    for (how, pause) in ways {
+        let mut l = Live::new(2.0);
+        l.core(|b| {
+            let mut bad = track("s2", SAFE);
+            bad.path = "/definitely-missing-bard-review.wav".into();
+            b.install_library(vec![track("s1", SAFE), bad, track("s3", SAFE)]);
+        });
+        l.start("s1", &["s2", "s3"]);
+        l.core(|b| b.skip());
+        l.pump(Duration::from_millis(80));
+        pause(&mut l);
+        let t = Instant::now();
+        l.pump(Duration::from_millis(500));
+        assert_eq!(l.fx.with(|b| b.now_playing().map(|n| n.track.id.clone())).as_deref(), Some("s3"), "{how}");
+        assert!(!l.fx.player.position().playing, "{how}: pause lost across the failed incoming track");
+        assert!(l.heard_since(t).is_empty(), "{how}: {:?}", l.heard_since(t));
+
+        // A resume lets the replacement play, and clears the pause: a later
+        // failure does not hold what follows it.
+        crate::model::Backend::toggle_play(&l.fx);
+        l.pump(Duration::from_millis(300));
+        assert!(l.heard("s3"), "{how}: resumed");
+        assert_eq!(l.fx.player.held(), None, "{how}");
+    }
+}
