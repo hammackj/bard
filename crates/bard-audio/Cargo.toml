@@ -3,6 +3,10 @@ name = "bard-audio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
 description = "Bard's audio engine: decode, PipeWire output, gain, fades, analyser"
 
 [dependencies]
