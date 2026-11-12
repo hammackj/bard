@@ -272,9 +272,9 @@ impl Effects for Fx {
     fn load_paused(&self, t: &Track, _: f32) -> u64 {
         self.engine.borrow_mut().play(t, 0., false)
     }
-    fn paused(&self) -> bool {
+    fn playing(&self) -> bool {
         let e = self.engine.borrow();
-        e.source.is_some() && !e.playing
+        e.source.is_some() && e.playing
     }
     fn held(&self) -> Option<u64> {
         Some(self.engine.borrow().held).filter(|g| *g != 0)
@@ -289,12 +289,19 @@ impl Effects for Fx {
     fn set_output(&self, _: &str) -> Result<(), String> {
         Ok(())
     }
-    /// As the app's: toggle what is loaded, or start the queue.
+    /// As the app's: toggle what is loaded, or start the queue. As the
+    /// Player's toggle, nothing at all when core has a track but the engine
+    /// has nothing loaded (it failed to open, and the report is on its way).
     fn toggle_play(&self) {
         let loaded = self.engine.borrow().source.is_some();
         if loaded || self.bard.borrow().now_playing().is_some() {
             let mut e = self.engine.borrow_mut();
-            if e.playing { e.pause() } else { e.resume() }
+            if !loaded {
+            } else if e.playing {
+                e.pause()
+            } else {
+                e.resume()
+            }
         } else {
             self.bard.borrow_mut().skip();
         }
@@ -347,6 +354,8 @@ enum Action {
     Next,
     Previous,
     Toggle,
+    /// The sleep timer runs out.
+    Sleep,
     /// Space or the play button: straight to the backend, not through the
     /// reducer.
     WindowToggle,
@@ -390,7 +399,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
     let statuses = [ContentIdStatus::Safe, ContentIdStatus::Claimed, ContentIdStatus::Untested];
     let repeats = [RepeatMode::Off, RepeatMode::One, RepeatMode::All];
     (0..steps)
-        .map(|_| match r.below(23) {
+        .map(|_| match r.below(24) {
             0 | 1 => Action::PlayNow(r.below(TRACKS.len())),
             2 | 3 => Action::Enqueue(r.below(TRACKS.len())),
             4 => Action::Next,
@@ -410,6 +419,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
             19 => Action::ClearQueue,
             20 => Action::Wait([50, 400, 1500, 30_000][r.below(4)]),
             21 => Action::WindowToggle,
+            22 => Action::Sleep,
             _ => {
                 if r.below(2) == 0 {
                     Action::Deliver(1 + r.below(3))
@@ -499,14 +509,15 @@ impl World {
     }
 
     fn apply(&mut self, a: &Action) {
-        let user_plays = matches!(
-            a,
-            Action::PlayNow(_) | Action::Next | Action::Previous | Action::Toggle | Action::WindowToggle | Action::Play
-        );
+        // Asking for another track ends a pause -- if one is started: Next
+        // with nowhere to go, or a track that is no longer there, leaves
+        // the pause as it was.
+        let user_plays = matches!(a, Action::PlayNow(_) | Action::Next | Action::Previous);
+        let before = self.fx.engine.borrow().requests.len();
         // Nothing loaded: a pause has nothing left to hold, and enqueueing
         // into an idle player starts it.
         let idle = self.fx.bard.borrow().now_playing().is_none() && self.fx.engine.borrow().source.is_none();
-        if user_plays || idle {
+        if idle {
             self.oracle.paused = false;
         }
         match *a {
@@ -519,29 +530,30 @@ impl World {
             Action::Next => self.control(Control::Next),
             Action::Previous => self.control(Control::Previous),
             Action::Toggle => {
-                // A toggle that pauses is a pause.
-                let was = self.fx.engine.borrow().playing;
+                self.toggled();
                 self.control(Control::Toggle);
-                if was {
-                    self.oracle.paused = true;
-                }
             }
             Action::WindowToggle => {
-                let was = self.fx.engine.borrow().playing;
+                self.toggled();
                 self.fx.toggle_play();
-                if was {
-                    self.oracle.paused = true;
-                }
             }
+            // A pause, whatever is playing: what follows waits for Play.
             Action::Pause => {
-                // Pausing what is not playing does nothing.
-                let was = self.fx.engine.borrow().playing;
+                self.oracle.paused = true;
                 self.control(Control::Pause);
-                if was {
-                    self.oracle.paused = true;
-                }
             }
-            Action::Play => self.control(Control::Play),
+            Action::Sleep => {
+                self.oracle.paused = true;
+                let at = std::time::Instant::now();
+                self.ui.sleep_ends_at = Some(at);
+                reduce(&mut self.ui, &self.fx, AppEvent::SleepDue(at));
+            }
+            Action::Play => {
+                if !self.fx.playing() {
+                    self.toggled();
+                }
+                self.control(Control::Play)
+            }
             Action::Seek(s) => self.control(Control::Seek(s)),
             Action::Volume(v) => self.control(Control::SetVolume(v)),
             Action::Repeat(m) => {
@@ -585,6 +597,21 @@ impl World {
             Action::DeliverAll => self.deliver(usize::MAX),
         }
         self.core();
+        if user_plays && self.fx.engine.borrow().requests[before..].iter().any(|(_, start)| *start) {
+            self.oracle.paused = false;
+        }
+    }
+
+    /// What a toggle means, as the user would see it: pauses what plays,
+    /// resumes what is loaded, starts the queue when nothing is -- and does
+    /// nothing while the engine has nothing loaded but core has a track.
+    fn toggled(&mut self) {
+        let e = self.fx.engine.borrow();
+        if e.source.is_some() {
+            self.oracle.paused = e.playing;
+        } else if self.fx.bard.borrow().now_playing().is_none() {
+            self.oracle.paused = false;
+        }
     }
 
     fn safe(&self, t: &Track) -> bool {
@@ -617,6 +644,15 @@ impl World {
         }
         if self.oracle.paused && e.playing {
             return Err("paused by the user, and the engine is playing".into());
+        }
+        // And the other way: nothing waits paused unless the user paused.
+        if !self.oracle.paused
+            && e.out.is_empty()
+            && e.pending.is_none()
+            && !e.playing
+            && let Some(s) = e.source.as_ref().filter(|s| !s.ended)
+        {
+            return Err(format!("nothing paused it, and {} waits paused", s.track.id));
         }
 
         // Once every report is in, the model reflects the newest request
@@ -728,6 +764,23 @@ fn the_review_findings_are_caught_as_sequences() {
             Pause,
             Flag(1, Claimed),
             Wait(400),
+            DeliverAll,
+        ],
+        // the track runs out, and is revoked before its end is reported:
+        // nobody paused, so the replacement plays.
+        vec![
+            Flag(0, Safe),
+            Flag(1, Safe),
+            Arm,
+            PlayNow(2),
+            ClearQueue,
+            Enqueue(0),
+            DeliverAll,
+            Wait(30_000),
+            Wait(30_000),
+            Flag(1, Claimed),
+            DeliverAll,
+            Wait(1500),
             DeliverAll,
         ],
         // paused, revoked onto a file that cannot open.

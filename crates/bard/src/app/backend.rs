@@ -199,8 +199,8 @@ impl super::reduce::Effects for AppBackend {
     fn load_paused(&self, t: &bard_core::types::Track, norm_gain: f32) -> u64 {
         self.player.load_paused(t.id.clone(), std::path::PathBuf::from(&t.path), norm_gain)
     }
-    fn paused(&self) -> bool {
-        self.player.is_paused()
+    fn playing(&self) -> bool {
+        self.player.is_playing()
     }
     fn held(&self) -> Option<u64> {
         self.player.held()

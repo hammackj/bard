@@ -253,6 +253,12 @@ impl Player {
         generation
     }
 
+    /// Playing, or fading towards a track that will play. Set by the call
+    /// that changes it, not by a later report.
+    pub fn is_playing(&self) -> bool {
+        self.inner.shared.loaded.load(Ordering::Relaxed) && self.inner.shared.playing.load(Ordering::Relaxed)
+    }
+
     /// Something is loaded and not playing: paused by the user, or ended.
     pub fn is_paused(&self) -> bool {
         self.inner.shared.loaded.load(Ordering::Relaxed) && !self.inner.shared.playing.load(Ordering::Relaxed)

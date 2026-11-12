@@ -27,8 +27,8 @@ pub(super) trait Effects {
     fn cut_fade(&self);
     /// Loads a track paused (see `Player::load_paused`); its generation.
     fn load_paused(&self, track: &Track, norm_gain: f32) -> u64;
-    /// The engine has a track loaded and is not playing it.
-    fn paused(&self) -> bool;
+    /// The engine is playing, or fading towards a track that will play.
+    fn playing(&self) -> bool;
     /// The request the user's pause holds (see `Player::held`).
     fn held(&self) -> Option<u64>;
     fn pause(&self);
@@ -56,8 +56,10 @@ pub(super) trait Effects {
 pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
     match ev {
         AppEvent::Control(c) => match c {
+            // Asked of the engine: `ui.playing` lags a pause just made, and is
+            // false from a track's end until the next one first reports.
             Control::Play => {
-                if !ui.playing {
+                if !fx.playing() {
                     fx.toggle_play();
                 }
             }
@@ -93,9 +95,10 @@ pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
             // queue is worse than waking to a paused one.
             if ui.sleep_ends_at == Some(at) {
                 ui.sleep_ends_at = None;
-                if ui.playing {
-                    fx.pause();
-                }
+                // Whatever the last report said: between one track's end
+                // and the next one's first report the window shows nothing
+                // playing, and the music would play on all night.
+                fx.pause();
             }
         }
         AppEvent::ObsSaved { stored, chars } => {
@@ -135,10 +138,12 @@ fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
         CoreEvent::PlayTrack(t, transition) => {
             let gain = gain_multiplier(&t, ui.config.audio.normalize) as f32;
             // Streamer mode replacing a track while the user has paused: the
-            // replacement waits, paused. Asked of the engine, not of the last
-            // report, which can lag a pause just made -- or of the pause
-            // itself, when what it held has already failed to open.
-            let held = fx.paused() || fx.held() == Some(ui.generation);
+            // replacement waits, paused. Asked of the pause itself (held by
+            // the engine handle, set the moment it is made), not of the last
+            // report, which lags -- nor of whether the engine is playing: a
+            // track that has just run out is not playing either, and its
+            // replacement must play.
+            let held = fx.held() == Some(ui.generation);
             let hold = std::mem::take(&mut ui.next_paused) || (transition == Transition::Cut && held);
             ui.generation = match transition {
                 _ if hold => fx.load_paused(&t, gain),
@@ -290,8 +295,8 @@ mod tests {
             *self.held.borrow_mut() = g;
             g
         }
-        fn paused(&self) -> bool {
-            *self.paused.borrow()
+        fn playing(&self) -> bool {
+            !*self.paused.borrow()
         }
         fn held(&self) -> Option<u64> {
             Some(*self.held.borrow()).filter(|g| *g != 0)
@@ -397,10 +402,16 @@ mod tests {
         assert_eq!(fx.take(), ["play a fade 4", "play b", "cut fade"]);
 
         // Paused: the replacement is loaded paused; a user's skip still plays.
-        *fx.paused.borrow_mut() = true;
+        reduce(&mut u, &fx, AppEvent::Control(Control::Pause));
         reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("c", 60.), Transition::Cut)));
         reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("d", 60.), Transition::Normal)));
-        assert_eq!(fx.take(), ["load paused c", "play d fade 4"]);
+        assert_eq!(fx.take(), ["pause", "load paused c", "play d fade 4"]);
+
+        // Not playing because d has just run out, not because anyone paused:
+        // the replacement plays.
+        *fx.paused.borrow_mut() = true;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("e", 60.), Transition::Cut)));
+        assert_eq!(fx.take(), ["play e"]);
     }
 
     /// What the engine says the user's pause holds decides whether the
@@ -565,6 +576,27 @@ mod tests {
         reduce(&mut u, &fx, AppEvent::SleepDue(new));
         assert_eq!(fx.take(), ["pause"]);
         assert!(u.sleep_ends_at.is_none());
+
+        // Due between one track's end and the next one's first report, when
+        // the window shows nothing playing: it still pauses.
+        u.playing = false;
+        u.sleep_ends_at = Some(new);
+        reduce(&mut u, &fx, AppEvent::SleepDue(new));
+        assert_eq!(fx.take(), ["pause"]);
+    }
+
+    /// Play asks the engine: right after a pause the last report still says
+    /// playing, and Play must resume.
+    #[test]
+    fn play_right_after_a_pause_resumes() {
+        let (mut u, fx) = (ui(), Fx::default());
+        u.playing = true; // the last report, from before the pause
+        *fx.paused.borrow_mut() = true;
+        reduce(&mut u, &fx, AppEvent::Control(Control::Play));
+        assert_eq!(fx.take(), ["toggle"]);
+        *fx.paused.borrow_mut() = false;
+        reduce(&mut u, &fx, AppEvent::Control(Control::Play));
+        assert!(fx.take().is_empty(), "already playing");
     }
 
     #[test]
