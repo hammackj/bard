@@ -767,27 +767,28 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             let picked = cx.prompt_for_paths(PathPromptOptions {
                 files: false,
                 directories: true,
-                multiple: false,
+                multiple: true,
                 prompt: Some("Add music folder".into()),
             });
             let bard = backend.bard.clone();
             let events = backend.events.clone();
             cx.spawn(async move |_| {
                 if let Ok(Ok(Some(paths))) = picked.await {
-                    if let Some(dir) = paths.into_iter().next() {
-                        let dir = dir.to_string_lossy().into_owned();
-                        let mut b = bard.lock().expect("core lock");
-                        let mut added = false;
-                        b.update_config(|c| {
+                    // The Electron dialog allowed several folders at once.
+                    let mut b = bard.lock().expect("core lock");
+                    let mut added = false;
+                    b.update_config(|c| {
+                        for dir in paths {
+                            let dir = dir.to_string_lossy().into_owned();
                             if !c.library_paths.contains(&dir) {
                                 c.library_paths.push(dir);
                                 added = true;
                             }
-                        });
-                        drop(b);
-                        if added {
-                            let _ = events.unbounded_send(AppEvent::Rescan);
                         }
+                    });
+                    drop(b);
+                    if added {
+                        let _ = events.unbounded_send(AppEvent::Rescan);
                     }
                 }
             })
@@ -837,8 +838,11 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             }
             CoreEvent::NowPlaying(Some(_)) => {}
             CoreEvent::ScanProgress(p) => {
-                ui.scanning = true;
-                ui.scan_progress = Some(p);
+                // Progress and the end of a scan arrive on different channels,
+                // so a last report can land after `Scanned`; one that says the
+                // scan is done must not turn the indicator back on.
+                ui.scanning = p.scanned < p.total;
+                ui.scan_progress = ui.scanning.then_some(p);
             }
             CoreEvent::Overlay(_) => {}
             CoreEvent::StatsChanged => ui.stats = backend.bard.lock().expect("core lock").stats(),

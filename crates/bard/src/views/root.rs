@@ -380,9 +380,10 @@ impl Render for BardWindow {
             // .depth-overlay -- above the panes, below Settings and the notice.
             .child(full(vignette))
             .child(full(grain))
-            .children(overlays::notice(self, cx))
             .children(overlays::shortcuts(self, cx))
             .children(settings::panel(self, cx))
+            // Last, so a notice shows above Settings and Shortcuts.
+            .children(overlays::notice(self, cx))
     }
 }
 

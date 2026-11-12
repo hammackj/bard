@@ -225,8 +225,9 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
         .child(button("prev", "prev", 18.).on_click(cx.listener(|this, _, _, _| this.ui.backend.previous())))
         .child(
             button("play", if ui.playing { "pause" } else { "play" }, 26.)
-                .when(!has_track, |el| el.opacity(0.4))
-                .on_click(cx.listener(|this, _, _, _| this.ui.backend.toggle_play())),
+                // `disabled={!track}`: dimmed, and a click does nothing.
+                .when(!has_track, |el| el.opacity(0.4).cursor_default())
+                .when(has_track, |el| el.on_click(cx.listener(|this, _, _, _| this.ui.backend.toggle_play()))),
         )
         .child(button("skip", "skip", 18.).on_click(cx.listener(|this, _, _, _| this.ui.backend.skip())));
 
