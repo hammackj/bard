@@ -32,7 +32,7 @@ use gpui::*;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub enum AppEvent {
     Core(CoreEvent),
@@ -45,6 +45,8 @@ pub enum AppEvent {
     Control(Control),
     /// A sleep timer armed for this deadline has run out.
     SleepDue(Instant),
+    /// The saved output device, missing at startup, is now a sink.
+    OutputAppeared(String),
     /// The OBS password save finished: whether it was stored, and its length.
     ObsSaved { stored: bool, chars: usize },
 }
@@ -110,6 +112,8 @@ impl AppControls for Controls {
 type ServicesSlot = Arc<Mutex<Option<Services>>>;
 
 /// The window's intents, carried out against the core and the engine.
+const DEVICE_FALLBACK: &str = "saved output device unavailable, using system default — your setting is kept.";
+
 pub struct AppBackend {
     pub bard: Arc<Mutex<Bard>>,
     pub player: Arc<Player>,
@@ -386,8 +390,25 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
     // startup, and forgetting the user's choice over that would quietly move
     // music onto the wrong recording track. The engine reports the fallback
     // as an Error event, which becomes the notice.
+    //
+    // A device missing at startup can appear later (Electron retried on
+    // `devicechange`), so a watcher applies it when it does, for as long as
+    // it is still the saved choice.
     if config.audio.output_device_id != "default" {
-        let _ = player.set_output(&config.audio.output_device_id);
+        let want = config.audio.output_device_id.clone();
+        if player.set_output(&want).is_err() {
+            let (player, bard, tx) = (player.clone(), bard.clone(), tx.clone());
+            std::thread::Builder::new().name("bard-output-watch".into()).spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(1));
+                if bard.lock().map(|b| b.config().audio.output_device_id != want).unwrap_or(true) {
+                    break;
+                }
+                if player.outputs().iter().any(|o| o.id == want) {
+                    let _ = tx.unbounded_send(AppEvent::OutputAppeared(want));
+                    break;
+                }
+            })?;
+        }
     }
 
     let backend = Rc::new(AppBackend {
@@ -741,6 +762,14 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             // Handled by dispatch.
             Control::ShowWindow | Control::ShowPopup | Control::Quit => {}
         },
+        AppEvent::OutputAppeared(id) => {
+            if ui.config.audio.output_device_id == id && backend.set_output(&id).is_ok() {
+                // Only the fallback notice is cleared; an unrelated one stays.
+                if ui.notice.as_deref() == Some(DEVICE_FALLBACK) {
+                    ui.notice = None;
+                }
+            }
+        }
         AppEvent::SleepDue(at) => {
             // Pauses rather than quitting: waking to a closed app and a lost
             // queue is worse than waking to a paused one.
@@ -876,6 +905,10 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             PlayerEvent::Ended => {
                 ui.playing = false;
                 backend.with(|b| b.report_ended());
+            }
+            // Worded as Electron's notice, which also said the choice stays.
+            PlayerEvent::Error(msg) if msg == "output device: saved output device unavailable, using system default" => {
+                ui.notice = Some(DEVICE_FALLBACK.into())
             }
             PlayerEvent::Error(msg) => ui.notice = Some(msg),
         },
