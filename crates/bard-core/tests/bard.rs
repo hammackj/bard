@@ -987,9 +987,16 @@ fn a_retag_of_the_current_track_reaches_the_file_and_overlay_at_once() {
             let v = read_np(&f);
             assert_eq!(v[key], want, "{what} while playing={playing}");
             assert_eq!(v["isPlaying"], playing, "{what}: play state kept");
-            assert_eq!((v["positionSec"].as_f64(), v["durationSec"].as_f64()), (Some(40.0), Some(119.5)), "{what}: timing kept");
+            assert_eq!(
+                (v["positionSec"].as_f64(), v["durationSec"].as_f64()),
+                (Some(40.0), Some(119.5)),
+                "{what}: timing kept"
+            );
             let frames = overlay_frames(&f);
-            assert!(frames.iter().any(|n| n.title == v["title"] && n.artist == v["artist"] && n.album == v["album"]), "{what}: overlay frame");
+            assert!(
+                frames.iter().any(|n| n.title == v["title"] && n.artist == v["artist"] && n.album == v["album"]),
+                "{what}: overlay frame"
+            );
             assert_eq!(self::playing(&f.bard).as_deref(), Some("g1"), "{what}: still the same track");
 
             // Put it back, then an unchanged rescan touches nothing.
