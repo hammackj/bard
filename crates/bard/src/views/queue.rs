@@ -57,6 +57,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
     let rows = ui.queue.iter().enumerate().map(|(i, item)| {
         let group = SharedString::from(format!("q-{}", item.id));
         let id = item.id.clone();
+        let drag = QueueDrag { from: i, number: i + 1, title: item.track.title.clone() };
         div()
             .id(SharedString::from(format!("qrow-{}", item.id)))
             .group(group.clone())
@@ -67,7 +68,24 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
             .px_2()
             .py(px(7.))
             .hover(|s| s.bg(theme::panel()))
-            .child(mono(theme::S1).w(px(22.)).flex_none().text_color(theme::muted()).cursor_grab().child((i + 1).to_string()))
+            // Dropping on a row moves the dragged item to that row's place,
+            // dnd-kit's arrayMove. GPUI borders take one colour for all sides,
+            // so the target is shown with the hover fill rather than an edge.
+            .drag_over::<QueueDrag>(|s, _, _, _| s.bg(theme::panel()))
+            .on_drop(cx.listener(move |this, d: &QueueDrag, _, _| {
+                if d.from != i {
+                    this.ui.backend.reorder_queue(d.from, i);
+                }
+            }))
+            .child(
+                div()
+                    .id(SharedString::from(format!("qgrab-{}", item.id)))
+                    .w(px(22.))
+                    .flex_none()
+                    .cursor_grab()
+                    .on_drag(drag, |d, offset, _, cx| cx.new(|_| DragGhost { drag: d.clone(), offset }))
+                    .child(mono(theme::S1).text_color(theme::muted()).child((i + 1).to_string())),
+            )
             .child(truncate(div().flex_1().text_size(theme::S2).child(item.track.title.clone())))
             .child(mono(theme::S1).flex_none().text_color(theme::muted()).child(fmt_time(item.track.duration_sec)))
             .child(
@@ -154,4 +172,39 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
                 .child(div().text_color(theme::muted()).child("Overlay"))
                 .child(truncate(mono(theme::S1).child(overlay))),
         )
+}
+
+/// What a queue row carries while it is dragged.
+#[derive(Clone)]
+pub struct QueueDrag {
+    from: usize,
+    number: usize,
+    title: String,
+}
+
+/// The row as it follows the pointer: `bg-panel`, raised, as dnd-kit drew it.
+struct DragGhost {
+    drag: QueueDrag,
+    offset: Point<Pixels>,
+}
+
+impl Render for DragGhost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .ml(-self.offset.x - px(8.))
+            .mt(-self.offset.y - px(7.))
+            .w(px(QUEUE_W - 16. - SCROLLBAR_W))
+            .flex()
+            .items_center()
+            .gap_3()
+            .rounded(px(2.))
+            .px_2()
+            .py(px(7.))
+            .bg(theme::panel())
+            .shadow_lg()
+            .text_color(theme::text())
+            .font_family(fonts::UI)
+            .child(mono(theme::S1).w(px(22.)).flex_none().text_color(theme::muted()).cursor_grabbing().child(self.drag.number.to_string()))
+            .child(truncate(div().flex_1().text_size(theme::S2).child(self.drag.title.clone())))
+    }
 }

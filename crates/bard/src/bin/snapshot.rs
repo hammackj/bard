@@ -57,9 +57,12 @@ struct Fixture {
     /// Keystrokes to send before capturing, in GPUI's syntax ("ctrl-,", "/", "down").
     #[serde(default)]
     keys: Vec<String>,
+    /// A left-button drag from (x0, y0) to (x1, y1), left held, in window pixels.
+    #[serde(default)]
+    drag: Option<[f32; 4]>,
 }
 
-fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>)> {
+fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 4]>)> {
     let f: Fixture = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     let home = std::env::var("HOME")?;
     let mut ui = Ui::new(Rc::new(NullBackend), format!("{home}/.config/bard/artwork").into());
@@ -97,7 +100,7 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>)> {
     ui.settings_open = f.settings_open;
     ui.outputs = f.outputs;
     ui.paths = f.paths;
-    Ok((ui, f.settings_scroll, f.keys))
+    Ok((ui, f.settings_scroll, f.keys, f.drag))
 }
 
 struct Fonts;
@@ -133,11 +136,13 @@ fn main() -> anyhow::Result<()> {
     });
     cx.update(|cx| fonts::load(cx))?;
     let mut keys = Vec::new();
+    let mut drag = None;
     let window: AnyWindowHandle = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
         fixture if fixture.ends_with(".json") => {
-            let (ui, scroll, k) = fixture_ui(fixture)?;
+            let (ui, scroll, k, d) = fixture_ui(fixture)?;
             keys = k;
+            drag = d;
             cx.open_window(size(px(w), px(h)), move |window, cx| {
                 cx.new(|cx| {
                     let w = BardWindow::new(ui, window, cx);
@@ -158,6 +163,31 @@ fn main() -> anyhow::Result<()> {
             window.dispatch_keystroke(stroke, cx);
         })?;
         cx.run_until_parked();
+    }
+    if let Some([x0, y0, x1, y1]) = drag {
+        let steps = 8;
+        let mut events = vec![PlatformInput::MouseDown(MouseDownEvent {
+            button: MouseButton::Left,
+            position: point(px(x0), px(y0)),
+            modifiers: Modifiers::default(),
+            click_count: 1,
+            first_mouse: false,
+        })];
+        for i in 1..=steps {
+            let t = i as f32 / steps as f32;
+            events.push(PlatformInput::MouseMove(MouseMoveEvent {
+                position: point(px(x0 + (x1 - x0) * t), px(y0 + (y1 - y0) * t)),
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Modifiers::default(),
+            }));
+        }
+        for ev in events {
+            cx.update_window(window, |_, window, cx| {
+                window.dispatch_event(ev, cx);
+                window.refresh();
+            })?;
+            cx.run_until_parked();
+        }
     }
     cx.update_window(window, |_, window, _| window.refresh())?;
     cx.run_until_parked();
