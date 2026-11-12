@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-11-12
+
 ### Fixed
 
 - **Bard again refuses to start where it cannot lock its data folder.**
