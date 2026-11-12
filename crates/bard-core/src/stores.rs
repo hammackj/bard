@@ -39,6 +39,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+type WriteFn = fn(&Path, &str) -> std::io::Result<()>;
+
 /// Tells the user something about a store (the facade sends a notice).
 pub(crate) type Notify = Arc<dyn Fn(String) + Send + Sync>;
 
@@ -70,6 +72,9 @@ pub const PLAY_THRESHOLD_RATIO: f64 = 0.5;
 struct Inner<T> {
     data: T,
     dirty: bool,
+    /// Bumped by every change, so a write knows whether what it wrote is
+    /// still the latest.
+    version: u64,
     timer: bool,
     /// The last write failed (said once, until one succeeds).
     failing: bool,
@@ -78,8 +83,17 @@ struct Inner<T> {
 }
 
 /// A value persisted to one JSON file with debounced, atomic writes.
+///
+/// The value's lock is held only to change it or to serialise it; the write
+/// itself -- which waits for the disk -- happens under `disk`, so a play
+/// counted or a flag read on the UI thread never waits on it. `disk` also
+/// keeps writes one at a time, so an older snapshot cannot land after a
+/// newer one.
 pub(crate) struct Debounced<T> {
     inner: Arc<Mutex<Inner<T>>>,
+    disk: Arc<Mutex<()>>,
+    /// `write_atomic`; a slow one in tests.
+    write: WriteFn,
     path: PathBuf,
     delay: Duration,
     indent: Indent,
@@ -91,12 +105,15 @@ pub(crate) struct Debounced<T> {
 /// JSON is moved aside first.
 fn load<T: for<'de> Deserialize<'de>>(path: &Path, fresh: impl FnOnce() -> T) -> (T, LoadState) {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let body = match std::fs::read_to_string(path) {
+    // Bytes, not a string: a file that is not UTF-8 is damaged, like one
+    // that is not JSON, and is set aside the same way -- not left in place
+    // to make every session unsaved.
+    let body = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (fresh(), LoadState::Ok),
         Err(e) => return (fresh(), LoadState::ReadOnly { reason: format!("{name} could not be read: {e}") }),
     };
-    match serde_json::from_str(&body) {
+    match serde_json::from_slice(&body) {
         Ok(v) => (v, LoadState::Ok),
         Err(_) => {
             let mut backup = path.as_os_str().to_owned();
@@ -132,7 +149,16 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Send + 'static> Debounced<T> {
         }
         let read_only = matches!(state, LoadState::ReadOnly { .. });
         Debounced {
-            inner: Arc::new(Mutex::new(Inner { data, dirty: false, timer: false, failing: false, read_only })),
+            inner: Arc::new(Mutex::new(Inner {
+                data,
+                dirty: false,
+                version: 0,
+                timer: false,
+                failing: false,
+                read_only,
+            })),
+            disk: Arc::new(Mutex::new(())),
+            write: write_atomic,
             path,
             delay,
             indent,
@@ -163,23 +189,26 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Send + 'static> Debounced<T> {
         let mut g = self.lock();
         let out = f(&mut g.data);
         g.dirty = true;
+        g.version += 1;
         if !g.timer && !g.read_only {
             g.timer = true;
-            let inner = Arc::clone(&self.inner);
-            let (path, delay, indent, notify) = (self.path.clone(), self.delay, self.indent, self.notify.clone());
+            let (inner, disk) = (Arc::clone(&self.inner), Arc::clone(&self.disk));
+            let (path, delay, indent, notify, write) =
+                (self.path.clone(), self.delay, self.indent, self.notify.clone(), self.write);
             std::thread::spawn(move || {
                 // Until it is saved: a failed write waits longer each time
                 // rather than waiting for the next change to try again.
                 let mut wait = delay;
                 loop {
                     std::thread::sleep(wait);
+                    let ok = flush(&inner, &disk, write, &path, indent, &notify);
                     let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
-                    flush_locked(&mut g, &path, indent, &notify);
                     if !g.dirty {
                         g.timer = false;
                         return;
                     }
-                    wait = (wait.max(Duration::from_millis(1)) * 2).min(MAX_RETRY);
+                    // Changed during the write: the usual delay. Failed: longer.
+                    wait = if ok { delay } else { (wait.max(Duration::from_millis(1)) * 2).min(MAX_RETRY) };
                 }
             });
         }
@@ -189,32 +218,51 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Send + 'static> Debounced<T> {
     /// Writes now. Returns whether the store is saved (false while writes
     /// fail, and for a store that is not being saved).
     pub fn flush(&self) -> bool {
-        let mut g = self.lock();
-        flush_locked(&mut g, &self.path, self.indent, &self.notify);
+        flush(&self.inner, &self.disk, self.write, &self.path, self.indent, &self.notify);
+        let g = self.lock();
         !g.dirty && !g.read_only
     }
 }
 
-fn flush_locked<T: Serialize>(g: &mut Inner<T>, path: &Path, indent: Indent, notify: &Notify) {
-    if !g.dirty || g.read_only {
-        return;
-    }
+/// Writes the current value if it has changes. Serialised under the value's
+/// lock, written outside it. Returns false if the write failed.
+fn flush<T: Serialize>(
+    inner: &Mutex<Inner<T>>,
+    disk: &Mutex<()>,
+    write: WriteFn,
+    path: &Path,
+    indent: Indent,
+    notify: &Notify,
+) -> bool {
+    let _disk = disk.lock().unwrap_or_else(|e| e.into_inner());
+    let (body, version) = {
+        let g = inner.lock().unwrap_or_else(|e| e.into_inner());
+        if !g.dirty || g.read_only {
+            return true;
+        }
+        (to_js_json(&g.data, indent).map_err(std::io::Error::other), g.version)
+    };
+    let result = body.and_then(|body| write(path, &body));
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    match to_js_json(&g.data, indent).map_err(std::io::Error::other).and_then(|body| write_atomic(path, &body)) {
+    let mut g = inner.lock().unwrap_or_else(|e| e.into_inner());
+    let msg = match &result {
         Ok(()) => {
-            g.dirty = false;
-            if std::mem::take(&mut g.failing) {
-                notify(format!("{name} is saving again"));
+            // Changed while writing: still dirty, written next time.
+            if g.version == version {
+                g.dirty = false;
             }
+            std::mem::take(&mut g.failing).then(|| format!("{name} is saving again"))
         }
         // Losing counts or flags must never interrupt playback: keep them in
         // memory, retry, and say so once.
-        Err(e) => {
-            if !std::mem::replace(&mut g.failing, true) {
-                notify(format!("Could not save {name}: {e} \u{2014} will keep trying"));
-            }
-        }
+        Err(e) => (!std::mem::replace(&mut g.failing, true))
+            .then(|| format!("Could not save {name}: {e} \u{2014} will keep trying")),
+    };
+    drop(g);
+    if let Some(m) = msg {
+        notify(m);
     }
+    result.is_ok()
 }
 
 // --- stats.json --------------------------------------------------------------
@@ -432,7 +480,9 @@ mod tests {
     /// starts fresh and saves normally, and the user is told.
     #[test]
     fn a_damaged_store_is_set_aside_not_overwritten() {
-        for body in [r#"{ "version": 1, "tracks": { "abc": {"plays": 79"#, ""] {
+        // Cut short, empty, and not text at all.
+        let bodies: [&[u8]; 3] = [br#"{ "version": 1, "tracks": { "abc": {"plays": 79"#, b"", b"\xff\xfe{\x00\x9c"];
+        for body in bodies {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("stats.json");
             std::fs::write(&path, body).unwrap();
@@ -440,7 +490,7 @@ mod tests {
             let s = Stats::load(path.clone(), STATS_DEBOUNCE, notify);
             let kept = backups(dir.path(), "stats.json");
             assert_eq!(kept.len(), 1);
-            assert_eq!(std::fs::read_to_string(&kept[0]).unwrap(), body, "the original bytes");
+            assert_eq!(std::fs::read(&kept[0]).unwrap(), body, "the original bytes");
             assert_eq!(s.state(), &LoadState::Recovered { backup: kept[0].clone() });
             assert!(s.all().is_empty());
             let msgs = said.lock().unwrap().clone();
@@ -450,7 +500,7 @@ mod tests {
             s.record_play("x", 1);
             assert!(s.flush());
             assert!(std::fs::read_to_string(&path).unwrap().contains(r#""x""#));
-            assert_eq!(std::fs::read_to_string(&kept[0]).unwrap(), body, "still untouched");
+            assert_eq!(std::fs::read(&kept[0]).unwrap(), body, "still untouched");
         }
     }
 
@@ -543,6 +593,31 @@ mod tests {
         assert!(std::fs::read_to_string(&path).unwrap().contains(r#""b""#), "retried on its own");
         std::thread::sleep(Duration::from_millis(20));
         assert!(said.lock().unwrap().iter().any(|m| m.contains("saving again")), "{:?}", said.lock().unwrap());
+    }
+
+    /// A slow disk: while a write is under way, plays are counted and the
+    /// store read without waiting for it, and a play counted during the
+    /// write is saved by the next one.
+    #[test]
+    fn a_write_in_flight_does_not_hold_up_reads_or_changes() {
+        fn slow(p: &Path, body: &str) -> std::io::Result<()> {
+            std::thread::sleep(Duration::from_millis(600));
+            write_atomic(p, body)
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("stats.json");
+        let mut s = Stats::load(path.clone(), Duration::from_millis(20), quiet());
+        s.0.write = slow;
+        s.record_play("a", 1);
+        std::thread::sleep(Duration::from_millis(150)); // the write is under way
+        let t = std::time::Instant::now();
+        s.record_play("b", 2);
+        assert_eq!(s.get("a").plays, 1);
+        assert_eq!(s.all().len(), 2);
+        assert!(t.elapsed() < Duration::from_millis(100), "waited on the disk: {:?}", t.elapsed());
+        assert!(s.flush(), "waits its turn, then writes what is newest");
+        let on_disk = Stats::load(path, STATS_DEBOUNCE, quiet());
+        assert_eq!((on_disk.get("a").plays, on_disk.get("b").plays), (1, 1));
     }
 
     /// A crash mid-write leaves the temp file beside an intact store: the

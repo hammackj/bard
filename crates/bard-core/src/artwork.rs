@@ -85,7 +85,7 @@ pub fn cached(artwork_dir: &Path, track_id: &str, source: Option<Fingerprint>) -
 /// itself, so a crash between the two leaves the entry stale, not wrong.
 pub fn record(artwork_dir: &Path, track_id: &str, source: Fingerprint, has_art: bool) {
     let body = format!("1 {} {} {}", source.len, source.mtime_ns, if has_art { "art" } else { "none" });
-    let _ = crate::util::write_atomic(&stamp_path(artwork_dir, track_id), &body);
+    let _ = crate::util::write_replacing(&stamp_path(artwork_dir, track_id), &body);
 }
 
 /// The file no longer has art: drop the cover.

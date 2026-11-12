@@ -11,7 +11,7 @@
 
 use crate::CoreEvent;
 use crate::types::{NowPlaying, PlaybackProgress, QueueItem};
-use crate::util::{Indent, iso8601, now_ms, to_js_json, write_atomic};
+use crate::util::{Indent, iso8601, now_ms, to_js_json, write_replacing};
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
@@ -184,6 +184,6 @@ impl NowPlayingState {
 
     fn write_now(&self) -> std::io::Result<()> {
         let body = to_js_json(&self.snapshot(), Indent::Two).map_err(std::io::Error::other)?;
-        write_atomic(&self.path, &body)
+        write_replacing(&self.path, &body)
     }
 }

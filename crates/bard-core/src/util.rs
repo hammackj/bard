@@ -83,6 +83,20 @@ fn integralise(v: &mut Value) {
 /// Temp file then rename, so a reader never sees a half-written file and a
 /// crash mid-write leaves the previous version intact.
 pub fn write_atomic(target: &Path, body: &str) -> std::io::Result<()> {
+    replace(target, body, true)
+}
+
+/// As [`write_atomic`] -- a reader sees the old file or the new -- but not
+/// waited onto the disk: for files that are rewritten constantly and lose
+/// nothing if a power cut takes the last version (nowplaying.json, written
+/// on the UI thread at every track change and pause; the cover cache's
+/// stamps, one per track on a first scan). An fsync on a busy disk can take
+/// hundreds of milliseconds.
+pub fn write_replacing(target: &Path, body: &str) -> std::io::Result<()> {
+    replace(target, body, false)
+}
+
+fn replace(target: &Path, body: &str, durable: bool) -> std::io::Result<()> {
     if let Some(dir) = target.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -94,7 +108,9 @@ pub fn write_atomic(target: &Path, body: &str) -> std::io::Result<()> {
         use std::io::Write;
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(body.as_bytes())?;
-        f.sync_all()?;
+        if durable {
+            f.sync_all()?;
+        }
     }
     std::fs::rename(&tmp, target)
 }
