@@ -53,14 +53,8 @@ struct Resample {
 
 impl Resample {
     fn new(from: u32) -> Result<Resample> {
-        let rs = Fft::<f32>::new(
-            from as usize,
-            OUT_RATE as usize,
-            RESAMPLE_CHUNK,
-            CHANNELS,
-            FixedSync::Input,
-        )
-        .map_err(|e| anyhow!("resampler {from} -> {OUT_RATE}: {e}"))?;
+        let rs = Fft::<f32>::new(from as usize, OUT_RATE as usize, RESAMPLE_CHUNK, CHANNELS, FixedSync::Input)
+            .map_err(|e| anyhow!("resampler {from} -> {OUT_RATE}: {e}"))?;
         let output = vec![0.0; rs.output_frames_max() * CHANNELS];
         let delay_left = rs.output_delay();
         Ok(Resample {
@@ -125,9 +119,7 @@ impl Resample {
                 .map_err(|e| anyhow!("resampler input: {e:?}"))?;
             let mut outp = InterleavedSlice::new_mut(&mut self.output[..], CHANNELS, out_max)
                 .map_err(|e| anyhow!("resampler output: {e:?}"))?;
-            self.rs
-                .process_into_buffer(&inp, &mut outp, indexing.as_ref())
-                .map_err(|e| anyhow!("resample: {e}"))?
+            self.rs.process_into_buffer(&inp, &mut outp, indexing.as_ref()).map_err(|e| anyhow!("resample: {e}"))?
         };
         let consumed = match partial {
             Some(n) => n.min(nin),
@@ -185,9 +177,8 @@ impl Source {
             .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
             .with_context(|| format!("unsupported or unreadable file: {}", path.display()))?;
 
-        let track = reader
-            .default_track(TrackType::Audio)
-            .ok_or_else(|| anyhow!("no audio track in {}", path.display()))?;
+        let track =
+            reader.default_track(TrackType::Audio).ok_or_else(|| anyhow!("no audio track in {}", path.display()))?;
         let track_id = track.id;
         let params = track
             .codec_params
@@ -217,22 +208,17 @@ impl Source {
         if src_rate == 0 {
             bail!("sample rate of 0");
         }
-        let time_base = track
-            .time_base
-            .or_else(|| TimeBase::try_from_recip(src_rate))
-            .ok_or_else(|| anyhow!("no time base"))?;
+        let time_base =
+            track.time_base.or_else(|| TimeBase::try_from_recip(src_rate)).ok_or_else(|| anyhow!("no time base"))?;
 
         let duration = match (track.num_frames, track.duration) {
-            _ if edit.and_then(|e| e.duration_secs).is_some() => {
-                edit.and_then(|e| e.duration_secs).unwrap_or(0.0)
-            }
+            _ if edit.and_then(|e| e.duration_secs).is_some() => edit.and_then(|e| e.duration_secs).unwrap_or(0.0),
             // num_frames excludes encoder delay and padding, which is what is
             // actually heard.
             (Some(n), _) if n > 0 => n as f64 / src_rate as f64,
-            (_, Some(d)) => time_base
-                .calc_duration(d)
-                .map(|t| t.as_secs_f64() - ts_offset as f64 / src_rate as f64)
-                .unwrap_or(0.0),
+            (_, Some(d)) => {
+                time_base.calc_duration(d).map(|t| t.as_secs_f64() - ts_offset as f64 / src_rate as f64).unwrap_or(0.0)
+            }
             _ => 0.0,
         }
         .max(0.0);
@@ -531,14 +517,10 @@ pub(crate) mod tests {
                 assert!((src.position() - target).abs() < 1e-9);
                 let pcm = decode_all(&mut src);
                 let on = onsets(&pcm);
-                let expect: Vec<f64> =
-                    BURSTS.iter().filter(|b| **b > target).map(|b| b - target).collect();
+                let expect: Vec<f64> = BURSTS.iter().filter(|b| **b > target).map(|b| b - target).collect();
                 assert_eq!(on.len(), expect.len(), "{name} @{target}: {on:?} vs {expect:?}");
                 for (got, want) in on.iter().zip(&expect) {
-                    assert!(
-                        (got - want).abs() < 0.010,
-                        "{name} @{target}: burst at +{got}, want +{want}"
-                    );
+                    assert!((got - want).abs() < 0.010, "{name} @{target}: burst at +{got}, want +{want}");
                 }
                 let end = target + pcm.len() as f64 / 2.0 / OUT_RATE as f64;
                 assert!((end - 3.0).abs() < 0.03, "{name} @{target}: ends at {end}");

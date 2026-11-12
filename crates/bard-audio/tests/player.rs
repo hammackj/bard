@@ -86,7 +86,9 @@ fn plays_to_the_end_with_progress_and_ended() {
     let progress: Vec<_> = events[..ended_at]
         .iter()
         .filter_map(|(t, e)| match e {
-            PlayerEvent::Progress { position, playing, track_id, .. } => Some((*t, *position, *playing, track_id.clone())),
+            PlayerEvent::Progress { position, playing, track_id, .. } => {
+                Some((*t, *position, *playing, track_id.clone()))
+            }
             _ => None,
         })
         .collect();
@@ -113,7 +115,11 @@ fn seek_pause_resume_toggle() {
     std::thread::sleep(Duration::from_millis(300));
 
     p.seek(2.0);
-    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { position, .. } if (*position - 2.0).abs() < 1e-6));
+    let e = wait_for(
+        &rx,
+        Duration::from_secs(1),
+        |e| matches!(e, PlayerEvent::Progress { position, .. } if (*position - 2.0).abs() < 1e-6),
+    );
     assert!(e.is_some(), "seek reports its position");
     std::thread::sleep(Duration::from_millis(200));
     let pos = p.position().position;
@@ -168,9 +174,11 @@ fn crossfade_fades_out_swaps_then_fades_in() {
     assert!(ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "a")));
 
     // Swap at ~1 s: the incoming track starts from silence, not at full gain.
-    let e = wait_for(&rx, Duration::from_secs(1), |e| {
-        matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "b")
-    });
+    let e = wait_for(
+        &rx,
+        Duration::from_secs(1),
+        |e| matches!(e, PlayerEvent::Progress { track_id: Some(t), .. } if t == "b"),
+    );
     assert!(e.is_some(), "swapped to b");
     let start = p.current_gain();
     assert!(start < 0.15, "incoming track starts near silence: {start}");
@@ -212,10 +220,7 @@ fn stop_unloads() {
     std::thread::sleep(Duration::from_millis(300));
     p.stop();
     let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { track_id: None, .. }));
-    assert_eq!(
-        e,
-        Some(PlayerEvent::Progress { position: 0.0, duration: 0.0, playing: false, track_id: None })
-    );
+    assert_eq!(e, Some(PlayerEvent::Progress { position: 0.0, duration: 0.0, playing: false, track_id: None }));
     assert!(!p.toggle());
     let pos = p.position();
     assert_eq!((pos.position, pos.duration, pos.playing), (0.0, 0.0, false));

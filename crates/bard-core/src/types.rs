@@ -134,12 +134,7 @@ pub struct AudioConfig {
 
 impl Default for AudioConfig {
     fn default() -> Self {
-        Self {
-            volume: 0.8,
-            output_device_id: "default".into(),
-            normalize: NormalizeMode::Track,
-            crossfade_sec: 0.0,
-        }
+        Self { volume: 0.8, output_device_id: "default".into(), normalize: NormalizeMode::Track, crossfade_sec: 0.0 }
     }
 }
 
@@ -233,11 +228,7 @@ pub struct WindowConfig {
 
 impl Default for WindowConfig {
     fn default() -> Self {
-        Self {
-            close_to_tray: true,
-            tray_popup_corner: TrayPopupCorner::BottomRight,
-            tray_popup_seconds: 8,
-        }
+        Self { close_to_tray: true, tray_popup_corner: TrayPopupCorner::BottomRight, tray_popup_seconds: 8 }
     }
 }
 
@@ -252,12 +243,7 @@ pub struct StreamerConfig {
 
 impl Default for StreamerConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-            auto_arm: false,
-            obs_url: "ws://127.0.0.1:4455".into(),
-            has_obs_password: false,
-        }
+        Self { enabled: false, auto_arm: false, obs_url: "ws://127.0.0.1:4455".into(), has_obs_password: false }
     }
 }
 

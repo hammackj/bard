@@ -73,11 +73,7 @@ fn collation_elements(s: &str) -> Vec<Element> {
             while i < chars.len() && chars[i].is_ascii_digit() {
                 i += 1;
             }
-            let digits: Vec<u8> = chars[start..i]
-                .iter()
-                .map(|c| *c as u8)
-                .skip_while(|d| *d == b'0')
-                .collect();
+            let digits: Vec<u8> = chars[start..i].iter().map(|c| *c as u8).skip_while(|d| *d == b'0').collect();
             out.push(Element::Number(digits.len(), digits));
             continue;
         }
@@ -121,11 +117,8 @@ pub fn tracks_in_album(tracks: &[Track], album: &str) -> Vec<Track> {
 
 pub fn album_names(tracks: &[Track]) -> Vec<String> {
     let mut seen = HashSet::new();
-    let mut names: Vec<String> = tracks
-        .iter()
-        .filter(|t| seen.insert(t.album.as_str()))
-        .map(|t| t.album.clone())
-        .collect();
+    let mut names: Vec<String> =
+        tracks.iter().filter(|t| seen.insert(t.album.as_str())).map(|t| t.album.clone()).collect();
     names.sort_by(|a, b| utf16_cmp(a, b));
     names
 }
@@ -136,11 +129,7 @@ pub fn album_names(tracks: &[Track]) -> Vec<String> {
 /// there is a better-than-even chance of a repeat within ~30 picks. Excluding a
 /// recent window is what makes shuffle feel shuffled. If the window has grown to
 /// cover everything, it is ignored rather than returning nothing.
-pub fn pick_random<'t>(
-    tracks: &'t [Track],
-    exclude: &HashSet<String>,
-    rng: Rng,
-) -> Option<&'t Track> {
+pub fn pick_random<'t>(tracks: &'t [Track], exclude: &HashSet<String>, rng: Rng) -> Option<&'t Track> {
     if tracks.is_empty() {
         return None;
     }
@@ -158,8 +147,7 @@ pub fn next_in_album(tracks: &[Track], track: &Track) -> Option<Track> {
 
 /// First track of a random album other than `not_this`.
 pub fn random_album_start(tracks: &[Track], not_this: Option<&str>, rng: Rng) -> Option<Track> {
-    let names: Vec<String> =
-        album_names(tracks).into_iter().filter(|a| Some(a.as_str()) != not_this).collect();
+    let names: Vec<String> = album_names(tracks).into_iter().filter(|a| Some(a.as_str()) != not_this).collect();
     let pick = if names.is_empty() { album_names(tracks) } else { names };
     if pick.is_empty() {
         return None;
@@ -178,8 +166,7 @@ pub fn random_album_start(tracks: &[Track], not_this: Option<&str>, rng: Rng) ->
 pub fn next_in_album_rolling(tracks: &[Track], anchor: Option<&Track>, rng: Rng) -> Option<Track> {
     match anchor {
         None => random_album_start(tracks, None, rng),
-        Some(a) => next_in_album(tracks, a)
-            .or_else(|| random_album_start(tracks, Some(&a.album), rng)),
+        Some(a) => next_in_album(tracks, a).or_else(|| random_album_start(tracks, Some(&a.album), rng)),
     }
 }
 
@@ -296,8 +283,7 @@ mod tests {
 
     #[test]
     fn pick_random_never_returns_an_excluded_track() {
-        let exclude: HashSet<String> =
-            ["gold1", "gold2", "gold3", "rain1"].iter().map(|s| s.to_string()).collect();
+        let exclude: HashSet<String> = ["gold1", "gold2", "gold3", "rain1"].iter().map(|s| s.to_string()).collect();
         let ts = tracks();
         // Whatever the rng says, only rain2 is eligible.
         for r in [0.0, 0.4, 0.99] {

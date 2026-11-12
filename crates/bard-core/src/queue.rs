@@ -48,11 +48,7 @@ impl Bard {
         // to prevent, and an empty pool while armed is a real answer that the
         // UI has to explain.
         if self.is_streamer_armed() {
-            return all
-                .iter()
-                .filter(|t| self.albums.status(&t.album) == ContentIdStatus::Safe)
-                .cloned()
-                .collect();
+            return all.iter().filter(|t| self.albums.status(&t.album) == ContentIdStatus::Safe).cloned().collect();
         }
 
         if !self.config.get().playback.exclude_claimed {
@@ -80,13 +76,10 @@ impl Bard {
         }
         match self.albums.status(&track.album) {
             ContentIdStatus::Safe => None,
-            ContentIdStatus::Claimed => {
-                Some(format!("Streamer mode: \"{}\" is flagged as claimed", track.album))
+            ContentIdStatus::Claimed => Some(format!("Streamer mode: \"{}\" is flagged as claimed", track.album)),
+            ContentIdStatus::Untested => {
+                Some(format!("Streamer mode: \"{}\" has not been checked for Content ID", track.album))
             }
-            ContentIdStatus::Untested => Some(format!(
-                "Streamer mode: \"{}\" has not been checked for Content ID",
-                track.album
-            )),
         }
     }
 
@@ -98,8 +91,7 @@ impl Bard {
         let weight_of = |id: &str| if weight > 1 && loved.contains(id) { weight as f64 } else { 1.0 };
         let avoid = self.now_playing.as_ref().map(|n| n.track.id.clone());
         let rng = &mut self.rng;
-        let (id, deck) =
-            draw(self.deck.as_ref(), &ids, &mut || rng.f64(), avoid.as_deref(), Some(&weight_of));
+        let (id, deck) = draw(self.deck.as_ref(), &ids, &mut || rng.f64(), avoid.as_deref(), Some(&weight_of));
         self.deck = Some(deck);
         id.and_then(|id| self.library.get(&id).cloned())
     }
@@ -132,11 +124,8 @@ impl Bard {
         let mut added: Vec<QueueItem> = Vec::new();
         // The anchor advances with every pick. Album mode walks forward from the
         // last track that will be queued, not from what is playing now.
-        let mut anchor: Option<Track> = self
-            .queue
-            .last()
-            .map(|q| q.track.clone())
-            .or_else(|| self.now_playing.as_ref().map(|n| n.track.clone()));
+        let mut anchor: Option<Track> =
+            self.queue.last().map(|q| q.track.clone()).or_else(|| self.now_playing.as_ref().map(|n| n.track.clone()));
 
         let mut guard = 0;
         while self.queue.len() + added.len() < want && guard < want * 6 {
@@ -180,8 +169,7 @@ impl Bard {
         if self.counted {
             return;
         }
-        let enough = seconds >= PLAY_THRESHOLD_SEC
-            || (duration > 0.0 && seconds >= duration * PLAY_THRESHOLD_RATIO);
+        let enough = seconds >= PLAY_THRESHOLD_SEC || (duration > 0.0 && seconds >= duration * PLAY_THRESHOLD_RATIO);
         if !enough {
             return;
         }
@@ -371,10 +359,7 @@ impl Bard {
         let dropped = before - self.queue.len();
         if dropped > 0 {
             self.emit_queue();
-            self.notify(format!(
-                "Streamer mode: removed {dropped} queued track{} not marked safe",
-                plural(dropped)
-            ));
+            self.notify(format!("Streamer mode: removed {dropped} queued track{} not marked safe", plural(dropped)));
         }
 
         // The track on air matters most. Skipping is not enough on its own: if
@@ -470,8 +455,7 @@ impl Bard {
         // of dead-ending.
         if self.is_streamer_armed() {
             let played = std::mem::take(&mut self.played);
-            self.played =
-                played.into_iter().filter(|i| self.blocked_reason(&i.track).is_none()).collect();
+            self.played = played.into_iter().filter(|i| self.blocked_reason(&i.track).is_none()).collect();
         }
 
         match step_back(&self.played, self.position) {

@@ -35,17 +35,24 @@ macro_rules! faces {
 }
 
 const FACES: &[&[u8]] = faces![
-    "Inter-400", "Inter-600",
-    "InterTrack13-400", "InterTrack13-600",
-    "InterTrack15-400", "InterTrack15-600",
-    "InterTrack18-400", "InterTrack18-600",
-    "InterTight15-400", "InterTight15-600",
-    "InterTight20-400", "InterTight20-600",
-    "FiraCode-400", "FiraCode-600",
-    "FiraCodeTight-400", "FiraCodeTight-600",
+    "Inter-400",
+    "Inter-600",
+    "InterTrack13-400",
+    "InterTrack13-600",
+    "InterTrack15-400",
+    "InterTrack15-600",
+    "InterTrack18-400",
+    "InterTrack18-600",
+    "InterTight15-400",
+    "InterTight15-600",
+    "InterTight20-400",
+    "InterTight20-600",
+    "FiraCode-400",
+    "FiraCode-600",
+    "FiraCodeTight-400",
+    "FiraCodeTight-600",
 ];
 
 pub fn load(cx: &mut App) -> anyhow::Result<()> {
-    cx.text_system()
-        .add_fonts(FACES.iter().map(|f| Cow::Borrowed(*f)).collect())
+    cx.text_system().add_fonts(FACES.iter().map(|f| Cow::Borrowed(*f)).collect())
 }

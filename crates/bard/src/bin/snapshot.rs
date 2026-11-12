@@ -115,12 +115,18 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, Steps)> {
 struct Fonts;
 impl Render for Fonts {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let row = |w: FontWeight, label: &str| {
-            div().font_weight(w).child(format!("{label} — Radiant Vibes 1:27 / 3:34"))
-        };
+        let row =
+            |w: FontWeight, label: &str| div().font_weight(w).child(format!("{label} — Radiant Vibes 1:27 / 3:34"));
         div()
-            .size_full().bg(theme::ink()).text_color(theme::text())
-            .font_family(fonts::UI).text_size(px(20.)).p_4().flex().flex_col().gap_2()
+            .size_full()
+            .bg(theme::ink())
+            .text_color(theme::text())
+            .font_family(fonts::UI)
+            .text_size(px(20.))
+            .p_4()
+            .flex()
+            .flex_col()
+            .gap_2()
             .child(row(FontWeight::NORMAL, "400"))
             .child(row(FontWeight::MEDIUM, "500"))
             .child(row(FontWeight::SEMIBOLD, "600"))
@@ -194,7 +200,11 @@ fn main() -> anyhow::Result<()> {
     for [x, y] in clicks {
         let position = point(px(x), px(y));
         let events = [
-            PlatformInput::MouseMove(MouseMoveEvent { position, pressed_button: None, modifiers: Modifiers::default() }),
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position,
+                pressed_button: None,
+                modifiers: Modifiers::default(),
+            }),
             PlatformInput::MouseDown(MouseDownEvent {
                 button: MouseButton::Left,
                 position,
@@ -202,7 +212,12 @@ fn main() -> anyhow::Result<()> {
                 click_count: 1,
                 first_mouse: false,
             }),
-            PlatformInput::MouseUp(MouseUpEvent { button: MouseButton::Left, position, modifiers: Modifiers::default(), click_count: 1 }),
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Left,
+                position,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+            }),
         ];
         for ev in events {
             cx.update_window(window, |_, window, cx| {

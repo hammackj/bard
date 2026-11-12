@@ -44,7 +44,9 @@ fn try_activate(window: &Window, token: &str) -> Result<(), Skip> {
     let RawDisplayHandle::Wayland(display) = window.display_handle().map_err(|_| Skip::NotWayland)?.as_raw() else {
         return Err(Skip::NotWayland);
     };
-    let RawWindowHandle::Wayland(surface) = HasWindowHandle::window_handle(window).map_err(|_| Skip::NotWayland)?.as_raw() else {
+    let RawWindowHandle::Wayland(surface) =
+        HasWindowHandle::window_handle(window).map_err(|_| Skip::NotWayland)?.as_raw()
+    else {
         return Err(Skip::NotWayland);
     };
 
@@ -54,8 +56,9 @@ fn try_activate(window: &Window, token: &str) -> Result<(), Skip> {
     // event queue, so GPUI's dispatching is undisturbed.
     let backend = unsafe { Backend::from_foreign_display(display.display.as_ptr().cast()) };
     let conn = Connection::from_backend(backend);
-    let surface_id = unsafe { wayland_client::backend::ObjectId::from_ptr(WlSurface::interface(), surface.surface.as_ptr().cast()) }
-        .map_err(failed)?;
+    let surface_id =
+        unsafe { wayland_client::backend::ObjectId::from_ptr(WlSurface::interface(), surface.surface.as_ptr().cast()) }
+            .map_err(failed)?;
     let surface = WlSurface::from_id(&conn, surface_id).map_err(failed)?;
 
     let (globals, mut queue) = registry_queue_init::<State>(&conn).map_err(failed)?;
@@ -70,9 +73,25 @@ fn try_activate(window: &Window, token: &str) -> Result<(), Skip> {
 struct State;
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
-    fn event(_: &mut Self, _: &wl_registry::WlRegistry, _: wl_registry::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl Dispatch<XdgActivationV1, ()> for State {
-    fn event(_: &mut Self, _: &XdgActivationV1, _: <XdgActivationV1 as Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &XdgActivationV1,
+        _: <XdgActivationV1 as Proxy>::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }

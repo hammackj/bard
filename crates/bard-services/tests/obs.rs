@@ -33,7 +33,12 @@ impl ObsHandler for Rec {
 
 /// One fake OBS connection. `password`: require auth. `active`: which status
 /// requests answer outputActive = true. `event`: an event to send after.
-async fn fake_obs(listener: TcpListener, password: Option<&'static str>, active: &'static [&'static str], event: Option<Value>) {
+async fn fake_obs(
+    listener: TcpListener,
+    password: Option<&'static str>,
+    active: &'static [&'static str],
+    event: Option<Value>,
+) {
     let (tcp, _) = listener.accept().await.unwrap();
     let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
     let (salt, challenge) = ("c2FsdA==", "Y2hhbGxlbmdl");

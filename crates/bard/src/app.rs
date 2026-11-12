@@ -16,19 +16,17 @@
 //! the `Shell` and a new window is built from it when the tray asks.
 
 use crate::model::{Backend, Ui};
+use crate::views::popup::{self, Popup};
 use crate::views::root::BardWindow;
 use crate::views::string_bar::Analyser as StringAnalyser;
 use bard_audio::{Player, PlayerEvent, PlayerOptions};
-use bard_core::types::{
-    AppPaths, Config, ContentIdStatus, PlaybackProgress, TransportAction,
-};
+use bard_core::types::{AppPaths, Config, ContentIdStatus, PlaybackProgress, TransportAction};
 use bard_core::{Bard, CoreEvent, electron_device, gain_multiplier};
 use bard_services::{AppControls, Services, ServicesOptions};
-use crate::views::popup::{self, Popup};
-use std::cell::RefCell;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::*;
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -47,9 +45,15 @@ pub enum AppEvent {
     SleepDue(Instant),
     /// The saved output device appeared: the saved id and the sink's id,
     /// which differ when the setting came from Electron.
-    OutputAppeared { saved: String, id: String },
+    OutputAppeared {
+        saved: String,
+        id: String,
+    },
     /// The OBS password save finished: whether it was stored, and its length.
-    ObsSaved { stored: bool, chars: usize },
+    ObsSaved {
+        stored: bool,
+        chars: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -312,13 +316,27 @@ impl Launch {
                 let tray = format!("org.kde.StatusNotifierItem-{pid}-1");
                 let sni = Some("org.kde.StatusNotifierItem");
                 let raised = conn
-                    .call_method(Some(tray.as_str()), "/StatusNotifierItem", sni, "ProvideXdgActivationToken", &(token,))
-                    .and_then(|_| conn.call_method(Some(tray.as_str()), "/StatusNotifierItem", sni, "Activate", &(0i32, 0i32)));
+                    .call_method(
+                        Some(tray.as_str()),
+                        "/StatusNotifierItem",
+                        sni,
+                        "ProvideXdgActivationToken",
+                        &(token,),
+                    )
+                    .and_then(|_| {
+                        conn.call_method(Some(tray.as_str()), "/StatusNotifierItem", sni, "Activate", &(0i32, 0i32))
+                    });
                 if raised.is_ok() {
                     return Ok(true);
                 }
             }
-            conn.call_method(Some(name.as_str()), "/org/mpris/MediaPlayer2", Some("org.mpris.MediaPlayer2"), "Raise", &())?;
+            conn.call_method(
+                Some(name.as_str()),
+                "/org/mpris/MediaPlayer2",
+                Some("org.mpris.MediaPlayer2"),
+                "Raise",
+                &(),
+            )?;
             Ok(true)
         };
         // No session bus, or the call failed: carry on and start normally.
@@ -363,10 +381,7 @@ type ShellRef = Rc<RefCell<Shell>>;
 
 pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
     let (bard, core_rx) = Bard::open(launch.data_dir.clone())?;
-    let (player, player_rx) = Player::with_options(PlayerOptions {
-        silent: launch.silent,
-        ..Default::default()
-    })?;
+    let (player, player_rx) = Player::with_options(PlayerOptions { silent: launch.silent, ..Default::default() })?;
     let player = Arc::new(player);
     let config = bard.config().clone();
     let paths = bard.paths();
@@ -436,14 +451,16 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
         let want = found.unwrap_or_else(|| config.audio.output_device_id.clone());
         if player.set_output(&want).is_err() {
             let (player, bard, tx) = (player.clone(), bard.clone(), tx.clone());
-            std::thread::Builder::new().name("bard-output-watch".into()).spawn(move || loop {
-                std::thread::sleep(Duration::from_secs(1));
-                if bard.lock().map(|b| b.config().audio.output_device_id != want).unwrap_or(true) {
-                    break;
-                }
-                if let Some(id) = find(&player) {
-                    let _ = tx.unbounded_send(AppEvent::OutputAppeared { saved: want, id });
-                    break;
+            std::thread::Builder::new().name("bard-output-watch".into()).spawn(move || {
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if bard.lock().map(|b| b.config().audio.output_device_id != want).unwrap_or(true) {
+                        break;
+                    }
+                    if let Some(id) = find(&player) {
+                        let _ = tx.unbounded_send(AppEvent::OutputAppeared { saved: want, id });
+                        break;
+                    }
                 }
             })?;
         }
@@ -902,12 +919,7 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::QueueChanged(q) => ui.queue = q,
             CoreEvent::PlayTrack(t) => {
                 let gain = gain_multiplier(&t, ui.config.audio.normalize) as f32;
-                backend.player.play(
-                    t.id.clone(),
-                    PathBuf::from(&t.path),
-                    gain,
-                    ui.config.audio.crossfade_sec as f32,
-                );
+                backend.player.play(t.id.clone(), PathBuf::from(&t.path), gain, ui.config.audio.crossfade_sec as f32);
                 ui.track = Some(t);
                 ui.position = 0.;
                 ui.position_at = Instant::now();
@@ -933,9 +945,7 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             }
             CoreEvent::Overlay(_) => {}
             CoreEvent::StatsChanged => ui.stats = backend.bard.lock().expect("core lock").stats(),
-            CoreEvent::AlbumFlagsChanged => {
-                ui.album_flags = backend.bard.lock().expect("core lock").album_flags()
-            }
+            CoreEvent::AlbumFlagsChanged => ui.album_flags = backend.bard.lock().expect("core lock").album_flags(),
             CoreEvent::LovedChanged => ui.loved = backend.bard.lock().expect("core lock").loved(),
             CoreEvent::Transport(TransportAction::Toggle) => backend.toggle_play(),
             CoreEvent::Transport(TransportAction::Restart) => backend.player.seek(0.),
@@ -965,7 +975,9 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
                 backend.with(|b| b.report_ended());
             }
             // Worded as Electron's notice, which also said the choice stays.
-            PlayerEvent::Error(msg) if msg == "output device: saved output device unavailable, using system default" => {
+            PlayerEvent::Error(msg)
+                if msg == "output device: saved output device unavailable, using system default" =>
+            {
                 ui.notice = Some(DEVICE_FALLBACK.into())
             }
             PlayerEvent::Error(msg) => ui.notice = Some(msg),

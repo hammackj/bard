@@ -27,10 +27,7 @@ pub fn pane(this: &mut BardWindow, width: f32, window: &mut Window, cx: &mut Con
 
     let ui = &mut this.ui;
     let track = ui.track.clone();
-    let cover = track
-        .as_ref()
-        .filter(|t| t.has_artwork)
-        .and_then(|t| ui.covers.cover(&t.id));
+    let cover = track.as_ref().filter(|t| t.has_artwork).and_then(|t| ui.covers.cover(&t.id));
     let ambient = cover.as_ref().and(track.as_ref()).and_then(|t| ui.covers.ambient(&t.id));
 
     let sample = Sample {
@@ -212,20 +209,24 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
     let has_track = ui.track.is_some();
 
     let button = |id: &'static str, name: &'static str, size: f32| {
-        div()
-            .id(id)
-            .group(id)
-            .rounded(px(2.))
-            .p_1()
-            .cursor_pointer()
-            .child(super::hover_icon(id, name, size, theme::muted(), theme::text()))
+        div().id(id).group(id).rounded(px(2.)).p_1().cursor_pointer().child(super::hover_icon(
+            id,
+            name,
+            size,
+            theme::muted(),
+            theme::text(),
+        ))
     };
 
     let buttons = div()
         .flex()
         .items_center()
         .gap(px(18.))
-        .child(button("prev", "prev", 18.).tooltip(super::tip("Previous track (restarts if a few seconds in)")).on_click(cx.listener(|this, _, _, _| this.ui.backend.previous())))
+        .child(
+            button("prev", "prev", 18.)
+                .tooltip(super::tip("Previous track (restarts if a few seconds in)"))
+                .on_click(cx.listener(|this, _, _, _| this.ui.backend.previous())),
+        )
         .child(
             button("play", if ui.playing { "pause" } else { "play" }, 26.)
                 // `disabled={!track}`: dimmed, and a click does nothing.
@@ -389,20 +390,21 @@ fn volume_slider(volume: f64, w: f32, cx: &mut Context<BardWindow>) -> impl Into
                 .bg(theme::cyan()),
         )
         .child(super::record_bounds(cx.entity(), |this, b| this.volume_bounds = Some(b)))
-        .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-            this.volume_from(ev.position.x);
-            this.drag = Some(Drag::Volume);
-            cx.notify();
-        }))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                this.volume_from(ev.position.x);
+                this.drag = Some(Drag::Volume);
+                cx.notify();
+            }),
+        )
 }
 
 /// `SleepTimer.tsx`. Pauses rather than quitting: waking to a closed app and a
 /// lost queue is worse than waking to a paused one.
 fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoElement {
     let ui = &this.ui;
-    let remaining = ui
-        .sleep_ends_at
-        .map(|end| end.saturating_duration_since(Instant::now()).as_secs().div_ceil(60));
+    let remaining = ui.sleep_ends_at.map(|end| end.saturating_duration_since(Instant::now()).as_secs().div_ceil(60));
     let open = ui.sleep_open;
     // The minutes left count down while paused too, when nothing else asks
     // for frames; one repaint a second, as Electron's display tick.
@@ -443,47 +445,48 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
         }
         // left-1/2 -translate-x-1/2: GPUI has no translate, so the popover is
         // centred inside a span wider than itself, centred on the button.
-        div()
-            .absolute()
-            .bottom_full()
-            .mb_2()
-            .left(px(-200.))
-            .right(px(-200.))
-            .flex()
-            .justify_center()
-            .child(div()
-            .relative()
-            .border_1()
-            .border_color(theme::edge())
-            .bg(theme::panel())
-            .p_2()
-            .shadow_2xl()
-            .occlude()
-            .child(super::record_bounds(cx.entity(), |this, b| this.sleep_bounds = Some(b)))
-            .child(div().mb(px(6.)).whitespace_nowrap().text_size(theme::S1).text_color(theme::muted()).child("Pause playback in…"))
-            .child(presets)
-            .children(remaining.map(|r| {
-                div()
-                    .id("sleep-cancel")
-                    .mt(px(6.))
-                    .w_full()
-                    .flex()
-                    .justify_center()
-                    .border_1()
-                    .border_color(theme::edge())
-                    .px_2()
-                    .py_1()
-                    .text_size(theme::S1)
-                    .text_color(theme::rose())
-                    .cursor_pointer()
-                    .hover(|s| s.border_color(theme::rose()))
-                    .child(format!("Cancel ({r} min left)"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.ui.sleep_ends_at = None;
-                        this.ui.sleep_open = false;
-                        cx.notify();
-                    }))
-            })))
+        div().absolute().bottom_full().mb_2().left(px(-200.)).right(px(-200.)).flex().justify_center().child(
+            div()
+                .relative()
+                .border_1()
+                .border_color(theme::edge())
+                .bg(theme::panel())
+                .p_2()
+                .shadow_2xl()
+                .occlude()
+                .child(super::record_bounds(cx.entity(), |this, b| this.sleep_bounds = Some(b)))
+                .child(
+                    div()
+                        .mb(px(6.))
+                        .whitespace_nowrap()
+                        .text_size(theme::S1)
+                        .text_color(theme::muted())
+                        .child("Pause playback in…"),
+                )
+                .child(presets)
+                .children(remaining.map(|r| {
+                    div()
+                        .id("sleep-cancel")
+                        .mt(px(6.))
+                        .w_full()
+                        .flex()
+                        .justify_center()
+                        .border_1()
+                        .border_color(theme::edge())
+                        .px_2()
+                        .py_1()
+                        .text_size(theme::S1)
+                        .text_color(theme::rose())
+                        .cursor_pointer()
+                        .hover(|s| s.border_color(theme::rose()))
+                        .child(format!("Cancel ({r} min left)"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.ui.sleep_ends_at = None;
+                            this.ui.sleep_open = false;
+                            cx.notify();
+                        }))
+                })),
+        )
     });
 
     div()

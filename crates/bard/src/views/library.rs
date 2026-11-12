@@ -19,20 +19,16 @@ pub fn pane_depth() -> impl IntoElement {
     div()
         .absolute()
         .inset_0()
-        .child(
-            div().absolute().top_0().left_0().right_0().h(relative(0.22)).bg(linear_gradient(
-                180.,
-                linear_color_stop(hsla(0., 0., 1., 0.03), 0.),
-                linear_color_stop(hsla(0., 0., 1., 0.), 1.),
-            )),
-        )
-        .child(
-            div().absolute().bottom_0().left_0().right_0().h(relative(0.20)).bg(linear_gradient(
-                0.,
-                linear_color_stop(hsla(0., 0., 0., 0.35), 0.),
-                linear_color_stop(hsla(0., 0., 0., 0.), 1.),
-            )),
-        )
+        .child(div().absolute().top_0().left_0().right_0().h(relative(0.22)).bg(linear_gradient(
+            180.,
+            linear_color_stop(hsla(0., 0., 1., 0.03), 0.),
+            linear_color_stop(hsla(0., 0., 1., 0.), 1.),
+        )))
+        .child(div().absolute().bottom_0().left_0().right_0().h(relative(0.20)).bg(linear_gradient(
+            0.,
+            linear_color_stop(hsla(0., 0., 0., 0.35), 0.),
+            linear_color_stop(hsla(0., 0., 0., 0.), 1.),
+        )))
 }
 
 pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWindow>) -> impl IntoElement {
@@ -172,22 +168,16 @@ fn album_grid(this: &mut BardWindow, _window: &mut Window, cx: &mut Context<Bard
     }
     let empty = albums.is_empty();
     let handle = this.album_scroll.clone();
-    div().relative().flex_1().min_h_0().flex().flex_col().child(div()
-        .id("album-grid")
+    div()
+        .relative()
         .flex_1()
         .min_h_0()
-        .overflow_y_scroll()
-        .track_scroll(&handle)
-        .child(
-            div()
-                .w(px(LIBRARY_W - SCROLLBAR_W))
-                .flex()
-                .flex_col()
-                .gap_3()
-                .px_3()
-                .pb_3()
-                .children(rows)
-                .when(empty, |el| {
+        .flex()
+        .flex_col()
+        .child(div().id("album-grid").flex_1().min_h_0().overflow_y_scroll().track_scroll(&handle).child(
+            div().w(px(LIBRARY_W - SCROLLBAR_W)).flex().flex_col().gap_3().px_3().pb_3().children(rows).when(
+                empty,
+                |el| {
                     el.child(
                         div()
                             .px_1()
@@ -196,7 +186,8 @@ fn album_grid(this: &mut BardWindow, _window: &mut Window, cx: &mut Context<Bard
                             .text_color(theme::muted())
                             .child("No albums match that."),
                     )
-                }),
+                },
+            ),
         ))
         .child(super::scrollbar(handle, cx.entity()))
 }
@@ -221,7 +212,9 @@ fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<Bar
     let badge = match status {
         ContentIdStatus::Untested => None,
         ContentIdStatus::Safe => Some(("✓ safe", theme::green(), "Passed Content ID testing")),
-        ContentIdStatus::Claimed => Some(("⚠ claimed", theme::rose(), "Content ID claim — kept out of shuffle and endless")),
+        ContentIdStatus::Claimed => {
+            Some(("⚠ claimed", theme::rose(), "Content ID claim — kept out of shuffle and endless"))
+        }
     };
 
     div()
@@ -299,11 +292,11 @@ fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<Bar
                 })),
         )
         .child(truncate(div().mt(px(6.)).text_size(theme::S2).child(album.name.clone())))
-        .child(truncate(
-            mono(theme::S1)
-                .text_color(theme::muted())
-                .child(format!("{} · {}", album.tracks.len(), fmt_time(album.duration))),
-        ))
+        .child(truncate(mono(theme::S1).text_color(theme::muted()).child(format!(
+            "{} · {}",
+            album.tracks.len(),
+            fmt_time(album.duration)
+        ))))
 }
 
 fn track_list(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoElement {
@@ -327,11 +320,13 @@ fn track_list(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoE
         .min_h_0()
         .flex()
         .child(
-            uniform_list("library-tracks", count, cx.processor(move |_this, range: std::ops::Range<usize>, _, cx| {
-                range
-                    .map(|i| track_row(&rows[i], i, i == selected, &stats, &loved, cx))
-                    .collect::<Vec<_>>()
-            }))
+            uniform_list(
+                "library-tracks",
+                count,
+                cx.processor(move |_this, range: std::ops::Range<usize>, _, cx| {
+                    range.map(|i| track_row(&rows[i], i, i == selected, &stats, &loved, cx)).collect::<Vec<_>>()
+                }),
+            )
             .track_scroll(&handle)
             .flex_1()
             .px(px(6.))
@@ -367,17 +362,12 @@ fn track_row(
         .cursor_pointer()
         .hover(|s| s.bg(theme::panel()))
         .when(selected, |el| {
-            el.bg(theme::panel())
-                .child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(theme::cyan()))
+            el.bg(theme::panel()).child(div().absolute().left_0().top_0().bottom_0().w(px(2.)).bg(theme::cyan()))
         })
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(truncate(div().text_size(theme::S2).child(t.title.clone())))
-                .child(truncate(
-                    div().mt(px(1.)).text_size(theme::S1).text_color(theme::muted()).child(t.artist.clone()),
-                )),
+            div().flex_1().min_w_0().child(truncate(div().text_size(theme::S2).child(t.title.clone()))).child(
+                truncate(div().mt(px(1.)).text_size(theme::S1).text_color(theme::muted()).child(t.artist.clone())),
+            ),
         )
         .child(
             mono(theme::S1)
@@ -447,8 +437,12 @@ fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut 
         let album = album.to_string();
         let note = flag.as_ref().and_then(|f| f.note.clone());
         let (border, bg, fg) = match (active, value) {
-            (true, ContentIdStatus::Claimed) => (theme::rose().into(), Some(theme::a(theme::rose(), 0.2)), theme::rose()),
-            (true, ContentIdStatus::Safe) => (theme::green().into(), Some(theme::a(theme::green(), 0.2)), theme::green()),
+            (true, ContentIdStatus::Claimed) => {
+                (theme::rose().into(), Some(theme::a(theme::rose(), 0.2)), theme::rose())
+            }
+            (true, ContentIdStatus::Safe) => {
+                (theme::green().into(), Some(theme::a(theme::green(), 0.2)), theme::green())
+            }
             (true, _) => (Hsla::from(theme::edge()), Some(theme::panel().into()), theme::text()),
             (false, _) => (Hsla::from(theme::edge()), None, theme::muted()),
         };
@@ -508,12 +502,11 @@ fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut 
                 .text_size(theme::S1)
                 .child(this.note.clone()),
         )
-        .children(flag.and_then(|f| f.checked_at).map(|at| {
-            mono(theme::S1)
-                .mt_1()
-                .text_color(theme::muted())
-                .child(format!("checked {}", local_date(at)))
-        }))
+        .children(
+            flag.and_then(|f| f.checked_at).map(|at| {
+                mono(theme::S1).mt_1().text_color(theme::muted()).child(format!("checked {}", local_date(at)))
+            }),
+        )
 }
 
 /// `new Date(ms).toLocaleDateString()` in en-US: 8/9/2026.
@@ -538,7 +531,11 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
     let open = ui.menu_open;
     let count = fmt_count(ui.tracks.len());
 
-    let item = |id: &'static str, label: &'static str, hint: String, cx: &mut Context<BardWindow>, f: fn(&mut BardWindow, &mut Context<BardWindow>)| {
+    let item = |id: &'static str,
+                label: &'static str,
+                hint: String,
+                cx: &mut Context<BardWindow>,
+                f: fn(&mut BardWindow, &mut Context<BardWindow>)| {
         div()
             .id(id)
             .flex()
@@ -579,11 +576,7 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .child(
                 div()
                     .id("version")
-                    .tooltip(super::tip(format!(
-                        "commit {} · GPUI · Rust {}",
-                        this.ui.commit,
-                        env!("BARD_RUSTC")
-                    )))
+                    .tooltip(super::tip(format!("commit {} · GPUI · Rust {}", this.ui.commit, env!("BARD_RUSTC"))))
                     .mt_1()
                     .flex()
                     .items_center()
@@ -642,22 +635,14 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
                         .overflow_hidden()
                         .child(svg_image("icons/avatar.svg", 28.)),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .child(truncate(div().text_size(theme::S2).child("Bard")))
-                        .child(truncate(
-                            div().text_size(theme::S1).text_color(theme::muted()).child(format!("{count} tracks")),
-                        )),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(theme::S1)
-                        .text_color(theme::muted())
-                        .child(if open { "▾" } else { "▴" }),
-                )
+                .child(div().flex_1().min_w_0().child(truncate(div().text_size(theme::S2).child("Bard"))).child(
+                    truncate(div().text_size(theme::S1).text_color(theme::muted()).child(format!("{count} tracks"))),
+                ))
+                .child(div().flex_none().text_size(theme::S1).text_color(theme::muted()).child(if open {
+                    "▾"
+                } else {
+                    "▴"
+                }))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.ui.menu_open = !this.ui.menu_open;
                     cx.notify();
@@ -668,6 +653,5 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
 /// A full-colour SVG, drawn as an image rather than a tinted mask.
 pub fn svg_image(path: &'static str, size: f32) -> Img {
     let bytes = crate::assets::bytes(path).unwrap_or_default().to_vec();
-    gpui::img(ImageSource::Image(std::sync::Arc::new(gpui::Image::from_bytes(ImageFormat::Svg, bytes))))
-        .size(px(size))
+    gpui::img(ImageSource::Image(std::sync::Arc::new(gpui::Image::from_bytes(ImageFormat::Svg, bytes)))).size(px(size))
 }

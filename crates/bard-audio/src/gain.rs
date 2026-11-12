@@ -45,7 +45,11 @@ pub(crate) enum GainCmd {
     /// `retarget`: a `Target` arriving mid-ramp moves this ramp's end point
     /// (a volume change during a fade-in) instead of being dropped (a volume
     /// change during a fade-out, which the swap will apply anyway).
-    Linear { to: f32, secs: f32, retarget: bool },
+    Linear {
+        to: f32,
+        secs: f32,
+        retarget: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]

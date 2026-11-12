@@ -48,10 +48,7 @@ fn rich(parts: &[(&str, Span)]) -> Div {
             TextRun { len: t.len(), font: f, color: theme::muted().into(), ..Default::default() }
         })
         .collect();
-    div()
-        .text_size(theme::S1)
-        .text_color(theme::muted())
-        .child(StyledText::new(text).with_runs(runs))
+    div().text_size(theme::S1).text_color(theme::muted()).child(StyledText::new(text).with_runs(runs))
 }
 
 fn p(text: impl Into<SharedString>) -> Div {
@@ -70,14 +67,7 @@ fn group(title: &str, children: Vec<AnyElement>) -> Div {
                 .child(title.to_uppercase()),
         )
         .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .border_t_1()
-                .border_color(theme::edge())
-                .pt(px(10.))
-                .children(children),
+            div().flex().flex_col().gap(px(6.)).border_t_1().border_color(theme::edge()).pt(px(10.)).children(children),
         )
 }
 
@@ -245,17 +235,19 @@ fn crossfade(value: f64, cx: &mut Context<BardWindow>) -> impl IntoElement {
                         .bg(theme::cyan()),
                 )
                 .child(super::record_bounds(cx.entity(), |this, b| this.crossfade_bounds = Some(b)))
-                .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, _| {
-                    this.crossfade_from(ev.position.x);
-                    this.drag = Some(super::root::Drag::Crossfade);
-                })),
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, _, _| {
+                        this.crossfade_from(ev.position.x);
+                        this.drag = Some(super::root::Drag::Crossfade);
+                    }),
+                ),
         )
-        .child(
-            mono(theme::S1)
-                .w(px(40.))
-                .text_color(theme::muted())
-                .child(if value == 0. { "off".to_string() } else { format!("{value}s") }),
-        )
+        .child(mono(theme::S1).w(px(40.)).text_color(theme::muted()).child(if value == 0. {
+            "off".to_string()
+        } else {
+            format!("{value}s")
+        }))
 }
 
 impl BardWindow {
@@ -329,10 +321,7 @@ pub fn panel(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> Option<impl
     // Audio
     let mut devices = vec![("default".to_string(), "System default".to_string())];
     devices.extend(this.ui.outputs.iter().cloned());
-    let current_device = devices
-        .iter()
-        .position(|(id, _)| *id == c.audio.output_device_id)
-        .unwrap_or(0);
+    let current_device = devices.iter().position(|(id, _)| *id == c.audio.output_device_id).unwrap_or(0);
     let device_options: Vec<(usize, String)> = devices.iter().enumerate().map(|(i, (_, n))| (i, n.clone())).collect();
     let device_ids: Vec<String> = devices.iter().map(|(id, _)| id.clone()).collect();
     let mut audio: Vec<AnyElement> = vec![
@@ -422,7 +411,13 @@ rich(&[
                     .child(
                         // The start of a path is the least informative part, so it
                         // is what gets cut.
-                        mono(theme::S1).min_w_0().overflow_hidden().whitespace_nowrap().flex().justify_end().child(value.to_string()),
+                        mono(theme::S1)
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .flex()
+                            .justify_end()
+                            .child(value.to_string()),
                     )
                     .into_any_element()
             };
@@ -490,7 +485,10 @@ rich(&[
                         }))
                 })),
         ),
-        row("Write nowplaying.json", checkbox("np-json", c.overlay.write_now_playing_json, |c, v| c.overlay.write_now_playing_json = v, cx)),
+        row(
+            "Write nowplaying.json",
+            checkbox("np-json", c.overlay.write_now_playing_json, |c, v| c.overlay.write_now_playing_json = v, cx),
+        ),
     ];
 
     // Streamer mode
@@ -549,11 +547,16 @@ rich(&[
     let about: Vec<AnyElement> = vec![
         row(
             "Bard",
-            mono(theme::S2).flex().items_baseline().child(this.ui.version.clone()).child(
-                div().ml_2().text_size(theme::S1).text_color(theme::muted()).child(this.ui.commit.clone()),
-            ),
+            mono(theme::S2)
+                .flex()
+                .items_baseline()
+                .child(this.ui.version.clone())
+                .child(div().ml_2().text_size(theme::S1).text_color(theme::muted()).child(this.ui.commit.clone())),
         ),
-        row("Runtime", mono(theme::S1).text_color(theme::muted()).child(format!("GPUI · Rust · {}", std::env::consts::ARCH))),
+        row(
+            "Runtime",
+            mono(theme::S1).text_color(theme::muted()).child(format!("GPUI · Rust · {}", std::env::consts::ARCH)),
+        ),
         p("Quote these when reporting a problem.").into_any_element(),
     ];
 
@@ -572,11 +575,14 @@ rich(&[
             // The sheet hides the window's own focus target from the pointer,
             // so a click on it that no field took hands focus back here: a
             // field being edited blurs (and commits), as in the browser.
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                if !window.default_prevented() {
-                    window.focus(&this.focus, cx);
-                }
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    if !window.default_prevented() {
+                        window.focus(&this.focus, cx);
+                    }
+                }),
+            )
             .on_click(cx.listener(|this, _, _, cx| {
                 if this.ui.open_select.take().is_some() {
                     cx.notify();
@@ -615,32 +621,38 @@ rich(&[
                     ),
             )
             .child(
-                div().relative().flex_1().min_h_0().flex().flex_col().child(
-                    div()
-                        .id("settings-body")
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_y_scroll()
-                        .track_scroll(&this.settings_scroll)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(28.))
-                                .px_5()
-                                .pr(px(20. + super::library::SCROLLBAR_W))
-                                .py_5()
-                                .child(group("Library", library))
-                                .child(group("Audio", audio))
-                                .child(group("Playback", playback))
-                                .child(group("Shortcuts & window", window_group))
-                                .child(group("Files", files))
-                                .child(group("Overlay", overlay))
-                                .child(group("Streamer mode", streamer))
-                                .child(group("About", about)),
-                        ),
-                )
-                .child(super::scrollbar(this.settings_scroll.clone(), cx.entity())),
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .id("settings-body")
+                            .flex_1()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .track_scroll(&this.settings_scroll)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap(px(28.))
+                                    .px_5()
+                                    .pr(px(20. + super::library::SCROLLBAR_W))
+                                    .py_5()
+                                    .child(group("Library", library))
+                                    .child(group("Audio", audio))
+                                    .child(group("Playback", playback))
+                                    .child(group("Shortcuts & window", window_group))
+                                    .child(group("Files", files))
+                                    .child(group("Overlay", overlay))
+                                    .child(group("Streamer mode", streamer))
+                                    .child(group("About", about)),
+                            ),
+                    )
+                    .child(super::scrollbar(this.settings_scroll.clone(), cx.entity())),
             ),
     )
 }

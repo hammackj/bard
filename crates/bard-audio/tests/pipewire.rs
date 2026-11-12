@@ -30,9 +30,7 @@ fn props(o: &Value) -> &Value {
 /// node.names of the sinks our node is linked to, and our node's target.object.
 fn routing(node_name: &str) -> Option<(Vec<String>, Option<String>)> {
     let objs = dump();
-    let node = objs
-        .iter()
-        .find(|o| o["type"] == "PipeWire:Interface:Node" && props(o)["node.name"] == node_name)?;
+    let node = objs.iter().find(|o| o["type"] == "PipeWire:Interface:Node" && props(o)["node.name"] == node_name)?;
     let id = node["id"].as_u64()?;
     let target = props(node)["target.object"].as_str().map(str::to_string);
     let mut sinks: Vec<String> = objs
@@ -51,9 +49,8 @@ fn routing(node_name: &str) -> Option<(Vec<String>, Option<String>)> {
 
 fn default_sink() -> Option<String> {
     let objs = dump();
-    let meta = objs
-        .iter()
-        .find(|o| o["type"] == "PipeWire:Interface:Metadata" && o["props"]["metadata.name"] == "default")?;
+    let meta =
+        objs.iter().find(|o| o["type"] == "PipeWire:Interface:Metadata" && o["props"]["metadata.name"] == "default")?;
     let entry = meta["metadata"].as_array()?.iter().find(|m| m["key"] == "default.audio.sink")?;
     entry["value"]["name"].as_str().map(str::to_string)
 }

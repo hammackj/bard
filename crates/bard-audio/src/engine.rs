@@ -404,13 +404,8 @@ impl Engine {
                 return;
             }
             let src = self.source.as_mut().expect("wants_decode");
-            let mut chunk = Chunk {
-                epoch,
-                pos: src.position(),
-                frames: 0,
-                eof: false,
-                data: [0.0; CHUNK_FRAMES * CHANNELS],
-            };
+            let mut chunk =
+                Chunk { epoch, pos: src.position(), frames: 0, eof: false, data: [0.0; CHUNK_FRAMES * CHANNELS] };
             match src.fill(&mut chunk.data) {
                 Ok(n) => {
                     chunk.frames = n as u32;

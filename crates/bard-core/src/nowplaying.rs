@@ -78,9 +78,7 @@ impl NowPlayingState {
             // else reading it. None when nothing is bound: there is no server
             // to serve the art.
             art_url: match (track, self.overlay_port) {
-                (Some(t), Some(port)) if t.has_artwork => {
-                    Some(format!("http://127.0.0.1:{port}/art/{}", t.id))
-                }
+                (Some(t), Some(port)) if t.has_artwork => Some(format!("http://127.0.0.1:{port}/art/{}", t.id)),
                 _ => None,
             },
             queue_length: self.queue_length,

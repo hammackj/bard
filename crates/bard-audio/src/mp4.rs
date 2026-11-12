@@ -127,8 +127,7 @@ fn parse_moov(moov: &[u8]) -> Option<Edit> {
             if media < 0 {
                 continue;
             }
-            let duration_secs =
-                (seg > 0 && movie_scale > 0).then(|| seg as f64 / movie_scale as f64);
+            let duration_secs = (seg > 0 && movie_scale > 0).then(|| seg as f64 / movie_scale as f64);
             return Some(Edit { media_start: media, duration_secs });
         }
         return None;

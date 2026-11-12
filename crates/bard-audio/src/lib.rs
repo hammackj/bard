@@ -56,9 +56,9 @@ mod pw;
 mod render;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -76,7 +76,12 @@ pub enum PlayerEvent {
     /// track most recently passed to [`Player::play`] for the length of a
     /// crossfade's fade-out, which is the point: it lets the app tell "this
     /// is my current track" from "this is the tail of the one before".
-    Progress { position: f64, duration: f64, playing: bool, track_id: Option<String> },
+    Progress {
+        position: f64,
+        duration: f64,
+        playing: bool,
+        track_id: Option<String>,
+    },
     /// The loaded track played to its end. Preceded by a final
     /// `Progress { playing: false, .. }`.
     Ended,
@@ -184,13 +189,7 @@ impl Player {
             .spawn(move || engine.run(cmd_rx))
             .context("spawning the audio engine thread")?;
 
-        let inner = Inner {
-            cmd: cmd_tx,
-            shared,
-            analyser,
-            events: ev_tx,
-            engine: Some(thread),
-        };
+        let inner = Inner { cmd: cmd_tx, shared, analyser, events: ev_tx, engine: Some(thread) };
         Ok((Player { inner: Arc::new(inner) }, ev_rx))
     }
 
@@ -215,7 +214,11 @@ impl Player {
             return false;
         }
         let was = self.inner.shared.playing.load(Ordering::Relaxed);
-        if was { self.pause() } else { self.resume() }
+        if was {
+            self.pause()
+        } else {
+            self.resume()
+        }
         !was
     }
 

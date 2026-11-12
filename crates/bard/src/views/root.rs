@@ -58,7 +58,10 @@ pub enum Drag {
     Volume,
     Crossfade,
     /// A scrollbar thumb, grabbed `grab` pixels below its top.
-    Scroll { handle: ScrollHandle, grab: f32 },
+    Scroll {
+        handle: ScrollHandle,
+        grab: f32,
+    },
 }
 
 struct Layers {
@@ -133,7 +136,9 @@ impl BardWindow {
 
         // Escape in a settings field closes Settings, as it did in Electron,
         // and hands focus back to the window so shortcuts work again.
-        for field in [&fields.avoid_repeat, &fields.fill_count, &fields.popup_seconds, &fields.obs_url, &fields.obs_password] {
+        for field in
+            [&fields.avoid_repeat, &fields.fill_count, &fields.popup_seconds, &fields.obs_url, &fields.obs_password]
+        {
             cx.subscribe_in(field, window, |this, _, ev, window, cx| {
                 if *ev == InputEvent::Cancel {
                     this.ui.settings_open = false;
@@ -147,19 +152,20 @@ impl BardWindow {
 
         // Number fields commit on blur, as `NumberRow` did: a value that is
         // not a whole number >= 0 is dropped rather than saved.
-        let number = |cx: &mut Context<Self>, field: &Entity<TextInput>, set: fn(&mut bard_core::types::Config, u32)| {
-            cx.subscribe(field, move |this, input, ev, cx| {
-                if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
-                    if let Ok(v) = input.read(cx).text().trim().parse::<f64>() {
-                        if v.is_finite() && v >= 0. {
-                            let v = v.floor() as u32;
-                            this.ui.backend.update_config(Box::new(move |c| set(c, v)));
+        let number =
+            |cx: &mut Context<Self>, field: &Entity<TextInput>, set: fn(&mut bard_core::types::Config, u32)| {
+                cx.subscribe(field, move |this, input, ev, cx| {
+                    if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
+                        if let Ok(v) = input.read(cx).text().trim().parse::<f64>() {
+                            if v.is_finite() && v >= 0. {
+                                let v = v.floor() as u32;
+                                this.ui.backend.update_config(Box::new(move |c| set(c, v)));
+                            }
                         }
                     }
-                }
-            })
-            .detach();
-        };
+                })
+                .detach();
+            };
         number(cx, &fields.avoid_repeat, |c, v| c.playback.avoid_repeat = v);
         number(cx, &fields.fill_count, |c, v| c.playback.fill_count = v);
         number(cx, &fields.popup_seconds, |c, v| c.window.tray_popup_seconds = v);
@@ -181,7 +187,7 @@ impl BardWindow {
                     return;
                 }
                 input.update(cx, |i, cx| i.set_text("", cx));
-this.ui.backend.set_obs_password(&value);
+                this.ui.backend.set_obs_password(&value);
                 this.ui.obs_message = None;
                 cx.notify();
             }
@@ -340,20 +346,13 @@ this.ui.backend.set_obs_password(&value);
 
     /// Where playback is now, between the engine's progress reports.
     fn position_now(&self) -> f64 {
-        if self.ui.playing {
-            self.ui.position + self.ui.position_at.elapsed().as_secs_f64()
-        } else {
-            self.ui.position
-        }
+        if self.ui.playing { self.ui.position + self.ui.position_at.elapsed().as_secs_f64() } else { self.ui.position }
     }
 
     fn layers(&mut self, window: &Window) -> &Layers {
         let size = window.viewport_size();
         let scale = window.scale_factor();
-        let key = (
-            (f32::from(size.width) * scale).round() as u32,
-            (f32::from(size.height) * scale).round() as u32,
-        );
+        let key = ((f32::from(size.width) * scale).round() as u32, (f32::from(size.height) * scale).round() as u32);
         if self.layers.as_ref().map(|(k, _)| *k) != Some(key) {
             let layers = Layers {
                 glow: backdrop::glow(key.0, key.1),
@@ -414,11 +413,7 @@ impl BardWindow {
 }
 
 fn full(img: Arc<RenderImage>) -> Img {
-    gpui::img(ImageSource::Render(img))
-        .absolute()
-        .inset_0()
-        .size_full()
-        .object_fit(ObjectFit::Fill)
+    gpui::img(ImageSource::Render(img)).absolute().inset_0().size_full().object_fit(ObjectFit::Fill)
 }
 
 impl Render for BardWindow {
@@ -454,9 +449,7 @@ impl Render for BardWindow {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .when(self.ui.library_open, |el| {
-                        el.child(library::pane(self, window, cx))
-                    })
+                    .when(self.ui.library_open, |el| el.child(library::pane(self, window, cx)))
                     .child(
                         div()
                             .flex_1()
@@ -493,10 +486,14 @@ impl BardWindow {
             .px_3()
             .border_b_1()
             .border_color(theme::edge())
-            .child(dock_toggle("dock-left", ui.library_open, cx.listener(|this, _, _, cx| {
-                this.ui.library_open = !this.ui.library_open;
-                cx.notify();
-            })))
+            .child(dock_toggle(
+                "dock-left",
+                ui.library_open,
+                cx.listener(|this, _, _, cx| {
+                    this.ui.library_open = !this.ui.library_open;
+                    cx.notify();
+                }),
+            ))
             .child(
                 div()
                     .font_family(fonts::TRACK18)
@@ -544,16 +541,10 @@ impl BardWindow {
                     .child(icon("shield", 14., theme::green()))
                     .child(super::section_label(what)),
             )
-            .child(truncate(
-                div()
-                    .flex_1()
-                    .text_size(theme::S1)
-                    .text_color(theme::muted())
-                    .child(
-                        "Only albums marked safe for Content ID will play — untested and claimed \
+            .child(truncate(div().flex_1().text_size(theme::S1).text_color(theme::muted()).child(
+                "Only albums marked safe for Content ID will play — untested and claimed \
                          albums are blocked, including ones you pick yourself.",
-                    ),
-            ))
+            )))
             .child(
                 div()
                     .id("streamer-off")

@@ -73,7 +73,11 @@ mod tests {
     fn reads_the_salt_from_preferences() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(salt(dir.path()), None);
-        std::fs::write(dir.path().join("Preferences"), format!(r#"{{"electron":{{"media":{{"device_id_salt":"{SALT}"}}}}}}"#)).unwrap();
+        std::fs::write(
+            dir.path().join("Preferences"),
+            format!(r#"{{"electron":{{"media":{{"device_id_salt":"{SALT}"}}}}}}"#),
+        )
+        .unwrap();
         assert_eq!(salt(dir.path()).as_deref(), Some(SALT));
     }
 }

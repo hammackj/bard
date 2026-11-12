@@ -64,8 +64,7 @@ impl Bard {
                 // "off" while the mode was enforcing.
                 self.write_config(next);
                 self.emit(CoreEvent::Notice(
-                    "OBS went live \u{2014} streamer mode armed: only albums marked safe will play"
-                        .into(),
+                    "OBS went live \u{2014} streamer mode armed: only albums marked safe will play".into(),
                 ));
                 self.refresh_streamer_mode();
             }

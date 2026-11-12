@@ -18,8 +18,8 @@ use crate::AppControls;
 use bard_core::types::{NowPlaying, QueueItem};
 use mpris_server::zbus::{self, fdo};
 use mpris_server::{
-    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Property, RootInterface, Server, Signal,
-    Time, TrackId, Volume,
+    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Property, RootInterface, Server, Signal, Time,
+    TrackId, Volume,
 };
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -60,10 +60,7 @@ impl MprisTrack {
             album: t.album.clone(),
             path: t.path.clone(),
             duration_sec: t.duration_sec,
-            art: t
-                .has_artwork
-                .then(|| bard_core::artwork::artwork_path(artwork_dir, &t.id))
-                .flatten(),
+            art: t.has_artwork.then(|| bard_core::artwork::artwork_path(artwork_dir, &t.id)).flatten(),
         }
     }
 }
@@ -125,10 +122,7 @@ impl PlayerState {
     }
 
     pub fn track_id(&self) -> TrackId {
-        self.track
-            .as_ref()
-            .and_then(|t| track_id(&t.id))
-            .unwrap_or(TrackId::NO_TRACK)
+        self.track.as_ref().and_then(|t| track_id(&t.id)).unwrap_or(TrackId::NO_TRACK)
     }
 
     pub fn metadata(&self) -> Metadata {
@@ -444,11 +438,7 @@ impl Mpris {
     /// Registers `org.mpris.MediaPlayer2.<suffix>`, falling back to
     /// `<suffix>.instance<pid>` when the name is taken (a second copy, or a
     /// test), as the spec allows.
-    pub async fn start(
-        suffix: &str,
-        initial: PlayerState,
-        controls: Arc<dyn AppControls>,
-    ) -> zbus::Result<Mpris> {
+    pub async fn start(suffix: &str, initial: PlayerState, controls: Arc<dyn AppControls>) -> zbus::Result<Mpris> {
         let state = Arc::new(Mutex::new(initial));
         let imp = || Imp { state: state.clone(), controls: controls.clone() };
         let server = match Server::new(suffix, imp()).await {

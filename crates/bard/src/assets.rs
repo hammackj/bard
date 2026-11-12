@@ -15,9 +15,25 @@ macro_rules! icons {
 }
 
 const FILES: &[(&str, &[u8])] = icons![
-    "dock-left-open", "dock-left-closed", "dock-right-open", "dock-right-closed",
-    "prev", "play", "pause", "skip", "volume", "repeat", "endless", "moon",
-    "heart", "heart-filled", "shield", "avatar", "placeholder", "chevron", "check",
+    "dock-left-open",
+    "dock-left-closed",
+    "dock-right-open",
+    "dock-right-closed",
+    "prev",
+    "play",
+    "pause",
+    "skip",
+    "volume",
+    "repeat",
+    "endless",
+    "moon",
+    "heart",
+    "heart-filled",
+    "shield",
+    "avatar",
+    "placeholder",
+    "chevron",
+    "check",
 ];
 
 pub fn bytes(path: &str) -> Option<&'static [u8]> {
@@ -30,10 +46,6 @@ impl AssetSource for Assets {
     }
 
     fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
-        Ok(FILES
-            .iter()
-            .filter(|(p, _)| p.starts_with(path))
-            .map(|(p, _)| SharedString::from(*p))
-            .collect())
+        Ok(FILES.iter().filter(|(p, _)| p.starts_with(path)).map(|(p, _)| SharedString::from(*p)).collect())
     }
 }

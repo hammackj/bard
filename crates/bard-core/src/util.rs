@@ -8,10 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Epoch milliseconds, as `Date.now()`.
 pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 /// `new Date(ms).toISOString()`: `2026-11-12T03:14:50.280Z`.
@@ -30,12 +27,7 @@ pub fn iso8601(ms: i64) -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{millis:03}Z",
-        sod / 3600,
-        (sod / 60) % 60,
-        sod % 60
-    )
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.{millis:03}Z", sod / 3600, (sod / 60) % 60, sod % 60)
 }
 
 /// How a store's file is indented, matching what the Electron build wrote.

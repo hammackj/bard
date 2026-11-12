@@ -7,10 +7,7 @@
 //! the audio engine directly, which is what lets the snapshot tool render the
 //! real views from fixture data.
 
-use bard_core::types::{
-    AlbumFlags, Config, ContentIdStatus, QueueItem, ScanProgress, StatsMap, StreamerSource,
-    Track,
-};
+use bard_core::types::{AlbumFlags, Config, ContentIdStatus, QueueItem, ScanProgress, StatsMap, StreamerSource, Track};
 use gpui::RenderImage;
 use std::collections::HashMap;
 use std::path::PathBuf;

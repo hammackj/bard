@@ -86,12 +86,9 @@ impl StringState {
                 point(x, y)
             })
             .collect();
-        let progress = if sample.duration > 0. {
-            (self.shown / sample.duration).clamp(0., 1.) as f32
-        } else {
-            0.
-        };
-        let animating = sample.playing || self.amp.abs() > 0.01 || (self.shown - predict(&sample, now_ms)).abs() > 0.001;
+        let progress = if sample.duration > 0. { (self.shown / sample.duration).clamp(0., 1.) as f32 } else { 0. };
+        let animating =
+            sample.playing || self.amp.abs() > 0.01 || (self.shown - predict(&sample, now_ms)).abs() > 0.001;
         (Frame { points, progress }, animating)
     }
 }
@@ -107,10 +104,10 @@ fn stroke(points: &[Point<Pixels>], width: f32) -> Option<Path<Pixels>> {
 
 /// An ellipse, near enough: a quad rounded by its narrower half-axis.
 fn dot(window: &mut Window, c: Point<Pixels>, rx: f32, ry: f32, color: Hsla) {
-    window.paint_quad(fill(
-        Bounds::new(point(c.x - px(rx), c.y - px(ry)), size(px(rx * 2.), px(ry * 2.))),
-        color,
-    ).corner_radii(px(rx.min(ry))));
+    window.paint_quad(
+        fill(Bounds::new(point(c.x - px(rx), c.y - px(ry)), size(px(rx * 2.), px(ry * 2.))), color)
+            .corner_radii(px(rx.min(ry))),
+    );
 }
 
 /// The string itself, `h-11` (44px) by the full width.
@@ -119,11 +116,8 @@ pub fn element(frame: Frame) -> impl IntoElement {
         move |_, _, _| frame,
         |bounds, frame, window, _| {
             let w = f32::from(bounds.size.width);
-            let pts: Vec<Point<Pixels>> = frame
-                .points
-                .iter()
-                .map(|p| point(bounds.origin.x + px(p.x * w), bounds.origin.y + px(p.y)))
-                .collect();
+            let pts: Vec<Point<Pixels>> =
+                frame.points.iter().map(|p| point(bounds.origin.x + px(p.x * w), bounds.origin.y + px(p.y))).collect();
 
             // Ahead of the playhead: edge-coloured, 1.25px.
             if let Some(path) = stroke(&pts, 1.25) {
@@ -131,7 +125,10 @@ pub fn element(frame: Frame) -> impl IntoElement {
             }
 
             // Played: cyan, 1.5px, with drop-shadow(0 0 4px rgba(34,211,238,.45)).
-            let played = Bounds::new(bounds.origin - point(px(0.), px(8.)), size(px(frame.progress * w), bounds.size.height + px(16.)));
+            let played = Bounds::new(
+                bounds.origin - point(px(0.), px(8.)),
+                size(px(frame.progress * w), bounds.size.height + px(16.)),
+            );
             window.with_content_mask(Some(ContentMask { bounds: played }), |window| {
                 for (width, alpha) in [(6.0, 0.035), (3.5, 0.07)] {
                     if let Some(path) = stroke(&pts, width) {

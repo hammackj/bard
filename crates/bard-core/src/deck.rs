@@ -77,12 +77,7 @@ fn spread(order: &[String], rng: Rng) -> Vec<String> {
     out.into_iter().flatten().collect()
 }
 
-pub fn new_deck(
-    ids: &[String],
-    rng: Rng,
-    avoid_first: Option<&str>,
-    weight_of: Option<WeightOf>,
-) -> Deck {
+pub fn new_deck(ids: &[String], rng: Rng, avoid_first: Option<&str>, weight_of: Option<WeightOf>) -> Deck {
     let mut remaining = if weight_of.is_some() {
         let expanded = shuffled(&expand(ids, weight_of), rng);
         spread(&expanded, rng)

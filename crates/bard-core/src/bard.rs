@@ -11,8 +11,8 @@ use crate::stores::{self, Albums, Loved, Stats};
 use crate::types::*;
 use crate::util::now_ms;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 /// Everything the core tells the rest of the app.
@@ -480,9 +480,7 @@ impl LibraryScanner {
         library::scan(&self.roots, &self.artwork_dir, &|p: ScanProgress| {
             let mut last = last.lock().unwrap_or_else(|e| e.into_inner());
             let now = Instant::now();
-            if p.scanned != p.total
-                && last.is_some_and(|l| now.duration_since(l) < Duration::from_millis(100))
-            {
+            if p.scanned != p.total && last.is_some_and(|l| now.duration_since(l) < Duration::from_millis(100)) {
                 return;
             }
             *last = Some(now);

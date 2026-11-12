@@ -88,7 +88,9 @@ pub fn auth_string(password: &str, salt: &str, challenge: &str) -> String {
 pub enum Step {
     /// Hello: send Identify. `auth` is the (salt, challenge) when the server
     /// wants a password.
-    Identify { auth: Option<(String, String)> },
+    Identify {
+        auth: Option<(String, String)>,
+    },
     /// Identified: ask whether we are already live.
     Identified,
     /// An output went live (event) or already was (status reply).
@@ -102,9 +104,9 @@ pub fn step(raw: &str) -> Step {
     match msg["op"].as_u64() {
         // Hello -> Identify.
         Some(0) => {
-            let auth = d.get("authentication").and_then(|a| {
-                Some((a["salt"].as_str()?.to_owned(), a["challenge"].as_str()?.to_owned()))
-            });
+            let auth = d
+                .get("authentication")
+                .and_then(|a| Some((a["salt"].as_str()?.to_owned(), a["challenge"].as_str()?.to_owned())));
             Step::Identify { auth }
         }
         Some(2) => Step::Identified,
@@ -112,9 +114,7 @@ pub fn step(raw: &str) -> Step {
         Some(5) => {
             let ty = d["eventType"].as_str().unwrap_or_default();
             match live_event(ty) {
-                Some(src) if d["eventData"]["outputActive"] == Value::Bool(true) => {
-                    Step::Live(src, ty.to_owned())
-                }
+                Some(src) if d["eventData"]["outputActive"] == Value::Bool(true) => Step::Live(src, ty.to_owned()),
                 _ => Step::Ignore,
             }
         }
@@ -123,9 +123,7 @@ pub fn step(raw: &str) -> Step {
         Some(7) => {
             let id = d["requestId"].as_str().unwrap_or_default();
             match live_request(id) {
-                Some(src) if d["responseData"]["outputActive"] == Value::Bool(true) => {
-                    Step::Live(src, id.to_owned())
-                }
+                Some(src) if d["responseData"]["outputActive"] == Value::Bool(true) => Step::Live(src, id.to_owned()),
                 _ => Step::Ignore,
             }
         }
@@ -214,9 +212,7 @@ async fn connection<H: ObsHandler>(url: &str, h: &H, retry: &mut usize, told_use
         // wrong port. Reported once, never repeatedly.
         if !*told {
             *told = true;
-            h.status(format!(
-                "Could not reach OBS at {url} \u{2014} streamer mode will not arm itself"
-            ));
+            h.status(format!("Could not reach OBS at {url} \u{2014} streamer mode will not arm itself"));
         }
     };
 
@@ -242,10 +238,7 @@ async fn connection<H: ObsHandler>(url: &str, h: &H, retry: &mut usize, told_use
                 let code = frame.as_ref().map(|f| u16::from(f.code));
                 debug(|| format!("closed {code:?}"));
                 if code == Some(AUTH_FAILED) {
-                    h.status(
-                        "OBS rejected the password for its WebSocket server \u{2014} check it in Settings"
-                            .into(),
-                    );
+                    h.status("OBS rejected the password for its WebSocket server \u{2014} check it in Settings".into());
                     return End::Stop;
                 }
                 return End::Retry;
@@ -264,8 +257,7 @@ async fn connection<H: ObsHandler>(url: &str, h: &H, retry: &mut usize, told_use
                         let password = h.password().await;
                         if password.is_empty() {
                             h.status(
-                                "OBS needs a password for its WebSocket server \u{2014} set one in Settings"
-                                    .into(),
+                                "OBS needs a password for its WebSocket server \u{2014} set one in Settings".into(),
                             );
                             return End::Stop;
                         }

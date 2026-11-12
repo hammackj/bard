@@ -102,11 +102,7 @@ fn private_bus() -> Option<Bus> {
 }
 
 fn busctl(bus: &Bus, args: &[&str]) -> String {
-    let out = Command::new("busctl")
-        .arg(format!("--address={}", bus.address))
-        .args(args)
-        .output()
-        .expect("busctl");
+    let out = Command::new("busctl").arg(format!("--address={}", bus.address)).args(args).output().expect("busctl");
     assert!(out.status.success(), "busctl {args:?}: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).unwrap()
 }

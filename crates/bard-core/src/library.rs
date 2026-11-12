@@ -55,9 +55,7 @@ pub fn find_audio_files<S: AsRef<str>>(roots: &[S]) -> Vec<PathBuf> {
     for root in roots {
         let root = resolve(root.as_ref());
         let walker = walkdir::WalkDir::new(&root).follow_links(false).into_iter();
-        let entries = walker.filter_entry(|e| {
-            e.depth() == 0 || !e.file_name().as_bytes().starts_with(b".")
-        });
+        let entries = walker.filter_entry(|e| e.depth() == 0 || !e.file_name().as_bytes().starts_with(b"."));
         for entry in entries.flatten() {
             if !entry.file_type().is_file() {
                 continue;
@@ -81,11 +79,7 @@ pub fn find_audio_files<S: AsRef<str>>(roots: &[S]) -> Vec<PathBuf> {
 /// Blocking. Parses on [`PARSE_CONCURRENCY`] threads pulling from a shared
 /// cursor; `on_progress` is called once per file, serialised, with `scanned`
 /// counting up to `total`. The result is in album order (path order).
-pub fn scan<S: AsRef<str>>(
-    roots: &[S],
-    artwork_dir: &Path,
-    on_progress: &(dyn Fn(ScanProgress) + Sync),
-) -> Vec<Track> {
+pub fn scan<S: AsRef<str>>(roots: &[S], artwork_dir: &Path, on_progress: &(dyn Fn(ScanProgress) + Sync)) -> Vec<Track> {
     let _ = std::fs::create_dir_all(artwork_dir);
     let files = find_audio_files(roots);
     let total = files.len();
@@ -130,9 +124,7 @@ pub fn read_track(path: &Path, artwork_dir: &Path) -> Track {
     let cached = artwork::has_artwork(artwork_dir, &id);
 
     let parsed = Probe::open(path)
-        .and_then(|p| {
-            Ok(p.options(ParseOptions::new().read_cover_art(!cached)).guess_file_type()?)
-        })
+        .and_then(|p| Ok(p.options(ParseOptions::new().read_cover_art(!cached)).guess_file_type()?))
         .and_then(|p| p.read());
     let Ok(file) = parsed else {
         return Track {
@@ -155,24 +147,18 @@ pub fn read_track(path: &Path, artwork_dir: &Path) -> Track {
     let primary = file.primary_tag_type();
     let mut tags: Vec<&Tag> = file.tags().iter().collect();
     tags.sort_by_key(|t| t.tag_type() != primary);
-    let get = |key: ItemKey| -> Option<String> {
-        tags.iter().find_map(|t| clean(t.get_string(key)))
-    };
+    let get = |key: ItemKey| -> Option<String> { tags.iter().find_map(|t| clean(t.get_string(key))) };
 
     let mut has_artwork = cached;
-    if !has_artwork
-        && let Some(pic) = tags.iter().find_map(|t| t.pictures().first())
-    {
+    if !has_artwork && let Some(pic) = tags.iter().find_map(|t| t.pictures().first()) {
         has_artwork = artwork::save_artwork(artwork_dir, &id, pic.data());
     }
 
     let title = get(ItemKey::TrackTitle).unwrap_or(stem);
-    let artist = get(ItemKey::TrackArtist)
-        .or_else(|| get(ItemKey::AlbumArtist))
-        .unwrap_or_else(|| "Unknown Artist".into());
+    let artist =
+        get(ItemKey::TrackArtist).or_else(|| get(ItemKey::AlbumArtist)).unwrap_or_else(|| "Unknown Artist".into());
     let album = get(ItemKey::AlbumTitle).unwrap_or_else(|| "Unknown Album".into());
-    let duration_sec =
-        flac_duration(path).unwrap_or_else(|| file.properties().duration().as_secs_f64());
+    let duration_sec = flac_duration(path).unwrap_or_else(|| file.properties().duration().as_secs_f64());
 
     Track {
         search_text: search_text_for(&title, &artist, &album),

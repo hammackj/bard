@@ -51,12 +51,7 @@ pub(crate) struct Debounced<T> {
 
 impl<T: Serialize + Send + 'static> Debounced<T> {
     pub fn new(path: PathBuf, data: T, delay: Duration, indent: Indent) -> Self {
-        Debounced {
-            inner: Arc::new(Mutex::new(Inner { data, dirty: false, timer: false })),
-            path,
-            delay,
-            indent,
-        }
+        Debounced { inner: Arc::new(Mutex::new(Inner { data, dirty: false, timer: false })), path, delay, indent }
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner<T>> {
@@ -97,9 +92,7 @@ fn flush_locked<T: Serialize>(g: &mut Inner<T>, path: &Path, indent: Indent) {
         return;
     }
     g.dirty = false;
-    let ok = to_js_json(&g.data, indent)
-        .map_err(std::io::Error::other)
-        .and_then(|body| write_atomic(path, &body));
+    let ok = to_js_json(&g.data, indent).map_err(std::io::Error::other).and_then(|body| write_atomic(path, &body));
     if ok.is_err() {
         // Losing counts or flags must never interrupt playback; try again on
         // the next write.
@@ -181,8 +174,7 @@ pub(crate) struct Albums(Debounced<AlbumsFile>);
 impl Albums {
     pub fn load(path: PathBuf, delay: Duration) -> Self {
         // Absent or unreadable: everything is simply untested.
-        let data = read_json::<AlbumsFile>(&path)
-            .unwrap_or(AlbumsFile { version: 1, albums: AlbumFlags::new() });
+        let data = read_json::<AlbumsFile>(&path).unwrap_or(AlbumsFile { version: 1, albums: AlbumFlags::new() });
         Albums(Debounced::new(path, data, delay, Indent::Two))
     }
 
@@ -198,11 +190,7 @@ impl Albums {
     /// note is removed outright rather than stored as a no-op entry.
     pub fn set(&self, album: &str, status: ContentIdStatus, note: Option<&str>, now: i64) -> AlbumFlag {
         let note = note.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
-        let flag = AlbumFlag {
-            status,
-            checked_at: (status != ContentIdStatus::Untested).then_some(now),
-            note,
-        };
+        let flag = AlbumFlag { status, checked_at: (status != ContentIdStatus::Untested).then_some(now), note };
         self.0.update(|a| {
             if status == ContentIdStatus::Untested && flag.note.is_none() {
                 a.albums.remove(album);
@@ -216,11 +204,7 @@ impl Albums {
     /// Albums the user has marked as claimed.
     pub fn claimed(&self) -> std::collections::HashSet<String> {
         self.0.read(|a| {
-            a.albums
-                .iter()
-                .filter(|(_, f)| f.status == ContentIdStatus::Claimed)
-                .map(|(n, _)| n.clone())
-                .collect()
+            a.albums.iter().filter(|(_, f)| f.status == ContentIdStatus::Claimed).map(|(n, _)| n.clone()).collect()
         })
     }
 
@@ -353,10 +337,9 @@ mod tests {
 
     #[test]
     fn real_install_shapes_parse() {
-        let a: AlbumsFile = serde_json::from_str(
-            r#"{"version":1,"albums":{"Rain":{"status":"safe","checkedAt":1786252986373}}}"#,
-        )
-        .unwrap();
+        let a: AlbumsFile =
+            serde_json::from_str(r#"{"version":1,"albums":{"Rain":{"status":"safe","checkedAt":1786252986373}}}"#)
+                .unwrap();
         assert_eq!(a.albums["Rain"].status, ContentIdStatus::Safe);
         let s: StatsFile = serde_json::from_str(
             r#"{"version":1,"tracks":{"50f36209b3904081":{"plays":79,"skips":24,"lastSkippedAt":1786252001477,"lastPlayedAt":1794339303386}}}"#,

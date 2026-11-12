@@ -182,10 +182,7 @@ fn run(
                     return;
                 }
                 let Some(id) = props.get("node.name") else { return };
-                let name = props
-                    .get("node.description")
-                    .or_else(|| props.get("node.nick"))
-                    .unwrap_or(id);
+                let name = props.get("node.description").or_else(|| props.get("node.nick")).unwrap_or(id);
                 sinks.borrow_mut().insert(g.id, OutputDevice { id: id.to_string(), name: name.to_string() });
                 publish();
             }

@@ -77,83 +77,90 @@ impl Render for Popup {
         };
         let cover = self.track_id.clone().and_then(|id| self.covers.cover(&id));
         let pct = if np.duration_sec > 0. { (np.position_sec / np.duration_sec).clamp(0., 1.) as f32 } else { 0. };
-        let album = [np.album.clone(), if np.queue_length > 0 { format!("{} queued", np.queue_length) } else { String::new() }]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" · ");
+        let album =
+            [np.album.clone(), if np.queue_length > 0 { format!("{} queued", np.queue_length) } else { String::new() }]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(" · ");
         let inner_w = CARD_W - 18. * 2. - 1. - 2.;
-
 
         // `border-left: 2px solid cyan-deep` over a 1px edge elsewhere. GPUI
         // borders take one colour, so the left edge is its own strip; it runs
         // the full height, as the CSS left border covers the corners.
         root.child(
             div().flex().w(px(CARD_W)).child(div().w(px(2.)).flex_none().bg(cyan_deep())).child(
-            div()
-                .flex_1()
-                .pt(px(16.))
-                .px(px(18.))
-                .pb(px(20.))
-                .bg(panel())
-                .border_t_1()
-                .border_r_1()
-                .border_b_1()
-                .border_color(edge())
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(16.))
-                        .child(match cover {
-                            Some(img) => gpui::img(ImageSource::Render(img))
-                                .size(px(84.))
-                                .flex_none()
-                                .object_fit(ObjectFit::Cover)
-                                .border_1()
-                                .border_color(edge())
-                                .bg(rgb(0x020617))
-                                .into_any_element(),
-                            None => div().into_any_element(),
-                        })
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(
-                                    tracked("NOW PLAYING", 10., 0.16)
-                                        .mb(px(6.))
-                                        .text_size(px(10.))
-                                        .line_height(relative(1.362))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(cyan()),
-                                )
-                                .child(
-                                    div()
-                                        .font_family(SERIF)
-                                        .text_size(px(22.))
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .line_height(relative(1.12))
-                                        .line_clamp(2)
-                                        .overflow_hidden()
-                                        .child(np.title.clone()),
-                                )
-                                .child(div().mt(px(4.)).text_size(px(14.)).line_height(relative(1.362)).child(np.artist.clone()))
-                                .when(!album.is_empty(), |el| {
-                                    el.child(div().mt(px(3.)).text_size(px(11.)).line_height(relative(1.362)).text_color(muted()).child(album))
-                                }),
-                        ),
-                )
-                .child(
-                    // .bar, with the fill's glow drawn as a soft wider strip.
-                    div()
-                        .mt(px(14.))
-                        .w(px(inner_w))
-                        .h(px(2.))
-                        .bg(edge())
-                        .relative()
-                        .child(
+                div()
+                    .flex_1()
+                    .pt(px(16.))
+                    .px(px(18.))
+                    .pb(px(20.))
+                    .bg(panel())
+                    .border_t_1()
+                    .border_r_1()
+                    .border_b_1()
+                    .border_color(edge())
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(16.))
+                            .child(match cover {
+                                Some(img) => gpui::img(ImageSource::Render(img))
+                                    .size(px(84.))
+                                    .flex_none()
+                                    .object_fit(ObjectFit::Cover)
+                                    .border_1()
+                                    .border_color(edge())
+                                    .bg(rgb(0x020617))
+                                    .into_any_element(),
+                                None => div().into_any_element(),
+                            })
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        tracked("NOW PLAYING", 10., 0.16)
+                                            .mb(px(6.))
+                                            .text_size(px(10.))
+                                            .line_height(relative(1.362))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .text_color(cyan()),
+                                    )
+                                    .child(
+                                        div()
+                                            .font_family(SERIF)
+                                            .text_size(px(22.))
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                            .line_height(relative(1.12))
+                                            .line_clamp(2)
+                                            .overflow_hidden()
+                                            .child(np.title.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .mt(px(4.))
+                                            .text_size(px(14.))
+                                            .line_height(relative(1.362))
+                                            .child(np.artist.clone()),
+                                    )
+                                    .when(!album.is_empty(), |el| {
+                                        el.child(
+                                            div()
+                                                .mt(px(3.))
+                                                .text_size(px(11.))
+                                                .line_height(relative(1.362))
+                                                .text_color(muted())
+                                                .child(album),
+                                        )
+                                    }),
+                            ),
+                    )
+                    .child(
+                        // .bar, with the fill's glow drawn as a soft wider strip.
+                        div().mt(px(14.)).w(px(inner_w)).h(px(2.)).bg(edge()).relative().child(
                             div()
                                 .absolute()
                                 .left_0()
@@ -171,21 +178,21 @@ impl Render for Popup {
                                     }])
                                 }),
                         ),
-                )
-                .child(
-                    div()
-                        .mt(px(6.))
-                        .flex()
-                        .justify_between()
-                        .font_family(MONO)
-                        .text_size(px(10.))
-                        // Chromium's line box for this row measures 2px taller
-                        // than Noto Sans Mono's own metrics give.
-                        .line_height(px(15.6))
-                        .text_color(muted())
-                        .child(fmt_time(np.position_sec))
-                        .child(fmt_time(np.duration_sec)),
-                ),
+                    )
+                    .child(
+                        div()
+                            .mt(px(6.))
+                            .flex()
+                            .justify_between()
+                            .font_family(MONO)
+                            .text_size(px(10.))
+                            // Chromium's line box for this row measures 2px taller
+                            // than Noto Sans Mono's own metrics give.
+                            .line_height(px(15.6))
+                            .text_color(muted())
+                            .child(fmt_time(np.position_sec))
+                            .child(fmt_time(np.duration_sec)),
+                    ),
             ),
         )
     }

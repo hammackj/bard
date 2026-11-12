@@ -1,8 +1,8 @@
 //! The layers over the window: the notice strip, the shortcut list, and the
 //! first-run invitation that replaces the player when there is no library.
 
-use super::root::BardWindow;
 use super::mono;
+use super::root::BardWindow;
 use crate::{fonts, theme};
 use gpui::*;
 
@@ -123,17 +123,10 @@ pub fn first_run(cx: &mut Context<BardWindow>) -> impl IntoElement {
                 .line_height(relative(1.25))
                 .child("Nothing to play yet"),
         )
-        .child(
-            div()
-                .max_w(px(448.))
-                .text_center()
-                .text_size(theme::S2)
-                .text_color(theme::muted())
-                .child(
-                    "Bard only plays files you point it at on this machine. Nothing is \
+        .child(div().max_w(px(448.)).text_center().text_size(theme::S2).text_color(theme::muted()).child(
+            "Bard only plays files you point it at on this machine. Nothing is \
                      downloaded, streamed, or sent anywhere.",
-                ),
-        )
+        ))
         .child(
             div()
                 .id("choose-folder")

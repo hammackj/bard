@@ -104,11 +104,9 @@ fn needs_rewrite(raw: &Value) -> bool {
 /// and only where the shape says an object belongs.
 fn prune(shape: &Value, value: &Value) -> Value {
     match (shape, value) {
-        (Value::Object(s), Value::Object(v)) => Value::Object(
-            s.iter()
-                .filter_map(|(k, sv)| v.get(k).map(|vv| (k.clone(), prune(sv, vv))))
-                .collect(),
-        ),
+        (Value::Object(s), Value::Object(v)) => {
+            Value::Object(s.iter().filter_map(|(k, sv)| v.get(k).map(|vv| (k.clone(), prune(sv, vv)))).collect())
+        }
         _ => value.clone(),
     }
 }

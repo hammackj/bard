@@ -45,10 +45,7 @@ impl Fixture {
         self.rx.try_iter().collect()
     }
     fn notices(&self) -> Vec<String> {
-        self.drain()
-            .into_iter()
-            .filter_map(|e| if let CoreEvent::Notice(n) = e { Some(n) } else { None })
-            .collect()
+        self.drain().into_iter().filter_map(|e| if let CoreEvent::Notice(n) = e { Some(n) } else { None }).collect()
     }
     fn dir(&self) -> &std::path::Path {
         self._dir.path()
@@ -81,12 +78,7 @@ fn playing(b: &Bard) -> Option<String> {
 }
 
 fn progress(b: &Bard, position: f64) -> PlaybackProgress {
-    PlaybackProgress {
-        position,
-        duration: 120.0,
-        playing: true,
-        track_id: b.now_playing().map(|n| n.track.id.clone()),
-    }
+    PlaybackProgress { position, duration: 120.0, playing: true, track_id: b.now_playing().map(|n| n.track.id.clone()) }
 }
 
 #[test]
@@ -441,9 +433,7 @@ fn obs_arming_names_its_source_and_tells_the_user() {
     let ev = f.drain();
     assert!(matches!(ev[0], CoreEvent::StreamerSource(Some(StreamerSource::Record))));
     assert!(ev.iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.streamer.enabled)));
-    assert!(ev.iter().any(
-        |e| matches!(e, CoreEvent::Notice(n) if n.starts_with("OBS went live"))
-    ));
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::Notice(n) if n.starts_with("OBS went live"))));
 
     // Already armed: the source is updated, nothing else said.
     f.bard.arm(Some(StreamerSource::Stream));
@@ -486,9 +476,7 @@ fn nowplaying_json_is_written_on_track_and_play_state_changes() {
     f.bard.set_overlay_port(Some(4748));
     f.bard.enqueue("g1");
     let path = f.dir().join("nowplaying.json");
-    let read = || -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
-    };
+    let read = || -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap() };
     let v = read();
     assert_eq!(v["title"], "Title g1");
     assert_eq!(v["artUrl"], "http://127.0.0.1:4748/art/g1");

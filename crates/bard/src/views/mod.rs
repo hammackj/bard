@@ -15,11 +15,7 @@ use gpui::*;
 
 /// A monochrome icon, tinted like `currentColor`.
 pub fn icon(name: &str, size: f32, color: impl Into<Hsla>) -> Svg {
-    svg()
-        .path(SharedString::from(format!("icons/{name}.svg")))
-        .size(px(size))
-        .flex_none()
-        .text_color(color)
+    svg().path(SharedString::from(format!("icons/{name}.svg"))).size(px(size)).flex_none().text_color(color)
 }
 
 /// An icon that takes `hover` while the pointer is over `group`, for
@@ -36,11 +32,7 @@ pub fn truncate<E: Styled>(el: E) -> E {
 
 /// An uppercase, tracked label: `text-s1 font-semibold tracking-[.13em] uppercase`.
 pub fn section_label(text: &str) -> Div {
-    div()
-        .font_family(fonts::TRACK13)
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_size(theme::S1)
-        .child(text.to_uppercase())
+    div().font_family(fonts::TRACK13).font_weight(FontWeight::SEMIBOLD).text_size(theme::S1).child(text.to_uppercase())
 }
 
 /// `.mono` at a given size.
@@ -52,10 +44,7 @@ pub fn mono(size: Pixels) -> Div {
 /// controls that turn a pointer position into a value (the string, the volume
 /// slider). Stored without a notify: it is read on the next input event, not
 /// rendered.
-pub fn record_bounds<T: 'static>(
-    entity: Entity<T>,
-    store: fn(&mut T, Bounds<Pixels>),
-) -> impl IntoElement {
+pub fn record_bounds<T: 'static>(entity: Entity<T>, store: fn(&mut T, Bounds<Pixels>)) -> impl IntoElement {
     canvas(
         move |bounds, _, cx| {
             entity.update(cx, |this, _| store(this, bounds));
@@ -113,7 +102,8 @@ pub fn scrollbar(handle: ScrollHandle, view: Entity<root::BardWindow>) -> impl I
             let Some((thumb_h, y)) = thumb(&handle) else { return };
             let view_bounds = handle.bounds();
             let x = view_bounds.origin.x + view_bounds.size.width - px(library::SCROLLBAR_W);
-            let outer = Bounds::new(point(x, view_bounds.origin.y + px(y)), size(px(library::SCROLLBAR_W), px(thumb_h)));
+            let outer =
+                Bounds::new(point(x, view_bounds.origin.y + px(y)), size(px(library::SCROLLBAR_W), px(thumb_h)));
             window.paint_quad(fill(outer, theme::ink()));
             let inner = Bounds::new(outer.origin + point(px(3.), px(3.)), size(px(3.), px(thumb_h - 6.)));
             window.paint_quad(fill(inner, theme::edge()));

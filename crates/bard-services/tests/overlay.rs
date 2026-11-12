@@ -80,7 +80,9 @@ fn serves_the_page_json_art_and_events() {
     assert_eq!(status, 200);
     assert!(head.contains("application/json"));
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    for key in ["title", "artist", "album", "durationSec", "positionSec", "isPlaying", "artUrl", "queueLength", "updatedAt"] {
+    for key in
+        ["title", "artist", "album", "durationSec", "positionSec", "isPlaying", "artUrl", "queueLength", "updatedAt"]
+    {
         assert!(v.get(key).is_some(), "{key} in {v}");
     }
     assert_eq!(v["durationSec"], serde_json::json!(0));

@@ -20,10 +20,7 @@ pub fn gain_db_for(track: &Track, mode: NormalizeMode) -> f64 {
     let (gain, peak) = match mode {
         NormalizeMode::Off => return 0.0,
         NormalizeMode::Track => (track.track_gain_db, track.track_peak),
-        NormalizeMode::Album => (
-            track.album_gain_db.or(track.track_gain_db),
-            track.album_peak.or(track.track_peak),
-        ),
+        NormalizeMode::Album => (track.album_gain_db.or(track.track_gain_db), track.album_peak.or(track.track_peak)),
     };
     let Some(gain) = gain.filter(|g| g.is_finite()) else { return 0.0 };
 

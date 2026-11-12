@@ -217,10 +217,8 @@ pub fn mark_migrated(data_dir: &Path) {
 }
 
 fn mark(marker: &PathBuf) {
-    let _ = std::fs::write(
-        marker,
-        "The OBS password in obs-password.bin was moved to the system keyring by Bard 0.2.\n",
-    );
+    let _ =
+        std::fs::write(marker, "The OBS password in obs-password.bin was moved to the system keyring by Bard 0.2.\n");
 }
 
 /// Decrypts a Chromium OSCrypt `v10` / `v11` blob with the given keyring
@@ -234,9 +232,7 @@ pub fn decrypt_safe_storage(blob: &[u8], secret: &[u8]) -> Option<String> {
     let key = pbkdf2::pbkdf2_hmac_array::<sha1::Sha1, 16>(secret, b"saltysalt", 1);
     let iv = [b' '; 16];
     let mut buf = body.to_vec();
-    let plain = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into())
-        .decrypt_padded::<Pkcs7>(&mut buf)
-        .ok()?;
+    let plain = cbc::Decryptor::<aes::Aes128>::new(&key.into(), &iv.into()).decrypt_padded::<Pkcs7>(&mut buf).ok()?;
     String::from_utf8(plain.to_vec()).ok()
 }
 

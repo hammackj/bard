@@ -73,10 +73,7 @@ pub fn step_back<T: Clone>(played: &[T], position_sec: f64) -> BackStep<T> {
     if played.len() < 2 {
         return BackStep::Restart;
     }
-    BackStep::Back {
-        prior: played[played.len() - 2].clone(),
-        played: played[..played.len() - 1].to_vec(),
-    }
+    BackStep::Back { prior: played[played.len() - 2].clone(), played: played[..played.len() - 1].to_vec() }
 }
 
 /// Queue and history after repeat-all wraps around.

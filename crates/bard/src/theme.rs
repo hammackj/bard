@@ -6,15 +6,33 @@
 
 use gpui::{Hsla, Pixels, Rgba, px, rgb};
 
-pub fn ink() -> Rgba { rgb(0x030712) }
-pub fn panel() -> Rgba { rgb(0x111827) }
-pub fn edge() -> Rgba { rgb(0x1f2937) }
-pub fn text() -> Rgba { rgb(0xf3f4f6) }
-pub fn muted() -> Rgba { rgb(0x9ca3af) }
-pub fn cyan() -> Rgba { rgb(0x22d3ee) }
-pub fn cyan_deep() -> Rgba { rgb(0x0891b2) }
-pub fn green() -> Rgba { rgb(0x34d399) }
-pub fn rose() -> Rgba { rgb(0xfb7185) }
+pub fn ink() -> Rgba {
+    rgb(0x030712)
+}
+pub fn panel() -> Rgba {
+    rgb(0x111827)
+}
+pub fn edge() -> Rgba {
+    rgb(0x1f2937)
+}
+pub fn text() -> Rgba {
+    rgb(0xf3f4f6)
+}
+pub fn muted() -> Rgba {
+    rgb(0x9ca3af)
+}
+pub fn cyan() -> Rgba {
+    rgb(0x22d3ee)
+}
+pub fn cyan_deep() -> Rgba {
+    rgb(0x0891b2)
+}
+pub fn green() -> Rgba {
+    rgb(0x34d399)
+}
+pub fn rose() -> Rgba {
+    rgb(0xfb7185)
+}
 
 /// A palette colour at reduced opacity, like Tailwind's `bg-ink/85`.
 pub fn a(color: Rgba, alpha: f32) -> Hsla {

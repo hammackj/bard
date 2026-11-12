@@ -1,0 +1,4 @@
+# Matches how the code was written: long lines, short constructs kept on one
+# line. Chosen as the setting that reformatted the least existing code.
+max_width = 120
+use_small_heuristics = "Max"

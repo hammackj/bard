@@ -48,10 +48,8 @@ pub struct Matcher<'t> {
 
 impl<'t> Matcher<'t> {
     pub fn new(tracks: &'t [Track]) -> Self {
-        let records = tracks
-            .iter()
-            .map(|t| (t, t.search_text.encode_utf16().collect(), field_norm(&t.search_text)))
-            .collect();
+        let records =
+            tracks.iter().map(|t| (t, t.search_text.encode_utf16().collect(), field_norm(&t.search_text))).collect();
         Matcher { records }
     }
 
@@ -174,11 +172,7 @@ impl Bitap {
 /// distance, so that its quirks (which score is reported, where it stops)
 /// carry over unchanged. JavaScript's int32 bit operations are mirrored with
 /// wrapping u32 arithmetic.
-fn bitap_search(
-    text: &[u16],
-    pattern: &[u16],
-    alphabet: &std::collections::HashMap<u16, u32>,
-) -> (bool, f64) {
+fn bitap_search(text: &[u16], pattern: &[u16], alphabet: &std::collections::HashMap<u16, u32>) -> (bool, f64) {
     let pattern_len = pattern.len();
     let text_len = text.len();
     let calc_score = |errors: usize| errors as f64 / pattern_len as f64;
@@ -219,11 +213,7 @@ fn bitap_search(
         let mut j = finish;
         while j >= start {
             let current_location = j - 1;
-            let char_match = text
-                .get(current_location)
-                .and_then(|c| alphabet.get(c))
-                .copied()
-                .unwrap_or(0);
+            let char_match = text.get(current_location).and_then(|c| alphabet.get(c)).copied().unwrap_or(0);
             bit_arr[j] = ((bit_arr[j + 1] << 1) | 1) & char_match;
             if i > 0 {
                 let prev = get(&last_bit_arr, j + 1) | get(&last_bit_arr, j);

@@ -28,8 +28,7 @@ fn ids_match_the_real_stats_and_artwork_cache() {
     assert_eq!(ids.len(), files.len(), "ids collide");
 
     let stats: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(data_dir().join("stats.json")).unwrap())
-            .unwrap();
+        serde_json::from_str(&std::fs::read_to_string(data_dir().join("stats.json")).unwrap()).unwrap();
     let stat_ids: Vec<&String> = stats["tracks"].as_object().unwrap().keys().collect();
     let known = stat_ids.iter().filter(|id| ids.contains(id.as_str())).count();
     println!("stats.json: {known}/{} ids match a file in the library", stat_ids.len());
@@ -53,10 +52,8 @@ fn scan_reads_the_real_library() {
     let tracks = scan(&roots, tmp.path(), &|_| {});
     assert!(!tracks.is_empty());
     let flags: AlbumFlags = serde_json::from_value(
-        serde_json::from_str::<serde_json::Value>(
-            &std::fs::read_to_string(data_dir().join("albums.json")).unwrap(),
-        )
-        .unwrap()["albums"]
+        serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(data_dir().join("albums.json")).unwrap())
+            .unwrap()["albums"]
             .clone(),
     )
     .unwrap();
@@ -70,17 +67,14 @@ fn scan_reads_the_real_library() {
     println!("{} tracks, {with_art} with covers", tracks.len());
     for t in tracks.iter().filter(|t| t.has_artwork).take(3) {
         let ours = image::image_dimensions(tmp.path().join(format!("{}.jpg", t.id))).unwrap();
-        let theirs =
-            image::image_dimensions(data_dir().join("artwork").join(format!("{}.jpg", t.id)))
-                .unwrap();
+        let theirs = image::image_dimensions(data_dir().join("artwork").join(format!("{}.jpg", t.id))).unwrap();
         assert_eq!(ours, theirs, "{}", t.path);
     }
 
     // When a music-metadata dump is supplied (see the port notes), compare
     // every field the Electron scan produced, and its album order.
     let Ok(mm) = std::env::var("BARD_MM_JSON") else { return };
-    let reference: Vec<serde_json::Value> =
-        serde_json::from_str(&std::fs::read_to_string(mm).unwrap()).unwrap();
+    let reference: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(mm).unwrap()).unwrap();
     let ours: HashMap<&str, _> = tracks.iter().map(|t| (t.id.as_str(), t)).collect();
     assert_eq!(reference.len(), tracks.len());
     for (i, r) in reference.iter().enumerate() {
@@ -114,12 +108,7 @@ fn a_copy_of_the_real_data_dir_opens_unchanged() {
     let (mut bard, _rx) = bard_core::Bard::open(tmp.path().to_path_buf()).unwrap();
     assert_eq!(std::fs::read(tmp.path().join("config.json")).unwrap(), before, "config rewritten");
     assert_eq!(bard.config(), &config());
-    println!(
-        "{} stats, {} album flags, {} loved",
-        bard.stats().len(),
-        bard.album_flags().len(),
-        bard.loved().len()
-    );
+    println!("{} stats, {} album flags, {} loved", bard.stats().len(), bard.album_flags().len(), bard.loved().len());
     assert!(!bard.stats().is_empty());
 
     // Writing loved.json back unchanged reproduces the Electron file exactly.

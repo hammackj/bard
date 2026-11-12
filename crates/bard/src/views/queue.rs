@@ -43,15 +43,20 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(action("q-shuffle", "Shuffle", n >= 2, false).tooltip(super::tip("Shuffle the pending queue")).on_click(cx.listener(|this, _, _, _| {
-                    this.ui.backend.shuffle_queue()
-                })))
-                .child(action("q-fill", "Fill", true, false).tooltip(super::tip("Add random tracks from the library")).on_click(cx.listener(|this, _, _, _| {
-                    this.ui.backend.fill_queue()
-                })))
-                .child(action("q-clear", "Clear", n > 0, true).on_click(cx.listener(|this, _, _, _| {
-                    this.ui.backend.clear_queue()
-                }))),
+                .child(
+                    action("q-shuffle", "Shuffle", n >= 2, false)
+                        .tooltip(super::tip("Shuffle the pending queue"))
+                        .on_click(cx.listener(|this, _, _, _| this.ui.backend.shuffle_queue())),
+                )
+                .child(
+                    action("q-fill", "Fill", true, false)
+                        .tooltip(super::tip("Add random tracks from the library"))
+                        .on_click(cx.listener(|this, _, _, _| this.ui.backend.fill_queue())),
+                )
+                .child(
+                    action("q-clear", "Clear", n > 0, true)
+                        .on_click(cx.listener(|this, _, _, _| this.ui.backend.clear_queue())),
+                ),
         );
 
     let rows = ui.queue.iter().enumerate().map(|(i, item)| {
@@ -155,7 +160,16 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
                 .border_t_1()
                 .border_color(theme::edge())
                 .child(header)
-                .child(div().relative().flex_1().min_h_0().flex().flex_col().child(list).child(super::scrollbar(handle, cx.entity()))),
+                .child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .child(list)
+                        .child(super::scrollbar(handle, cx.entity())),
+                ),
         )
         .child(
             div()
@@ -204,7 +218,14 @@ impl Render for DragGhost {
             .shadow_lg()
             .text_color(theme::text())
             .font_family(fonts::UI)
-            .child(mono(theme::S1).w(px(22.)).flex_none().text_color(theme::muted()).cursor_grabbing().child(self.drag.number.to_string()))
+            .child(
+                mono(theme::S1)
+                    .w(px(22.))
+                    .flex_none()
+                    .text_color(theme::muted())
+                    .cursor_grabbing()
+                    .child(self.drag.number.to_string()),
+            )
             .child(truncate(div().flex_1().text_size(theme::S2).child(self.drag.title.clone())))
     }
 }

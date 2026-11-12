@@ -86,12 +86,8 @@ impl OverlayServer {
             tokio::net::TcpListener::from_std(std_listener).ok()?
         };
         let (frames, _) = broadcast::channel(64);
-        let shared = Arc::new(Shared {
-            artwork_dir,
-            latest: Mutex::new(initial),
-            frames,
-            clients: AtomicUsize::new(0),
-        });
+        let shared =
+            Arc::new(Shared { artwork_dir, latest: Mutex::new(initial), frames, clients: AtomicUsize::new(0) });
         let app = router(shared.clone());
         let task = rt.spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {
@@ -136,9 +132,7 @@ fn router(shared: Arc<Shared>) -> Router {
         .route("/nowplaying.json", get(now_playing))
         .route("/events", get(events))
         .route("/art/{track_id}", get(art))
-        .fallback(get(|uri: axum::http::Uri| async move {
-            static_file(uri.path().trim_start_matches('/'))
-        }))
+        .fallback(get(|uri: axum::http::Uri| async move { static_file(uri.path().trim_start_matches('/')) }))
         .with_state(shared)
 }
 
@@ -161,14 +155,10 @@ fn content_type(path: &str) -> &'static str {
 fn static_file(path: &str) -> Response {
     let path = if path.is_empty() || path.ends_with('/') { format!("{path}index.html") } else { path.into() };
     match OVERLAY.get_file(&path) {
-        Some(f) => (
-            [
-                (header::CONTENT_TYPE, content_type(&path)),
-                (header::CACHE_CONTROL, "public, max-age=0"),
-            ],
-            f.contents(),
-        )
-            .into_response(),
+        Some(f) => {
+            ([(header::CONTENT_TYPE, content_type(&path)), (header::CACHE_CONTROL, "public, max-age=0")], f.contents())
+                .into_response()
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -186,10 +176,7 @@ async fn art(State(s): State<Arc<Shared>>, Path(id): Path<String>) -> Response {
     }
     let file = bard_core::artwork::cache_path(&s.artwork_dir, &id);
     match tokio::fs::read(&file).await {
-        Ok(bytes) => (
-            [(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=3600")],
-            bytes,
-        )
+        Ok(bytes) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "public, max-age=3600")], bytes)
             .into_response(),
         Err(e) => {
             if e.kind() != std::io::ErrorKind::NotFound {
@@ -217,23 +204,20 @@ async fn events(State(s): State<Arc<Shared>>) -> Response {
     s.clients.fetch_add(1, Ordering::Relaxed);
     let guard = ClientGuard(s.clone());
 
-    let stream = futures_util::stream::unfold(
-        (Some(first), rx, guard),
-        |(first, mut rx, guard)| async move {
-            if let Some(f) = first {
-                return Some((Ok::<_, std::convert::Infallible>(f.to_string()), (None, rx, guard)));
+    let stream = futures_util::stream::unfold((Some(first), rx, guard), |(first, mut rx, guard)| async move {
+        if let Some(f) = first {
+            return Some((Ok::<_, std::convert::Infallible>(f.to_string()), (None, rx, guard)));
+        }
+        loop {
+            match rx.recv().await {
+                Ok(f) => return Some((Ok(f.to_string()), (None, rx, guard))),
+                // A slow client missed some frames; the next one is a
+                // complete snapshot, so just carry on.
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
             }
-            loop {
-                match rx.recv().await {
-                    Ok(f) => return Some((Ok(f.to_string()), (None, rx, guard))),
-                    // A slow client missed some frames; the next one is a
-                    // complete snapshot, so just carry on.
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::RecvError::Closed) => return None,
-                }
-            }
-        },
-    );
+        }
+    });
 
     let mut res = Response::new(Body::from_stream(stream));
     let h = res.headers_mut();
