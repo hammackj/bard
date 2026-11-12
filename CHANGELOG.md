@@ -7,6 +7,15 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streamer mode rechecks tracks a rescan retagged.** A track retagged into
+  a claimed or unchecked album at the same path kept playing after a
+  rescan while streamer mode was on, and stayed in the queue. A rescan now
+  treats it as if its album had been flagged: taken off air at once (or
+  left paused if you had paused), dropped from the queue, and silence if
+  nothing safe can follow.
+
 ## [0.2.9] — 2026-11-12
 
 ### Fixed

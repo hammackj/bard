@@ -369,6 +369,8 @@ enum Action {
     Disarm,
     Flag(usize, ContentIdStatus),
     RemoveFolder(usize),
+    /// A track's album tag changed (same path, same id), then a rescan.
+    Retag(usize, usize),
     /// Puts a folder back and installs what a scan of the folders finds.
     Rescan(usize),
     ClearQueue,
@@ -399,7 +401,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
     let statuses = [ContentIdStatus::Safe, ContentIdStatus::Claimed, ContentIdStatus::Untested];
     let repeats = [RepeatMode::Off, RepeatMode::One, RepeatMode::All];
     (0..steps)
-        .map(|_| match r.below(24) {
+        .map(|_| match r.below(25) {
             0 | 1 => Action::PlayNow(r.below(TRACKS.len())),
             2 | 3 => Action::Enqueue(r.below(TRACKS.len())),
             4 => Action::Next,
@@ -420,6 +422,7 @@ fn generate(seed: u64, steps: usize) -> Vec<Action> {
             20 => Action::Wait([50, 400, 1500, 30_000][r.below(4)]),
             21 => Action::WindowToggle,
             22 => Action::Sleep,
+            23 => Action::Retag(r.below(TRACKS.len()), r.below(ALBUMS.len())),
             _ => {
                 if r.below(2) == 0 {
                     Action::Deliver(1 + r.below(3))
@@ -438,8 +441,40 @@ struct Oracle {
     armed: bool,
     status: HashMap<&'static str, ContentIdStatus>,
     roots: HashSet<&'static str>,
+    /// Album tags changed on disk, by track id.
+    retagged: HashMap<&'static str, &'static str>,
+    /// The album each track had when a scan last read it: a file in a
+    /// removed folder can be retagged without Bard being able to know.
+    known: HashMap<&'static str, &'static str>,
     /// The user paused, and has not asked to play since.
     paused: bool,
+}
+
+impl Oracle {
+    /// A track's album as last scanned -- not the one it had when it was
+    /// queued.
+    fn album_of<'a>(&'a self, t: &'a Track) -> &'a str {
+        self.known.get(t.id.as_str()).copied().unwrap_or(t.album.as_str())
+    }
+
+    /// What a scan of the present folders finds, as tagged now.
+    fn scan(&mut self) -> Vec<Track> {
+        let found: Vec<Track> = (0..TRACKS.len())
+            .map(|i| {
+                let mut t = track(i);
+                if let Some(a) = self.retagged.get(TRACKS[i].0) {
+                    t.album = (*a).into();
+                }
+                t
+            })
+            .filter(|t| self.roots.contains(root_of(&t.path)))
+            .collect();
+        for t in &found {
+            let i = TRACKS.iter().position(|(id, ..)| *id == t.id).expect("ours");
+            self.known.insert(TRACKS[i].0, self.retagged.get(TRACKS[i].0).copied().unwrap_or(TRACKS[i].1));
+        }
+        found
+    }
 }
 
 struct World {
@@ -480,6 +515,8 @@ impl World {
                 armed: false,
                 status: HashMap::new(),
                 roots: ROOTS.iter().copied().collect(),
+                retagged: HashMap::new(),
+                known: HashMap::new(),
                 paused: false,
             },
             checked: 0,
@@ -584,10 +621,16 @@ impl World {
                 self.oracle.roots.insert(ROOTS[i]);
                 let roots: Vec<String> =
                     ROOTS.iter().filter(|r| self.oracle.roots.contains(*r)).map(|r| format!("/music/{r}")).collect();
-                let found: Vec<Track> =
-                    (0..TRACKS.len()).map(track).filter(|t| self.oracle.roots.contains(root_of(&t.path))).collect();
+                let found = self.oracle.scan();
                 let mut b = self.fx.bard.borrow_mut();
                 b.update_config(|c| c.library_paths = roots);
+                let scanner = b.scanner();
+                b.install_scan(&scanner, found);
+            }
+            Action::Retag(i, a) => {
+                self.oracle.retagged.insert(TRACKS[i].0, ALBUMS[a]);
+                let found = self.oracle.scan();
+                let mut b = self.fx.bard.borrow_mut();
                 let scanner = b.scanner();
                 b.install_scan(&scanner, found);
             }
@@ -615,7 +658,7 @@ impl World {
     }
 
     fn safe(&self, t: &Track) -> bool {
-        self.oracle.status.get(t.album.as_str()) == Some(&ContentIdStatus::Safe)
+        self.oracle.status.get(self.oracle.album_of(t)) == Some(&ContentIdStatus::Safe)
     }
 
     fn check(&mut self) -> Result<(), String> {

@@ -415,8 +415,9 @@ impl Bard {
     /// Whether a track may play again from history (Repeat One, Repeat All,
     /// Previous): still in the library -- a removed folder's track finishes,
     /// but does not come back -- and permitted by streamer mode.
+    /// Judged on the library's copy, not the one remembered when it played.
     fn may_replay(&self, track: &Track) -> bool {
-        self.library.get(&track.id).is_some() && self.blocked_reason(track).is_none()
+        self.library.get(&track.id).is_some_and(|t| self.blocked_reason(t).is_none())
     }
 
     /// Moves the item at `from` to `to` (clamped into range).

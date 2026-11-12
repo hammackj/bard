@@ -378,3 +378,111 @@ fn a_pause_from_anywhere_survives_a_failed_incoming_track() {
         assert_eq!(l.fx.player.held(), None, "{how}");
     }
 }
+
+impl Live {
+    /// A rescan of the library, with some tracks retagged into another album
+    /// at the same path (so the same id).
+    fn rescan(&mut self, retagged: &[(&str, &str)]) {
+        let ids = [("s1", SAFE), ("s2", SAFE), ("s3", SAFE), ("r1", RAIN), ("r2", RAIN)];
+        let tracks = ids
+            .iter()
+            .map(|(id, album)| track(id, retagged.iter().find(|(r, _)| r == id).map_or(album, |(_, a)| a)))
+            .collect();
+        self.core(|b| b.install_library(tracks));
+    }
+}
+
+/// The reviewer's reproduction: a rescan that moves the playing track into a
+/// claimed album takes it off air at once, as flagging the album would.
+#[test]
+fn review_rescan_rechecks_current_album_safety() {
+    let mut l = Live::new(2.0);
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.start("s1", &["s2"]);
+    l.core(|b| b.arm(None));
+    l.core(|b| {
+        let mut retagged = track("s1", SAFE);
+        retagged.album = RAIN.into(); // same track ID/path; changed embedded album tag
+        b.install_library(vec![retagged, track("s2", SAFE)]);
+    });
+    l.pump(Duration::from_millis(400));
+    assert!(!l.heard("s1"), "rescan changed the current album to Claimed but it remains audible while armed");
+    assert_eq!(l.fx.with(|b| b.now_playing().map(|n| n.track.id.clone())).as_deref(), Some("s2"));
+}
+
+/// Retagged into a claimed or an unchecked album while armed: cut at once,
+/// despite the crossfade, to the next safe track; and dropped from the
+/// queue when it is only queued.
+#[test]
+fn a_retagged_track_is_judged_by_its_new_album() {
+    for (album, flag) in [(RAIN, Some(ContentIdStatus::Claimed)), ("Moon", None)] {
+        let mut l = Live::new(2.0);
+        if let Some(f) = flag {
+            l.core(|b| b.set_album_flag(album, f, None));
+        }
+        l.start("s1", &["s2", "s3"]);
+        l.core(|b| b.arm(None));
+        let t = Instant::now();
+        l.rescan(&[("s1", album)]);
+        l.assert_cut("s1", "s2", t);
+
+        l.rescan(&[("s1", album), ("s3", album)]);
+        let queued: Vec<String> = l.fx.with(|b| b.queue().iter().map(|i| i.track.id.clone()).collect());
+        assert!(!queued.contains(&"s3".to_string()), "{album}: dropped from the queue: {queued:?}");
+        assert!(l.heard("s2"), "{album}: the safe track plays on");
+    }
+}
+
+/// Nothing safe to follow: silence. Paused: the replacement waits paused.
+/// Fading out under a safe track: the fade ends. A rescan that changes
+/// nothing interrupts nothing.
+#[test]
+fn a_retag_while_paused_fading_or_alone_is_handled_like_a_flag() {
+    // Alone.
+    let mut l = Live::new(2.0);
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.start("s1", &[]);
+    l.core(|b| b.arm(None));
+    let t = Instant::now();
+    l.rescan(&[("s1", RAIN)]);
+    l.pump(Duration::from_millis(300));
+    assert!(l.heard_since(t).is_empty(), "silence: {:?}", l.heard_since(t));
+    assert!(l.fx.with(|b| b.now_playing().is_none()));
+
+    // Paused.
+    let mut l = Live::new(2.0);
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.start("s1", &["s2"]);
+    l.core(|b| b.arm(None));
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Pause));
+    l.pump(Duration::from_millis(100));
+    let t = Instant::now();
+    l.rescan(&[("s1", RAIN)]);
+    l.pump(Duration::from_millis(300));
+    assert!(l.heard_since(t).is_empty(), "stays paused: {:?}", l.heard_since(t));
+    assert_eq!(l.fx.with(|b| b.now_playing().map(|n| n.track.id.clone())).as_deref(), Some("s2"));
+    assert!(l.fx.player.is_paused());
+
+    // Fading out under a safe track.
+    let mut l = Live::new(2.0);
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.start("s1", &["s2"]);
+    l.core(|b| b.arm(None));
+    l.core(|b| b.skip());
+    l.pump(Duration::from_millis(100));
+    assert!(l.heard("s1"), "s1 fading out");
+    let t = Instant::now();
+    l.rescan(&[("s1", RAIN)]);
+    l.assert_cut("s1", "s2", t);
+
+    // Unchanged.
+    let mut l = Live::new(2.0);
+    l.start("s1", &["s2"]);
+    l.core(|b| b.arm(None));
+    let generation = l.ui.generation;
+    let t = Instant::now();
+    l.rescan(&[]);
+    l.pump(Duration::from_millis(300));
+    assert_eq!(l.heard_since(t), ["s1"], "uninterrupted");
+    assert_eq!(l.ui.generation, generation, "no new request");
+}

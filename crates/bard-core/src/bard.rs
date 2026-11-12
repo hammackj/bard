@@ -315,13 +315,23 @@ impl Bard {
     /// Replaces the library with a finished scan.
     pub fn install_library(&mut self, tracks: Vec<Track>) {
         self.library = Library::new(tracks);
-        // The playing track as this scan found it: a cover replaced at the
-        // same path reaches the overlay without waiting for a track change.
-        if let Some(np) = &mut self.now_playing
-            && let Some(t) = self.library.get(&np.track.id)
-        {
-            np.track = t.clone();
+        // Every track held from before -- playing, queued, maybe still
+        // fading out, played -- as this scan found it. A cover replaced at
+        // the same path reaches the overlay without waiting for a track
+        // change; an album retagged at the same path is judged as what it is
+        // now, not as what it was when it was queued.
+        let library = &self.library;
+        let fresh = |t: &mut Track| {
+            if let Some(now) = library.get(&t.id) {
+                *t = now.clone();
+            }
+        };
+        if let Some(np) = &mut self.now_playing {
+            fresh(&mut np.track);
         }
+        self.queue.iter_mut().for_each(|i| fresh(&mut i.track));
+        self.played.iter_mut().for_each(|i| fresh(&mut i.track));
+        self.maybe_audible.iter_mut().for_each(fresh);
         let current = self.now_playing.as_ref().map(|n| n.track.clone());
         let write = self.config.get().overlay.write_now_playing_json;
         self.np.library_changed(current.as_ref(), write);
@@ -338,7 +348,11 @@ impl Bard {
         // what is queued and choosing when it goes out is the whole point on a
         // stream. A no-op when endless is off or the queue is already full, so
         // rescans cost nothing.
-        self.refresh_endless();
+        //
+        // And streamer mode is applied to the tracks as they now are: one
+        // retagged into a claimed or unchecked album is cut if it plays (or
+        // fades out), and dropped from the queue -- as if it had been flagged.
+        self.refresh_streamer_mode();
     }
 
     /// Adds a music folder (the UI shows the picker). Returns every library
