@@ -43,6 +43,8 @@ pub enum AppEvent {
     Rescan,
     /// From MPRIS, the media keys and the tray.
     Control(Control),
+    /// A sleep timer armed for this deadline has run out.
+    SleepDue(Instant),
     /// The OBS password save finished: whether it was stored, and its length.
     ObsSaved { stored: bool, chars: usize },
 }
@@ -222,6 +224,16 @@ impl Backend for AppBackend {
         let target = std::path::Path::new(path);
         let dir = if target.is_dir() { target } else { target.parent().unwrap_or(target) };
         let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+    }
+    /// The deadline runs on its own thread, not in the window: the timer
+    /// has to fire with the window closed to the tray, and Electron fired it
+    /// from its own timeout so a stalled render could not delay the pause.
+    fn schedule_sleep(&self, at: Instant) {
+        let events = self.events.clone();
+        let _ = std::thread::Builder::new().name("bard-sleep".into()).spawn(move || {
+            std::thread::sleep(at.saturating_duration_since(Instant::now()));
+            let _ = events.unbounded_send(AppEvent::SleepDue(at));
+        });
     }
     fn set_obs_password(&self, password: &str) {
         let events = self.events.clone();
@@ -729,6 +741,16 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             // Handled by dispatch.
             Control::ShowWindow | Control::ShowPopup | Control::Quit => {}
         },
+        AppEvent::SleepDue(at) => {
+            // Pauses rather than quitting: waking to a closed app and a lost
+            // queue is worse than waking to a paused one.
+            if ui.sleep_ends_at == Some(at) {
+                ui.sleep_ends_at = None;
+                if ui.playing {
+                    backend.player.pause();
+                }
+            }
+        }
         AppEvent::ObsSaved { stored, chars } => {
             // A clear is not news; a save says so either way, since a
             // credential field that changes nothing visible on save is

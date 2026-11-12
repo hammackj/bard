@@ -27,6 +27,8 @@ pub struct BardWindow {
     pub queue_scroll: ScrollHandle,
     pub settings_scroll: ScrollHandle,
     pub crossfade_bounds: Option<Bounds<Pixels>>,
+    /// A once-a-second repaint for the sleep countdown is pending.
+    pub sleep_tick: bool,
     pub filter: Entity<TextInput>,
     /// The Content ID note for the open album, and which album it was loaded for.
     pub note: Entity<TextInput>,
@@ -172,6 +174,7 @@ this.ui.backend.set_obs_password(&value);
             queue_scroll: ScrollHandle::new(),
             settings_scroll: ScrollHandle::new(),
             crossfade_bounds: None,
+            sleep_tick: false,
             filter,
             note,
             note_album: None,

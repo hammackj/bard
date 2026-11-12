@@ -378,6 +378,19 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
         .sleep_ends_at
         .map(|end| end.saturating_duration_since(Instant::now()).as_secs().div_ceil(60));
     let open = ui.sleep_open;
+    // The minutes left count down while paused too, when nothing else asks
+    // for frames; one repaint a second, as Electron's display tick.
+    if remaining.is_some() && !this.sleep_tick {
+        this.sleep_tick = true;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+            let _ = this.update(cx, |w, cx| {
+                w.sleep_tick = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 
     let popover = open.then(|| {
         let mut presets = div().flex().gap_1();
@@ -394,7 +407,9 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
                     .hover(|s| s.border_color(theme::cyan()).text_color(theme::text()))
                     .child(m.to_string())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.ui.sleep_ends_at = Some(Instant::now() + Duration::from_secs(m * 60));
+                        let at = Instant::now() + Duration::from_secs(m * 60);
+                        this.ui.sleep_ends_at = Some(at);
+                        this.ui.backend.schedule_sleep(at);
                         this.ui.sleep_open = false;
                         cx.notify();
                     })),

@@ -48,6 +48,9 @@ pub trait Backend {
     /// the background. The outcome arrives later and lands in
     /// `Ui::obs_message`; it is never written as plaintext.
     fn set_obs_password(&self, password: &str);
+    /// Arms the sleep timer: at `at`, playback pauses if `Ui::sleep_ends_at`
+    /// still says `at` (a cancelled or replaced timer then does nothing).
+    fn schedule_sleep(&self, at: Instant);
 }
 
 /// Does nothing. The snapshot tool renders with this.
@@ -83,6 +86,7 @@ impl Backend for NullBackend {
     }
     fn reveal(&self, _: &str) {}
     fn set_obs_password(&self, _: &str) {}
+    fn schedule_sleep(&self, _: Instant) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
