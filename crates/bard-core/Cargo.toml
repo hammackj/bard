@@ -3,6 +3,11 @@ name = "bard-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+description = "Bard's core: types, library scan, queue, config and stores"
 
 [dependencies]
 anyhow = "1.0.104"
