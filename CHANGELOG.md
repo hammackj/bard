@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.11] — 2026-11-12
+
 ### Fixed
 
 - **A rescan updates the now-playing card and the queue.** Retagged titles,
