@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-11-12
+
 ### Fixed
 
 - **Streamer mode no longer leaves the stream silent.** When a track had
