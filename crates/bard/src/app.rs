@@ -982,7 +982,7 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::Transport(TransportAction::Toggle) => backend.toggle_play(),
             CoreEvent::Transport(TransportAction::Restart) => backend.player.seek(0.),
             CoreEvent::Notice(msg) => ui.notice = Some(msg),
-            CoreEvent::LibraryChanged => ui.tracks = backend.bard.lock().expect("core lock").tracks().to_vec(),
+            CoreEvent::LibraryChanged => ui.set_tracks(backend.bard.lock().expect("core lock").tracks().to_vec()),
             CoreEvent::ConfigChanged(c) => {
                 // The core has already dropped a removed folder's tracks; a
                 // scan picks up an added folder's, and a removed folder's

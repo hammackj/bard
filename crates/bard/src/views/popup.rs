@@ -53,7 +53,7 @@ pub struct Popup {
 
 impl Popup {
     pub fn new(artwork_dir: std::path::PathBuf) -> Self {
-        Self { now: None, track_id: None, covers: Covers::new(artwork_dir) }
+        Self { now: None, track_id: None, covers: Covers::new_sync(artwork_dir) }
     }
 }
 

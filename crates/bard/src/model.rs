@@ -9,8 +9,8 @@
 
 use bard_core::types::{AlbumFlags, Config, ContentIdStatus, QueueItem, ScanProgress, StatsMap, StreamerSource, Track};
 use gpui::RenderImage;
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
@@ -146,13 +146,58 @@ pub fn fmt_count(n: usize) -> String {
     out
 }
 
-/// Decoded covers, keyed by track id. `None` records a miss so a track without
-/// a readable cover is not retried every frame.
+/// Which rendition of a cover: sized for where it is drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CoverKind {
+    /// An album card: drawn about 115px wide, so decoded at 240px -- enough
+    /// for a 2x display -- rather than the cached 512px.
+    Thumb,
+    /// The now-playing cover, at full size.
+    Full,
+    /// The blurred backdrop behind the now-playing pane.
+    Ambient,
+}
+
+impl CoverKind {
+    /// How many of each are kept decoded. A card scrolled back into view
+    /// past the limit is decoded again, briefly showing its placeholder.
+    fn capacity(self) -> usize {
+        match self {
+            CoverKind::Thumb => 160,
+            CoverKind::Full | CoverKind::Ambient => 6,
+        }
+    }
+}
+
+/// Edge of a [`CoverKind::Thumb`] in pixels.
+const THUMB_PX: u32 = 240;
+
+type CoverKey = (CoverKind, String);
+
+/// Decoded covers, keyed by kind and track id.
+///
+/// Decoding a JPEG takes milliseconds, so it happens off the render path: a
+/// miss returns None (the view draws its placeholder) and is queued; the
+/// window decodes queued covers in the background ([`Covers::load`]), hands
+/// them back with [`Covers::insert`] and redraws. Each kind keeps its most
+/// recently used covers up to a limit; the evicted ones are handed to the
+/// window to release from the GPU too ([`Covers::take_evicted`]).
+///
+/// `None` in the cache records a cover that could not be read, so it is not
+/// retried every frame.
 #[derive(Default)]
 pub struct Covers {
     pub dir: PathBuf,
-    cover: HashMap<String, Option<Arc<RenderImage>>>,
-    ambient: HashMap<String, Option<Arc<RenderImage>>>,
+    /// Decode on the spot instead: the snapshot tool and the tray preview,
+    /// which draw once and want the cover in that frame.
+    sync: bool,
+    cache: HashMap<CoverKey, Option<Arc<RenderImage>>>,
+    /// Least recently used first, per kind.
+    order: HashMap<CoverKind, VecDeque<String>>,
+    /// Queued or being decoded.
+    requested: HashSet<CoverKey>,
+    wanted: Vec<CoverKey>,
+    evicted: Vec<Arc<RenderImage>>,
 }
 
 impl Covers {
@@ -160,33 +205,115 @@ impl Covers {
         Self { dir, ..Default::default() }
     }
 
-    fn decode(&self, id: &str) -> Option<image::DynamicImage> {
-        image::open(self.dir.join(format!("{id}.jpg"))).ok()
+    /// Covers decoded as they are asked for.
+    pub fn new_sync(dir: PathBuf) -> Self {
+        Self { dir, sync: true, ..Default::default() }
     }
 
     pub fn cover(&mut self, id: &str) -> Option<Arc<RenderImage>> {
-        if let Some(hit) = self.cover.get(id) {
-            return hit.clone();
-        }
-        let img = self.decode(id).map(|d| crate::backdrop::render_image(d.to_rgba8()));
-        self.cover.insert(id.to_string(), img.clone());
-        img
+        self.get(CoverKind::Full, id)
+    }
+
+    pub fn thumb(&mut self, id: &str) -> Option<Arc<RenderImage>> {
+        self.get(CoverKind::Thumb, id)
     }
 
     pub fn ambient(&mut self, id: &str) -> Option<Arc<RenderImage>> {
-        if let Some(hit) = self.ambient.get(id) {
-            return hit.clone();
+        self.get(CoverKind::Ambient, id)
+    }
+
+    fn get(&mut self, kind: CoverKind, id: &str) -> Option<Arc<RenderImage>> {
+        let key = (kind, id.to_string());
+        if let Some(hit) = self.cache.get(&key).cloned() {
+            self.touch(&key);
+            return hit;
         }
-        let img = self.decode(id).map(|d| crate::backdrop::ambient(&d));
-        self.ambient.insert(id.to_string(), img.clone());
-        img
+        if self.sync {
+            let img = Self::load(&self.dir, kind, id);
+            self.insert(key, img.clone());
+            return img;
+        }
+        if self.requested.insert(key.clone()) {
+            self.wanted.push(key);
+        }
+        None
+    }
+
+    fn touch(&mut self, (kind, id): &CoverKey) {
+        let order = self.order.entry(*kind).or_default();
+        if order.back() != Some(id)
+            && let Some(i) = order.iter().position(|x| x == id)
+        {
+            let id = order.remove(i).expect("found");
+            order.push_back(id);
+        }
+    }
+
+    /// Covers asked for and not yet decoded; the caller decodes them.
+    pub fn take_wanted(&mut self) -> Vec<CoverKey> {
+        std::mem::take(&mut self.wanted)
+    }
+
+    /// Covers dropped from the cache, to release from the GPU.
+    pub fn take_evicted(&mut self) -> Vec<Arc<RenderImage>> {
+        std::mem::take(&mut self.evicted)
+    }
+
+    /// Forgets requests whose results will never arrive -- the window that
+    /// would have received them is gone -- so they are made again.
+    pub fn forget_requests(&mut self) {
+        self.requested.clear();
+        self.wanted.clear();
+    }
+
+    /// Decodes a cover. Slow; call off the render path.
+    pub fn load(dir: &Path, kind: CoverKind, id: &str) -> Option<Arc<RenderImage>> {
+        let img = image::open(dir.join(format!("{id}.jpg"))).ok()?;
+        Some(match kind {
+            CoverKind::Full => crate::backdrop::render_image(img.to_rgba8()),
+            CoverKind::Thumb => crate::backdrop::render_image(img.thumbnail(THUMB_PX, THUMB_PX).to_rgba8()),
+            CoverKind::Ambient => crate::backdrop::ambient(&img),
+        })
+    }
+
+    pub fn insert(&mut self, key: CoverKey, img: Option<Arc<RenderImage>>) {
+        self.requested.remove(&key);
+        let (kind, id) = key.clone();
+        if let Some(Some(old)) = self.cache.insert(key, img) {
+            self.evicted.push(old);
+        }
+        let order = self.order.entry(kind).or_default();
+        order.retain(|x| *x != id);
+        order.push_back(id);
+        while order.len() > kind.capacity() {
+            let gone = order.pop_front().expect("over capacity");
+            if let Some(Some(img)) = self.cache.remove(&(kind, gone)) {
+                self.evicted.push(img);
+            }
+        }
     }
 }
+
+/// What the library pane lists, kept until what it is derived from changes:
+/// regrouping and filtering every track on every frame (and the playing
+/// string redraws several times a second) is the cost on a large library.
+#[derive(Default)]
+struct Derived {
+    albums: Option<(AlbumsKey, Rc<Vec<Album>>)>,
+    album_count: Option<(u64, usize)>,
+    tracks: Option<(TracksKey, Rc<Vec<Track>>)>,
+}
+
+type TracksKey = (u64, String, Option<String>, LibraryView, Vec<String>);
+type AlbumsKey = (u64, String);
 
 pub struct Ui {
     pub backend: Rc<dyn Backend>,
     pub config: Config,
-    pub tracks: Vec<Track>,
+    /// Set with [`Ui::set_tracks`], which invalidates the derived lists.
+    tracks: Vec<Track>,
+    tracks_version: u64,
+    derived: std::cell::RefCell<Derived>,
     pub queue: Vec<QueueItem>,
 
     // playback, as reported by the audio engine
@@ -250,6 +377,8 @@ impl Ui {
             backend,
             config: Config::default(),
             tracks: Vec::new(),
+            tracks_version: 0,
+            derived: Default::default(),
             queue: Vec::new(),
             track: None,
             position: 0.0,
@@ -292,8 +421,35 @@ impl Ui {
         }
     }
 
+    pub fn tracks(&self) -> &[Track] {
+        &self.tracks
+    }
+
+    pub fn set_tracks(&mut self, tracks: Vec<Track>) {
+        self.tracks = tracks;
+        self.tracks_version += 1;
+    }
+
     /// The rows the library list shows, after view, album and filter.
-    pub fn filtered_tracks(&self) -> Vec<Track> {
+    pub fn filtered_tracks(&self) -> Rc<Vec<Track>> {
+        let key = (
+            self.tracks_version,
+            self.filter.clone(),
+            self.open_album.clone(),
+            self.view,
+            if self.view == LibraryView::Loved { self.loved.clone() } else { Vec::new() },
+        );
+        if let Some((k, v)) = &self.derived.borrow().tracks
+            && *k == key
+        {
+            return v.clone();
+        }
+        let v = Rc::new(self.compute_filtered_tracks());
+        self.derived.borrow_mut().tracks = Some((key, v.clone()));
+        v
+    }
+
+    fn compute_filtered_tracks(&self) -> Vec<Track> {
         let q = self.filter.trim().to_lowercase();
         self.tracks
             .iter()
@@ -307,7 +463,31 @@ impl Ui {
             .collect()
     }
 
-    pub fn filtered_albums(&self) -> Vec<Album> {
+    /// Albums in the whole library, filter or not.
+    pub fn album_count(&self) -> usize {
+        if let Some((v, n)) = self.derived.borrow().album_count
+            && v == self.tracks_version
+        {
+            return n;
+        }
+        let n = self.tracks.iter().map(|t| t.album.as_str()).collect::<HashSet<_>>().len();
+        self.derived.borrow_mut().album_count = Some((self.tracks_version, n));
+        n
+    }
+
+    pub fn filtered_albums(&self) -> Rc<Vec<Album>> {
+        let key = (self.tracks_version, self.filter.clone());
+        if let Some((k, v)) = &self.derived.borrow().albums
+            && *k == key
+        {
+            return v.clone();
+        }
+        let v = Rc::new(self.compute_filtered_albums());
+        self.derived.borrow_mut().albums = Some((key, v.clone()));
+        v
+    }
+
+    fn compute_filtered_albums(&self) -> Vec<Album> {
         let q = self.filter.trim().to_lowercase();
         group_albums(&self.tracks)
             .into_iter()
@@ -378,6 +558,82 @@ mod tests {
         assert!(u.is_current(7));
         assert!(!u.is_current(6), "the outgoing track's fade-out");
         assert!(!u.is_current(8));
+    }
+
+    fn img() -> Option<Arc<RenderImage>> {
+        Some(crate::backdrop::render_image(image::RgbaImage::new(1, 1)))
+    }
+
+    #[test]
+    fn a_cover_miss_is_queued_once_and_drawn_once_decoded() {
+        let mut c = Covers::new(PathBuf::from("/nonexistent"));
+        assert!(c.thumb("a").is_none());
+        assert!(c.thumb("a").is_none(), "asked again before it arrives");
+        assert_eq!(c.take_wanted(), [(CoverKind::Thumb, "a".to_string())], "queued once");
+        assert!(c.take_wanted().is_empty());
+        c.insert((CoverKind::Thumb, "a".into()), img());
+        assert!(c.thumb("a").is_some());
+        assert!(c.cover("a").is_none(), "each kind is its own entry");
+        assert_eq!(c.take_wanted(), [(CoverKind::Full, "a".to_string())]);
+        // An unreadable cover is remembered, not asked for every frame.
+        c.insert((CoverKind::Full, "a".into()), None);
+        assert!(c.cover("a").is_none());
+        assert!(c.take_wanted().is_empty());
+    }
+
+    #[test]
+    fn the_least_recently_used_cover_is_evicted_and_handed_back() {
+        let mut c = Covers::new(PathBuf::from("/nonexistent"));
+        let cap = CoverKind::Full.capacity();
+        for i in 0..cap {
+            c.insert((CoverKind::Full, i.to_string()), img());
+        }
+        assert!(c.cover("0").is_some(), "touching 0 makes 1 the oldest");
+        c.insert((CoverKind::Full, "new".into()), img());
+        assert_eq!(c.take_evicted().len(), 1);
+        assert!(c.cover("0").is_some());
+        assert!(c.cover("1").is_none(), "1 was evicted");
+        assert_eq!(c.take_wanted(), [(CoverKind::Full, "1".to_string())], "and is decoded again if needed");
+    }
+
+    #[test]
+    fn requests_a_closed_window_never_answered_are_made_again() {
+        let mut c = Covers::new(PathBuf::from("/nonexistent"));
+        c.thumb("a");
+        c.take_wanted();
+        c.forget_requests();
+        c.thumb("a");
+        assert_eq!(c.take_wanted().len(), 1);
+    }
+
+    #[test]
+    fn derived_lists_follow_the_tracks_and_the_filter() {
+        let mut u = ui();
+        let t = |id: &str, album: &str| Track {
+            id: id.into(),
+            path: format!("/m/{id}.flac"),
+            title: id.into(),
+            artist: String::new(),
+            album: album.into(),
+            duration_sec: 60.,
+            has_artwork: false,
+            search_text: id.into(),
+            track_gain_db: None,
+            album_gain_db: None,
+            track_peak: None,
+            album_peak: None,
+        };
+        u.set_tracks(vec![t("a1", "A"), t("b1", "B")]);
+        let first = u.filtered_albums();
+        assert!(Rc::ptr_eq(&first, &u.filtered_albums()), "kept between frames");
+        assert_eq!(u.album_count(), 2);
+        u.filter = "b1".into();
+        assert_eq!(u.filtered_albums().len(), 1);
+        assert_eq!(u.filtered_tracks().len(), 1);
+        u.filter.clear();
+        u.set_tracks(vec![t("a1", "A")]);
+        assert_eq!(u.filtered_albums().len(), 1, "new tracks, new list");
+        assert_eq!(u.album_count(), 1);
     }
 
     #[test]

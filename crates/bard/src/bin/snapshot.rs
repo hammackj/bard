@@ -87,7 +87,9 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, Steps)> {
         .enumerate()
         .filter_map(|(i, t)| by_title(t).map(|track| QueueItem { id: format!("q{i}"), track, added_at: 0 }))
         .collect();
-    ui.tracks = f.tracks;
+    ui.set_tracks(f.tracks);
+    // One frame is captured, so covers must be in it.
+    ui.covers = bard::model::Covers::new_sync(ui.covers.dir.clone());
     ui.config = f.config;
     ui.stats = f.stats;
     ui.loved = f.loved;
@@ -147,6 +149,7 @@ fn main() -> anyhow::Result<()> {
         .map(|(w, h)| (w.parse().unwrap(), h.parse().unwrap()))
         .unwrap_or((600.0f32, 260.0f32));
 
+    let started = std::time::Instant::now();
     let text = Arc::new(gpui_wgpu::CosmicTextSystem::new("Inter"));
     let mut cx = HeadlessAppContext::with_platform(text, Arc::new(bard::assets::Assets), || {
         gpui_platform::current_headless_renderer()
@@ -197,6 +200,7 @@ fn main() -> anyhow::Result<()> {
     };
     // Two passes: images decoded during the first frame are drawn in the second.
     cx.run_until_parked();
+    let first_ms = started.elapsed().as_secs_f64() * 1000.;
     for [x, y] in clicks {
         let position = point(px(x), px(y));
         let events = [
@@ -274,6 +278,30 @@ fn main() -> anyhow::Result<()> {
         // Past GPUI's 500ms tooltip delay, on the headless app's own clock.
         cx.advance_clock(std::time::Duration::from_millis(600));
         cx.run_until_parked();
+    }
+    // BARD_BENCH=N: time the first frame and N more, and report memory, for
+    // checking the library pane's cost on a large fixture.
+    if let Some(n) = std::env::var("BARD_BENCH").ok().and_then(|n| n.parse::<u32>().ok()) {
+        let mut times = Vec::new();
+        for _ in 0..n {
+            let t = std::time::Instant::now();
+            cx.update_window(window, |_, window, _| window.refresh())?;
+            cx.run_until_parked();
+            times.push(t.elapsed().as_secs_f64() * 1000.);
+        }
+        times.sort_by(|a, b| a.total_cmp(b));
+        let rss_mb = std::fs::read_to_string("/proc/self/statm")
+            .ok()
+            .and_then(|s| s.split_whitespace().nth(1).and_then(|p| p.parse::<f64>().ok()))
+            .map(|pages| pages * 4096. / 1048576.)
+            .unwrap_or(0.);
+        println!(
+            "bench: first {:.1} ms (incl. setup), refresh median {:.2} ms, max {:.2} ms, rss {:.0} MB",
+            first_ms,
+            times[times.len() / 2],
+            times[times.len() - 1],
+            rss_mb
+        );
     }
     cx.update_window(window, |_, window, _| window.refresh())?;
     cx.run_until_parked();

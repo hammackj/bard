@@ -5,7 +5,7 @@ use super::settings::Fields;
 use super::text_input::{InputEvent, TextInput};
 use super::{icon, library, now_playing, overlays, queue, settings, truncate};
 use crate::backdrop;
-use crate::model::Ui;
+use crate::model::{Covers, Ui};
 use crate::{fonts, theme};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
@@ -22,7 +22,7 @@ pub struct BardWindow {
     pub ui: Ui,
     pub string_bounds: Option<Bounds<Pixels>>,
     pub volume_bounds: Option<Bounds<Pixels>>,
-    pub album_scroll: ScrollHandle,
+    pub album_scroll: UniformListScrollHandle,
     pub tracks_scroll: UniformListScrollHandle,
     pub queue_scroll: ScrollHandle,
     pub settings_scroll: ScrollHandle,
@@ -71,7 +71,9 @@ struct Layers {
 }
 
 impl BardWindow {
-    pub fn new(ui: Ui, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(mut ui: Ui, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Decodes a window closed before they finished will never deliver.
+        ui.covers.forget_requests();
         let c = ui.config.clone();
         let input = |window: &mut Window, cx: &mut Context<Self>, placeholder: &str, value: &str| {
             cx.new(|cx| TextInput::new(window, cx, placeholder, value))
@@ -204,7 +206,7 @@ impl BardWindow {
             drag: None,
             string_bounds: None,
             volume_bounds: None,
-            album_scroll: ScrollHandle::new(),
+            album_scroll: UniformListScrollHandle::new(),
             tracks_scroll: UniformListScrollHandle::new(),
             queue_scroll: ScrollHandle::new(),
             settings_scroll: ScrollHandle::new(),
@@ -416,6 +418,34 @@ fn full(img: Arc<RenderImage>) -> Img {
     gpui::img(ImageSource::Render(img)).absolute().inset_0().size_full().object_fit(ObjectFit::Fill)
 }
 
+impl BardWindow {
+    /// Decodes the covers this frame asked for on the background executor,
+    /// and redraws as each arrives; releases evicted ones from the GPU.
+    pub fn load_covers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for img in self.ui.covers.take_evicted() {
+            cx.drop_image(img, Some(window));
+        }
+        let dir = self.ui.covers.dir.clone();
+        for (kind, id) in self.ui.covers.take_wanted() {
+            let dir = dir.clone();
+            cx.spawn(async move |this, cx| {
+                let img = cx
+                    .background_executor()
+                    .spawn({
+                        let id = id.clone();
+                        async move { Covers::load(&dir, kind, &id) }
+                    })
+                    .await;
+                let _ = this.update(cx, |w, cx| {
+                    w.ui.covers.insert((kind, id), img);
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+    }
+}
+
 impl Render for BardWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let (glow, vignette, grain) = {
@@ -427,7 +457,7 @@ impl Render for BardWindow {
             - if self.ui.library_open { LIBRARY_W } else { 0. }
             - if self.ui.queue_open { QUEUE_W } else { 0. };
 
-        div()
+        let root = div()
             .id("bard")
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
@@ -469,7 +499,10 @@ impl Render for BardWindow {
             .children(settings::panel(self, cx))
             // Last, so a notice shows above Settings and Shortcuts.
             .children(overlays::notice(self, cx))
-            .when(self.drag.is_some(), |el| el.child(drag_tracker(cx.entity())))
+            .when(self.drag.is_some(), |el| el.child(drag_tracker(cx.entity())));
+        // Covers asked for while building this frame.
+        self.load_covers(window, cx);
+        root
     }
 }
 

@@ -113,10 +113,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
     let footer_left = if let (true, Some(p)) = (ui.scanning, &ui.scan_progress) {
         format!("Scanning {}/{}", p.scanned, p.total)
     } else if albums_view {
-        let mut names: Vec<&str> = ui.tracks.iter().map(|t| t.album.as_str()).collect();
-        names.sort_unstable();
-        names.dedup();
-        format!("{} albums", names.len())
+        format!("{} albums", ui.album_count())
     } else if ui.view == LibraryView::Loved && ui.open_album.is_none() {
         format!("{} loved", fmt_count(ui.filtered_tracks().len()))
     } else {
@@ -156,45 +153,50 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
 
 fn album_grid(this: &mut BardWindow, _window: &mut Window, cx: &mut Context<BardWindow>) -> impl IntoElement {
     let albums = this.ui.filtered_albums();
-    // grid-cols-2 gap-3 px-3, inside a scroller whose bar takes 9px.
     let col_w = (LIBRARY_W - SCROLLBAR_W - 24. - 12.) / 2.;
-    let mut rows = Vec::new();
-    for pair in albums.chunks(2) {
-        let mut row = div().flex().gap_3();
-        for album in pair {
-            row = row.child(album_card(this, album, col_w, cx));
-        }
-        rows.push(row);
-    }
-    let empty = albums.is_empty();
+    // Two cards a row, and only the rows in view are built: a card costs a
+    // cover lookup and a dozen elements, and a large library has thousands.
+    let rows = albums.len().div_ceil(2);
     let handle = this.album_scroll.clone();
+    let base = handle.0.borrow().base_handle.clone();
     div()
         .relative()
         .flex_1()
         .min_h_0()
         .flex()
         .flex_col()
-        .child(div().id("album-grid").flex_1().min_h_0().overflow_y_scroll().track_scroll(&handle).child(
-            div().w(px(LIBRARY_W - SCROLLBAR_W)).flex().flex_col().gap_3().px_3().pb_3().children(rows).when(
-                empty,
-                |el| {
-                    el.child(
-                        div()
-                            .px_1()
-                            .py_3()
-                            .text_size(theme::S2)
-                            .text_color(theme::muted())
-                            .child("No albums match that."),
-                    )
-                },
-            ),
-        ))
-        .child(super::scrollbar(handle, cx.entity()))
+        .when(albums.is_empty(), |el| {
+            el.child(div().px_4().py_3().text_size(theme::S2).text_color(theme::muted()).child("No albums match that."))
+        })
+        .child(
+            uniform_list(
+                "album-grid",
+                rows,
+                cx.processor(move |this, range: std::ops::Range<usize>, window, cx| {
+                    let rows = range
+                        .map(|r| {
+                            let mut row = div().w(px(LIBRARY_W - SCROLLBAR_W)).flex().gap_3().px_3().pb_3();
+                            for album in &albums[r * 2..(r * 2 + 2).min(albums.len())] {
+                                row = row.child(album_card(this, album, col_w, cx));
+                            }
+                            row
+                        })
+                        .collect::<Vec<_>>();
+                    // Rows are built after the window's render, so the covers
+                    // they asked for are started here.
+                    this.load_covers(window, cx);
+                    rows
+                }),
+            )
+            .track_scroll(&handle)
+            .flex_1(),
+        )
+        .child(super::scrollbar(base, cx.entity()))
 }
 
 fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<BardWindow>) -> impl IntoElement {
     let status = this.ui.album_status(&album.name);
-    let art = album.art_track_id.as_deref().and_then(|id| this.ui.covers.cover(id));
+    let art = album.art_track_id.as_deref().and_then(|id| this.ui.covers.thumb(id));
     let name = album.name.clone();
     let group = SharedString::from(format!("album-{}", album.name));
     let ids: Vec<String> = album.tracks.iter().map(|t| t.id.clone()).collect();
@@ -529,7 +531,7 @@ fn local_date(ms: i64) -> String {
 fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoElement {
     let ui = &this.ui;
     let open = ui.menu_open;
-    let count = fmt_count(ui.tracks.len());
+    let count = fmt_count(ui.tracks().len());
 
     let item = |id: &'static str,
                 label: &'static str,
