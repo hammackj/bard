@@ -1,117 +1,100 @@
-# Bard
+<p align="center"><img src="resources/icon.svg" width="96" alt=""></p>
 
-A local music player for a curated, copyright-free library. Think a deliberately
-dumb Spotify: it plays the files you own, and nothing else.
+<h1 align="center">Bard</h1>
 
-![Bard](resources/icon.svg)
+<p align="center">A local music player for streamers, built for a curated library of music you
+are allowed to play on stream.</p>
 
-## Why it works this way
+![Bard playing a track, with the album library on the left and the queue on the right](resources/screenshot.webp)
 
-**Bard only ever plays files you added.** Nothing is fetched from the internet,
-nothing streams from a third party, and there is no search box pointed at the
-outside world. That is the whole design: a player you can leave running over a
-stream without wondering whether the next track is licensed.
-
-It was briefly a song-request bot as well. That was removed. With a library of
-several hundred instrumental tracks, nobody in chat knows a title to ask for,
-and listing them is not possible inside a chat message — the feature could not
-do the job it existed for. The player, the queue and the overlay stand on their
-own.
-
-The overlay server binds to `127.0.0.1`, never `0.0.0.0`. It is for your OBS
-instance on this machine; exposing it would put your library, and its artwork,
-on the network.
-
-If your library is licensed music (StreamBeats and similar), check the terms —
-most royalty-free catalogues permit use _within_ your stream but forbid
-redistributing the audio separately. Keeping the overlay on localhost is part
-of staying inside that line.
+Bard plays the files you point it at and nothing else. Nothing is fetched,
+streamed or searched for online. That's the whole point: you can leave it
+running under a stream without wondering whether the next track is licensed.
 
 ## Features
 
-- Plays MP3, FLAC, WAV, OGG, M4A and Opus from folders you choose
-- **Routes audio to a specific output device**, so music can go to a dedicated
-  stream mix instead of your monitors
-- Live OBS overlay over server-sent events, plus `nowplaying.json` for
-  file-based setups
-- Embedded album art and a live waveform visualiser
-- Shuffle and album modes that keep playing when the queue runs dry
-- Tray icon with a now-playing preview; closing the window hides rather than
-  quits
+- **Streamer mode.** Mark each album as _safe_, _claimed_ or untested after
+  checking it against Content ID. While streamer mode is armed, only safe albums
+  play, even ones you pick yourself, and a track that stops being allowed is cut
+  at once. It can arm itself when OBS starts streaming, recording, the replay
+  buffer or the virtual camera. It never disarms itself.
+- **An OBS overlay.** A browser source served on `127.0.0.1` that updates the
+  moment the track changes, plus `nowplaying.json` for file-based setups.
+- **Its own output device.** Send music to a dedicated stream mix instead of
+  your speakers. If the device is missing at startup, Bard uses the default
+  and switches over by itself when it appears.
+- **Endless playback.** Shuffle or album-by-album fill keeps playing when the
+  queue runs dry. Loved tracks come up more often, and claimed albums are left
+  out.
+- **Even volume.** ReplayGain normalisation by track or album, plus crossfade.
+- Plays MP3, FLAC, WAV, Ogg Vorbis, M4A (AAC/ALAC) and Opus.
+- Album art, a live visualiser, repeat one/all and a sleep timer.
+- A tray icon with a now-playing preview. MPRIS lets desktop media controls
+  work, and global media keys are available if you opt in.
 
 ## Requirements
 
 Linux with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
-(Wayland); the tray needs a StatusNotifierItem host, which Plasma provides.
+(Wayland). The tray needs a StatusNotifierItem host, which Plasma provides.
 
 Building needs a stable Rust toolchain and the PipeWire, libopus and Wayland
 development headers.
 
-## Development
+## Installing
 
 ```bash
-cargo run -p bard            # debug build
-cargo run --release -p bard  # what you will actually ship
-cargo test --workspace
+./scripts/install-desktop.sh
 ```
 
-Before committing, formatting and lints must pass clean (`rustfmt.toml` holds
-the formatter settings):
+That builds the release binary, installs it to `~/.local/bin/bard`, and
+registers a `.desktop` entry and the icons in your per-user XDG directories.
+`--desktop` also puts a launcher on the desktop.
 
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-```
+Run it again after pulling to update; `cargo build` alone doesn't touch the
+copy your launcher runs. Every build records its commit, shown next to the
+version in Settings → About and the avatar menu, with `-dirty` if it was built
+from uncommitted changes.
 
-The workspace is four crates:
+## Getting started
 
-| Crate           | What it holds                                                    |
-| --------------- | ---------------------------------------------------------------- |
-| `bard-core`     | types, library scan, queue, config and stores                    |
-| `bard-audio`    | decode, PipeWire output, gain, fades, the visualiser's analyser  |
-| `bard-services` | overlay server, `nowplaying.json`, OBS, MPRIS, tray, keyring     |
-| `bard`          | the GPUI app: windows, views, and the glue between the above     |
+1. Launch Bard and click **Choose a music folder**. Tags and embedded art are
+   read once and cached.
+2. Open **Settings** (`Ctrl+,`) to set the output device, normalisation,
+   crossfade and streamer mode.
 
-Development environment variables:
+### The OBS overlay
 
-- `BARD_DATA_DIR=/some/dir` — runs against that data directory instead of
-  `~/.config/bard`, under its own MPRIS name and keyring entry, so a dev build
-  can run beside the installed one without touching its library or stats
-- `cargo run -p bard --features snapshot --bin snapshot` — renders the real
-  views headless to PNG from a fixture, for checking a screen without a
-  desktop
+Settings shows the overlay URL, normally `http://127.0.0.1:4747`. In OBS, add
+a **Browser Source** with that URL, about 470×210. If port 4747 is taken, Bard
+tries the next one up, so use the **Copy** button instead of assuming 4747.
 
-## First run
+The server only listens on `127.0.0.1`. It's for the OBS on this machine;
+exposing it would put your library and its artwork on the network. Most
+royalty-free catalogues allow use _within_ a stream but not redistributing the
+audio, and keeping the overlay local helps you stay inside that.
 
-1. Launch Bard and click **Choose a music folder**.
-2. Wait for the scan. Tags and embedded art are read once and cached;
-   rescans skip art that is already cached.
-3. Open **Settings** (`Ctrl+,`).
+`nowplaying.json` is written to `~/.config/bard`, atomically, whenever the
+track, play state or queue length changes. It isn't rewritten on every
+progress tick. You can turn it off in Settings.
 
-### Adding the OBS overlay
+### Streamer mode
 
-Settings shows the overlay URL — by default `http://127.0.0.1:4747`. In OBS add
-a **Browser Source** with that URL, roughly 470×210. It updates the instant a
-track changes; no polling and no refresh needed.
+1. Check your albums. `scripts/make-album-videos.sh` renders one video per
+   album (its cover over the whole album's audio) with a chapter list. Upload
+   it to YouTube as private, and any Content ID claim's timestamp points to
+   the exact track.
+2. Mark each album **safe** or **claimed** from its page in the library.
+   Claimed albums are kept out of shuffle, fill and endless.
+3. Arm it in Settings → Streamer mode (**Only play albums marked safe**), or
+   turn on **Arm automatically when OBS goes live** and give Bard the OBS
+   WebSocket address and password. The password is stored in your system
+   keyring. While armed, a green banner says so; turn it off from there.
 
-If port 4747 is taken, Bard walks upward and shows the port it actually bound.
-Use the **Copy** button rather than assuming 4747.
+While armed, untested albums are blocked too: an album nobody has checked
+isn't evidence of anything. Blocked tracks always say why instead of failing
+silently.
 
-For a file-based workflow, `nowplaying.json` is written to the app's config
-directory (`~/.config/bard`). It is written atomically, so OBS never reads a
-half-written file, and only when the track, play state or queue length
-changes — not on every progress tick.
-
-### Choosing an output device
-
-Settings → Audio → Output device lists PipeWire's sinks. To send music to a
-virtual cable while your own monitoring stays separate, pick that device here.
-
-If the saved device is missing at startup (a USB interface not yet plugged
-in), Bard plays to the system default, keeps your setting, and switches over
-by itself when the device appears.
-
-## Shortcuts
+### Shortcuts
 
 | Key           | Action                   |
 | ------------- | ------------------------ |
@@ -121,75 +104,77 @@ by itself when the device appears.
 | `/`           | Focus the library filter |
 | `Enter`       | Queue the selected track |
 | `Shift+Enter` | Play it now              |
-| `Ctrl/Cmd+,`  | Settings                 |
+| `Ctrl+,`      | Settings                 |
 | `?`           | Shortcut list            |
 
-System-wide media keys are available but **off by default** — once taken, they
-stop reaching every other player on your machine. Enable them in Settings.
+Global media keys are **off by default**: once Bard takes them, they stop
+reaching every other player on your machine. Turn them on in Settings.
 
-## Installing
+## Development
 
 ```bash
-./scripts/install-desktop.sh
+cargo run -p bard            # debug build
+cargo run --release -p bard  # release build
+cargo test --workspace
 ```
 
-That builds the release binary, installs it to `~/.local/bin/bard`, and
-registers a `.desktop` entry and the icon set in your per-user XDG
-directories. Run it again after pulling to update the installed app; `cargo
-build` alone does not touch the copy your launcher runs. Every build stamps in
-its commit — the About section in Settings and the avatar menu show it next to
-the version, with `-dirty` when the build carried uncommitted changes — so if
-the app is not behaving like the source, check that first.
-
-`--desktop` also drops a launcher on the desktop.
-
-### Cutting a release
-
-The workspace version in `Cargo.toml` is the single source of truth. Write the
-release's entry in `CHANGELOG.md` first, then bump the version, and commit
-both together so the tag points at the release:
+Formatting and lints must pass before committing (`rustfmt.toml` holds the
+formatter settings):
 
 ```bash
-git add -A && git commit -m "Bard 0.2.1"
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+| Crate           | What it holds                                                   |
+| --------------- | --------------------------------------------------------------- |
+| `bard-core`     | types, library scan, queue, config and stores                   |
+| `bard-audio`    | decoding, PipeWire output, gain, fades, the visualiser analyser |
+| `bard-services` | overlay server, `nowplaying.json`, OBS, MPRIS, tray, keyring    |
+| `bard`          | the GPUI app: windows, views, and the glue between the above    |
+
+Design decisions to know before changing things:
+
+- **The core owns the queue.** The window sends requests and renders what
+  comes back, so there is one source of truth for what plays next.
+- **Views never touch the core or the audio engine directly.** They read a
+  model and call a `Backend` trait, which is what lets the snapshot tool
+  render the real views from sample data.
+- **Closing the window hides Bard to the tray.** GPUI can't hide a window on
+  Linux, so it really closes; its state is kept and a new window is built
+  when the tray asks for one.
+
+Useful tools:
+
+- `BARD_DATA_DIR=/some/dir` uses that data directory instead of
+  `~/.config/bard`, with its own MPRIS name and keyring entry, so a dev build
+  can run next to the installed one without touching its library or stats.
+- `cargo run -p bard --features snapshot --bin bard-snapshot` renders the
+  real views headlessly to PNG from a fixture file.
+- `./scripts/screenshot.sh` regenerates `resources/screenshot.webp` from an
+  invented library.
+- `scripts/replaygain.py` writes the ReplayGain tags that normalisation uses.
+
+### Releases
+
+The workspace version in `Cargo.toml` is the single source of truth. Add the
+release to `CHANGELOG.md`, bump the version, and commit both together so the
+tag points at the release:
+
+```bash
+git commit -am "Bard 0.2.1"
 git tag -a v0.2.1 -m "Bard 0.2.1"
-git push && git push --tags
+git push origin master v0.2.1
 ```
 
-Bard is on a `0.x` line: minor bumps carry breaking changes, patch bumps do
-not.
-
-### The tray preview
-
-The now-playing preview is a layer-shell surface on Wayland, so the compositor
-puts it in the corner chosen in Settings; no window rule is needed.
-
-## Where things live
-
-```
-crates/       the Rust workspace (see Development)
-resources/
-  overlay/    the OBS browser source page, embedded in the binary
-  icons/      tray and launcher icons
-docs/
-  PORT.md     notes from the port off Electron, and where it deliberately differs
-```
-
-Some deliberate structure worth knowing before changing things:
-
-- **The core owns the queue.** The window sends intents and renders what comes
-  back, so there is one source of truth for what plays next.
-- **The window never touches the core or the audio engine directly.** Views
-  read a model and call a `Backend` trait, which is what lets the snapshot tool
-  render the real views from fixture data.
-- **Closing the window hides to the tray.** GPUI cannot hide a window on
-  Linux, so it really closes; its state is parked and a new window is built
-  from it when the tray asks.
+Bard is on a `0.x` line: minor versions may carry breaking changes, patch
+versions don't.
 
 ## Licence
 
-The application code is MIT — see [`LICENSE`](LICENSE). The bundled fonts
-(Inter, Fira Code) are under the SIL Open Font License and two icons are
+Bard's code is MIT-licensed; see [`LICENSE`](LICENSE). The bundled fonts
+(Inter, Fira Code) are under the SIL Open Font License, and two icons are
 adapted from Feather (MIT); see [`THIRD-PARTY.md`](THIRD-PARTY.md).
 
-Music you play through it is governed by whatever licence that music carries —
-Bard neither supplies nor relicenses any audio.
+Bard doesn't supply or relicense any audio. The music you play is covered by
+its own licence.
