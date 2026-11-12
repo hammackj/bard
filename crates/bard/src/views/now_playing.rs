@@ -214,10 +214,11 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
     let button = |id: &'static str, name: &'static str, size: f32| {
         div()
             .id(id)
+            .group(id)
             .rounded(px(2.))
             .p_1()
             .cursor_pointer()
-            .child(icon(name, size, theme::muted()))
+            .child(super::hover_icon(id, name, size, theme::muted(), theme::text()))
     };
 
     let buttons = div()
@@ -246,7 +247,12 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
         .rounded(px(2.))
         .p_1()
         .cursor_pointer()
-        .child(icon("repeat", 17., if repeat == RepeatMode::Off { theme::muted() } else { theme::cyan() }))
+        .group("repeat")
+        .child(if repeat == RepeatMode::Off {
+            super::hover_icon("repeat", "repeat", 17., theme::muted(), theme::text())
+        } else {
+            icon("repeat", 17., theme::cyan())
+        })
         .when(repeat == RepeatMode::One, |el| {
             el.child(
                 mono(px(9.))
@@ -290,7 +296,13 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
                 el.border_color(theme::edge()).text_color(theme::muted())
             }
         })
-        .child(icon("endless", 13., if endless { theme::text() } else { theme::muted() }))
+        .group("endless")
+        .when(!endless, |el| el.hover(|s| s.text_color(theme::text())))
+        .child(if endless {
+            icon("endless", 13., theme::text())
+        } else {
+            super::hover_icon("endless", "endless", 13., theme::muted(), theme::text())
+        })
         .child("Endless")
         .on_click(cx.listener(move |this, _, _, _| {
             this.ui.backend.update_config(Box::new(move |c| c.playback.endless = !endless));
@@ -312,7 +324,13 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
                 .py(px(2.))
                 .text_size(theme::S1)
                 .cursor_pointer()
-                .map(|el| if active { el.bg(theme::cyan_deep()).text_color(theme::text()) } else { el.text_color(theme::muted()) })
+                .map(|el| {
+                    if active {
+                        el.bg(theme::cyan_deep()).text_color(theme::text())
+                    } else {
+                        el.text_color(theme::muted()).hover(|s| s.text_color(theme::text()))
+                    }
+                })
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, _| {
                     this.ui.backend.update_config(Box::new(move |c| c.playback.auto_fill = value));
@@ -493,7 +511,12 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
                 .rounded(px(2.))
                 .p_1()
                 .cursor_pointer()
-                .child(icon("moon", 16., if remaining.is_some() { theme::cyan() } else { theme::muted() }))
+                .group("sleep")
+                .child(if remaining.is_some() {
+                    icon("moon", 16., theme::cyan())
+                } else {
+                    super::hover_icon("sleep", "moon", 16., theme::muted(), theme::text())
+                })
                 .children(remaining.map(|r| mono(theme::S1).text_color(theme::cyan()).child(r.to_string())))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.ui.sleep_open = !this.ui.sleep_open;

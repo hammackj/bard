@@ -415,11 +415,12 @@ pub fn love_button(track_id: &str, on: bool, size: f32, cx: &mut Context<BardWin
         .tooltip(super::tip(if on { "Loved — played more often" } else { "Love this track so it plays more often" }))
         .flex_none()
         .cursor_pointer()
-        .child(icon(
-            if on { "heart-filled" } else { "heart" },
-            size,
-            if on { theme::rose() } else { theme::muted() },
-        ))
+        .group("love")
+        .child(if on {
+            icon("heart-filled", size, theme::rose())
+        } else {
+            super::hover_icon("love", "heart", size, theme::muted(), theme::rose())
+        })
         .on_click(cx.listener(move |this, _, _, cx| {
             cx.stop_propagation();
             this.ui.backend.toggle_loved(&id);
@@ -465,6 +466,7 @@ fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut 
                 .py_1()
                 .text_size(theme::S1)
                 .text_color(fg)
+                .when(!active, |el| el.hover(|s| s.text_color(theme::text())))
                 .cursor_pointer()
                 .child(label)
                 .on_click(cx.listener(move |this, _, _, _| {

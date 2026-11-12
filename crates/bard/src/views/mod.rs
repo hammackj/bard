@@ -22,6 +22,13 @@ pub fn icon(name: &str, size: f32, color: impl Into<Hsla>) -> Svg {
         .text_color(color)
 }
 
+/// An icon that takes `hover` while the pointer is over `group`, for
+/// `hover:text-*` on a button wrapping an SVG drawn in currentColor.
+pub fn hover_icon(group: &'static str, name: &str, size: f32, color: impl Into<Hsla>, hover: impl Into<Hsla>) -> Svg {
+    let hover = hover.into();
+    icon(name, size, color).group_hover(group, move |s| s.text_color(hover))
+}
+
 /// Text that truncates with an ellipsis, like Tailwind's `truncate`.
 pub fn truncate<E: Styled>(el: E) -> E {
     el.min_w_0().overflow_hidden().whitespace_nowrap().text_ellipsis()

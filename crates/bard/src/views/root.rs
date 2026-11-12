@@ -595,7 +595,8 @@ fn dock_toggle(
         .py(px(2.))
         .text_color(theme::muted())
         .cursor_pointer()
+        .group(side)
         .hover(|s| s.bg(theme::panel()).text_color(theme::text()))
-        .child(icon(&name, 15., theme::muted()))
+        .child(super::hover_icon(side, &name, 15., theme::muted(), theme::text()))
         .on_click(on_click)
 }
