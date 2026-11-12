@@ -1,0 +1,578 @@
+//! The facade, end to end: queue, playback reporting, config side effects,
+//! streamer mode and persistence -- the orchestration ipc-handlers.ts and
+//! queue.ts did, which the TypeScript had no tests for.
+
+use bard_core::types::*;
+use bard_core::{Bard, CoreEvent, Options, gain_multiplier};
+use std::sync::mpsc::Receiver;
+use std::time::Duration;
+
+fn track(id: &str, album: &str, n: u32) -> Track {
+    Track {
+        id: id.into(),
+        path: format!("/music/{album}/{n:02} - {id}.flac"),
+        title: format!("Title {id}"),
+        artist: "Harris Heller".into(),
+        album: album.into(),
+        duration_sec: 120.0,
+        has_artwork: true,
+        search_text: bard_core::search::search_text_for(&format!("Title {id}"), "Harris Heller", album),
+        track_gain_db: None,
+        album_gain_db: None,
+        track_peak: None,
+        album_peak: None,
+    }
+}
+
+fn library() -> Vec<Track> {
+    let mut v = Vec::new();
+    for (album, prefix) in [("Gold", "g"), ("Rain", "r"), ("Moon", "m")] {
+        for n in 1..=4 {
+            v.push(track(&format!("{prefix}{n}"), album, n));
+        }
+    }
+    v
+}
+
+struct Fixture {
+    _dir: tempfile::TempDir,
+    bard: Bard,
+    rx: Receiver<CoreEvent>,
+}
+
+impl Fixture {
+    fn drain(&self) -> Vec<CoreEvent> {
+        self.rx.try_iter().collect()
+    }
+    fn notices(&self) -> Vec<String> {
+        self.drain()
+            .into_iter()
+            .filter_map(|e| if let CoreEvent::Notice(n) = e { Some(n) } else { None })
+            .collect()
+    }
+    fn dir(&self) -> &std::path::Path {
+        self._dir.path()
+    }
+}
+
+/// A Bard over the test library, endless off unless asked for.
+fn fixture(endless: bool) -> Fixture {
+    let dir = tempfile::tempdir().unwrap();
+    let opts = Options {
+        stats_debounce: Duration::from_secs(3600),
+        albums_debounce: Duration::from_secs(3600),
+        loved_debounce: Duration::from_secs(3600),
+    };
+    let (mut bard, rx) = Bard::open_with(dir.path().to_path_buf(), opts).unwrap();
+    bard.seed_rng(7);
+    bard.update_config(|c| c.playback.endless = endless);
+    bard.install_library(library());
+    let f = Fixture { _dir: dir, bard, rx };
+    f.drain();
+    f
+}
+
+fn queue_ids(b: &Bard) -> Vec<String> {
+    b.queue().iter().map(|q| q.track.id.clone()).collect()
+}
+
+fn playing(b: &Bard) -> Option<String> {
+    b.now_playing().map(|n| n.track.id.clone())
+}
+
+fn progress(b: &Bard, position: f64) -> PlaybackProgress {
+    PlaybackProgress {
+        position,
+        duration: 120.0,
+        playing: true,
+        track_id: b.now_playing().map(|n| n.track.id.clone()),
+    }
+}
+
+#[test]
+fn bard_is_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Bard>();
+    assert_send::<bard_core::LibraryScanner>();
+}
+
+#[test]
+fn open_creates_the_data_dir_and_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("bard");
+    let (bard, _rx) = Bard::open(data.clone()).unwrap();
+    assert!(data.join("config.json").is_file());
+    let p = bard.paths();
+    assert_eq!(p.config, data.join("config.json").to_string_lossy());
+    assert_eq!(p.artwork, data.join("artwork").to_string_lossy());
+    assert_eq!(p.now_playing, data.join("nowplaying.json").to_string_lossy());
+    assert_eq!(p.logs, data.join("logs").to_string_lossy());
+    assert!(bard.can_reveal(&data));
+    assert!(!bard.can_reveal(dir.path().join("bard-evil")));
+}
+
+#[test]
+fn enqueue_starts_playback_when_idle() {
+    let mut f = fixture(false);
+    f.bard.enqueue("g1");
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    assert!(f.bard.queue().is_empty());
+    let ev = f.drain();
+    assert!(matches!(&ev[0], CoreEvent::QueueChanged(q) if q.len() == 1));
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.id == "g1")));
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::NowPlaying(Some(i)) if i.track.id == "g1")));
+
+    f.bard.enqueue("g2");
+    assert_eq!(queue_ids(&f.bard), ["g2"]);
+    assert!(f.bard.enqueue("nope").is_none());
+}
+
+#[test]
+fn enqueue_many_keeps_an_album_together_with_endless_on() {
+    // The bug enqueue_many exists for: queueing an album track by track let
+    // endless fill the gap after track 1 with unrelated tracks.
+    let mut f = fixture(true);
+    f.bard.clear_queue();
+    let album = ["r1", "r2", "r3", "r4"];
+    f.bard.enqueue_many(&album, true);
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"));
+    assert_eq!(&queue_ids(&f.bard)[..3], ["r2", "r3", "r4"]);
+}
+
+#[test]
+fn enqueue_many_start_now_plays_the_batch_not_the_head() {
+    let mut f = fixture(false);
+    f.bard.enqueue("g1"); // playing
+    f.bard.enqueue("g2"); // queued
+    f.bard.enqueue_many(&["m1", "m2"], true);
+    assert_eq!(playing(&f.bard).as_deref(), Some("m1"));
+    assert_eq!(queue_ids(&f.bard), ["g2", "m2"]);
+}
+
+#[test]
+fn play_now_interrupts_without_consuming_the_queue() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "g3"], false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.bard.play_now("m4");
+    assert_eq!(playing(&f.bard).as_deref(), Some("m4"));
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3"]);
+}
+
+#[test]
+fn endless_stocks_the_queue_on_install_without_playing() {
+    let f = fixture(true);
+    assert_eq!(f.bard.queue().len(), 10);
+    assert!(f.bard.now_playing().is_none());
+    let unique: std::collections::HashSet<_> = queue_ids(&f.bard).into_iter().collect();
+    assert_eq!(unique.len(), 10);
+}
+
+#[test]
+fn turning_endless_on_tops_up_at_once() {
+    let mut f = fixture(false);
+    assert!(f.bard.queue().is_empty());
+    f.bard.update_config(|c| c.playback.endless = true);
+    assert_eq!(f.bard.queue().len(), 10);
+    f.bard.update_config(|c| c.playback.endless_lookahead = 11);
+    assert_eq!(f.bard.queue().len(), 11);
+    let ev = f.drain();
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.playback.endless_lookahead == 11)));
+}
+
+#[test]
+fn removing_with_endless_refills() {
+    let mut f = fixture(true);
+    let first = f.bard.queue()[0].id.clone();
+    f.bard.remove_from_queue(&first);
+    assert_eq!(f.bard.queue().len(), 10);
+    assert!(f.bard.queue().iter().all(|q| q.id != first));
+}
+
+#[test]
+fn reorder_clamps_and_ignores_bad_indices() {
+    let mut f = fixture(false);
+    f.bard.enqueue("g1");
+    f.bard.enqueue_many(&["g2", "g3", "g4"], false);
+    f.bard.reorder_queue(0, 99);
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4", "g2"]);
+    f.bard.reorder_queue(9, 0);
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4", "g2"]);
+    f.bard.reorder_queue(2, 0);
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3", "g4"]);
+    f.bard.shuffle_queue();
+    let mut ids = queue_ids(&f.bard);
+    ids.sort();
+    assert_eq!(ids, ["g2", "g3", "g4"]);
+}
+
+#[test]
+fn fill_queue_respects_count_room_and_duplicates() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.max_queue_length = 5);
+    assert_eq!(f.bard.fill_queue(Some(3)), 3);
+    // Started playback: one moved to now playing.
+    assert_eq!(f.bard.queue().len(), 2);
+    assert_eq!(f.bard.fill_queue(None), 3); // room for 3 more of the default 10
+    assert_eq!(f.bard.fill_queue(None), 0);
+    let mut all = queue_ids(&f.bard);
+    all.push(playing(&f.bard).unwrap());
+    let unique: std::collections::HashSet<_> = all.iter().collect();
+    assert_eq!(unique.len(), all.len());
+}
+
+#[test]
+fn shuffle_auto_fill_keeps_playing_when_the_queue_runs_dry() {
+    let mut f = fixture(false);
+    f.bard.enqueue("g1");
+    f.bard.report_ended();
+    assert!(f.bard.now_playing().is_some());
+    assert!(f.bard.queue().is_empty(), "not endless: a single track, nothing queued");
+
+    f.bard.update_config(|c| c.playback.auto_fill = AutoFillMode::Off);
+    f.bard.report_ended();
+    assert!(f.bard.now_playing().is_none());
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::NowPlaying(None))));
+}
+
+#[test]
+fn album_auto_fill_walks_the_album_then_rolls_over() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.auto_fill = AutoFillMode::Album);
+    f.bard.enqueue("g3");
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g4"));
+    f.bard.report_ended();
+    let next = playing(&f.bard).unwrap();
+    assert!(next == "r1" || next == "m1", "rolled to another album's first track, got {next}");
+}
+
+#[test]
+fn plays_are_counted_at_30s_and_skips_before_that() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "g3"], false);
+    let p = progress(&f.bard, 29.0);
+    f.bard.report_progress(p);
+    assert_eq!(f.bard.track_stats("g1").plays, 0);
+    let p = progress(&f.bard, 30.0);
+    f.bard.report_progress(p);
+    assert_eq!(f.bard.track_stats("g1").plays, 1);
+    // Counted once only.
+    let p = progress(&f.bard, 50.0);
+    f.bard.report_progress(p);
+    assert_eq!(f.bard.track_stats("g1").plays, 1);
+    assert_eq!(f.drain().iter().filter(|e| matches!(e, CoreEvent::StatsChanged)).count(), 1);
+
+    f.bard.skip(); // g1 was counted: no skip
+    assert_eq!(f.bard.track_stats("g1").skips, 0);
+    let p = progress(&f.bard, 5.0);
+    f.bard.report_progress(p);
+    f.bard.skip(); // g2 abandoned at 5s
+    assert_eq!(f.bard.track_stats("g2").skips, 1);
+    f.bard.skip(); // g3 at 0s is not a skip
+    assert_eq!(f.bard.track_stats("g3").skips, 0);
+}
+
+#[test]
+fn short_tracks_count_at_half() {
+    let mut f = fixture(false);
+    f.bard.enqueue("g1");
+    f.bard.report_progress(PlaybackProgress {
+        position: 21.0,
+        duration: 40.0,
+        playing: true,
+        track_id: Some("g1".into()),
+    });
+    assert_eq!(f.bard.track_stats("g1").plays, 1);
+}
+
+#[test]
+fn progress_from_the_outgoing_track_is_ignored() {
+    // A crossfade keeps reporting the old track after the new one is selected.
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2"], false);
+    f.bard.skip();
+    f.drain();
+    f.bard.report_progress(PlaybackProgress {
+        position: 100.0,
+        duration: 120.0,
+        playing: true,
+        track_id: Some("g1".into()),
+    });
+    assert_eq!(f.bard.track_stats("g2").plays, 0);
+    assert!(f.drain().is_empty());
+    // Untagged reports are accepted.
+    f.bard.report_progress(PlaybackProgress { position: 31.0, duration: 0.0, playing: true, track_id: None });
+    assert_eq!(f.bard.track_stats("g2").plays, 1);
+}
+
+#[test]
+fn previous_restarts_or_steps_back() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "g3"], false);
+    f.bard.skip(); // g2
+    let p = progress(&f.bard, 10.0);
+    f.bard.report_progress(p);
+    f.drain();
+    f.bard.previous();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g2"), "restart");
+    assert!(matches!(&f.drain()[..], [CoreEvent::PlayTrack(t)] if t.id == "g2"));
+
+    f.bard.previous(); // position reset to 0 by the restart: steps back
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3"], "forward still works");
+    f.bard.previous(); // nothing behind g1: restart
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.bard.skip();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g2"));
+}
+
+#[test]
+fn repeat_one_and_all() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.repeat = RepeatMode::One);
+    f.bard.enqueue_many(&["g1", "g2"], false);
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+
+    f.bard.update_config(|c| c.playback.repeat = RepeatMode::All);
+    f.bard.report_ended(); // g2
+    f.bard.report_ended(); // wraps: g1 again, not g2 twice
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g2"));
+}
+
+#[test]
+fn claiming_an_album_drops_it_from_the_queue_and_auto_play() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "r1", "g3"], false);
+    f.drain();
+    f.bard.set_album_flag("Gold", ContentIdStatus::Claimed, Some(" Content ID "));
+    assert_eq!(queue_ids(&f.bard), ["r1"]);
+    assert_eq!(f.bard.album_flags()["Gold"].note.as_deref(), Some("Content ID"));
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::AlbumFlagsChanged)));
+    assert!(f.bard.playable_tracks().iter().all(|t| t.album != "Gold"));
+    // Deliberate play is still allowed while not armed.
+    assert!(f.bard.play_now("g4").is_some());
+}
+
+#[test]
+fn every_album_claimed_falls_back_to_everything() {
+    let mut f = fixture(false);
+    for a in ["Gold", "Rain", "Moon"] {
+        f.bard.set_album_flag(a, ContentIdStatus::Claimed, None);
+    }
+    assert_eq!(f.bard.playable_tracks().len(), 12);
+}
+
+#[test]
+fn streamer_mode_is_an_allow_list_enforced_on_the_present() {
+    let mut f = fixture(false);
+    f.bard.set_album_flag("Rain", ContentIdStatus::Safe, None);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Claimed, None);
+    f.bard.enqueue_many(&["g1", "m1", "r1", "r2"], false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.drain();
+
+    f.bard.arm(None);
+    assert!(f.bard.is_streamer_armed());
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"), "the unsafe track on air was skipped");
+    assert_eq!(queue_ids(&f.bard), ["r2"]);
+    let notices = f.notices();
+    assert_eq!(
+        notices,
+        [
+            "Streamer mode: removed 1 queued track not marked safe",
+            "Streamer mode: \"Gold\" is flagged as claimed \u{2014} skipping",
+        ]
+    );
+
+    // Deliberate play is refused, with a reason.
+    assert!(f.bard.play_now("m2").is_none());
+    assert_eq!(f.notices(), ["Streamer mode: \"Moon\" has not been checked for Content ID"]);
+    assert!(f.bard.enqueue_many(&["m1", "m2", "g1"], false).is_empty());
+    assert_eq!(f.notices(), ["Streamer mode: nothing queued \u{2014} 3 tracks not marked safe"]);
+    assert_eq!(f.bard.enqueue_many(&["m1", "r3"], false).len(), 1);
+    assert_eq!(f.notices(), ["Streamer mode: skipped 1 track not marked safe"]);
+
+    // Auto-play only reaches safe albums.
+    for _ in 0..10 {
+        f.bard.report_ended();
+        if let Some(id) = playing(&f.bard) {
+            assert!(id.starts_with('r'), "{id}");
+        }
+    }
+    f.bard.disarm();
+    assert!(!f.bard.is_streamer_armed());
+}
+
+#[test]
+fn armed_with_nothing_safe_stays_silent() {
+    // The TypeScript's shuffle fallback reached past the allow-list here.
+    let mut f = fixture(false);
+    f.bard.arm(None);
+    f.bard.fill_queue(Some(5));
+    assert!(f.bard.queue().is_empty());
+    f.bard.report_ended();
+    assert!(f.bard.now_playing().is_none());
+    f.bard.update_config(|c| c.playback.endless = true);
+    assert!(f.bard.queue().is_empty());
+}
+
+#[test]
+fn previous_skips_history_that_is_no_longer_permitted() {
+    let mut f = fixture(false);
+    f.bard.set_album_flag("Rain", ContentIdStatus::Safe, None);
+    f.bard.enqueue_many(&["r1", "g1", "r2"], false);
+    f.bard.skip(); // g1
+    f.bard.arm(None); // g1 is skipped -> r2
+    assert_eq!(playing(&f.bard).as_deref(), Some("r2"));
+    f.bard.previous();
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"));
+}
+
+#[test]
+fn obs_arming_names_its_source_and_tells_the_user() {
+    let mut f = fixture(false);
+    f.bard.arm(Some(StreamerSource::Record));
+    assert!(f.bard.is_streamer_armed());
+    assert_eq!(f.bard.streamer_source(), Some(StreamerSource::Record));
+    let ev = f.drain();
+    assert!(matches!(ev[0], CoreEvent::StreamerSource(Some(StreamerSource::Record))));
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.streamer.enabled)));
+    assert!(ev.iter().any(
+        |e| matches!(e, CoreEvent::Notice(n) if n.starts_with("OBS went live"))
+    ));
+
+    // Already armed: the source is updated, nothing else said.
+    f.bard.arm(Some(StreamerSource::Stream));
+    assert_eq!(f.drain(), [CoreEvent::StreamerSource(Some(StreamerSource::Stream))]);
+
+    // Toggling by hand clears the source.
+    f.bard.disarm();
+    assert_eq!(f.bard.streamer_source(), None);
+    f.bard.arm(Some(StreamerSource::Stream));
+    f.bard.update_config(|c| c.streamer.enabled = false);
+    assert_eq!(f.bard.streamer_source(), None);
+}
+
+#[test]
+fn loved_tracks_and_stats_persist() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let (mut bard, rx) = Bard::open(dir.path().to_path_buf()).unwrap();
+        bard.install_library(library());
+        assert_eq!(bard.toggle_loved("g1"), ["g1"]);
+        assert!(bard.is_loved("g1"));
+        assert!(rx.try_iter().any(|e| matches!(e, CoreEvent::LovedChanged)));
+        bard.play_now("g2");
+        let p = progress(&bard, 31.0);
+        bard.report_progress(p);
+        bard.shutdown();
+    }
+    let (bard, _rx) = Bard::open(dir.path().to_path_buf()).unwrap();
+    assert_eq!(bard.loved(), ["g1"]);
+    assert_eq!(bard.stats()["g2"].plays, 1);
+
+    let mut bard = bard;
+    bard.clear_stats();
+    assert!(bard.stats().is_empty());
+}
+
+#[test]
+fn nowplaying_json_is_written_on_track_and_play_state_changes() {
+    let mut f = fixture(false);
+    f.bard.set_overlay_port(Some(4748));
+    f.bard.enqueue("g1");
+    let path = f.dir().join("nowplaying.json");
+    let read = || -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+    };
+    let v = read();
+    assert_eq!(v["title"], "Title g1");
+    assert_eq!(v["artUrl"], "http://127.0.0.1:4748/art/g1");
+    assert_eq!(v["isPlaying"], false);
+    assert_eq!(v["durationSec"], 120);
+    let body = std::fs::read_to_string(&path).unwrap();
+    assert!(body.starts_with("{\n  \"title\": \"Title g1\",\n  \"artist\""), "{body}");
+
+    // A progress tick that changes play state writes; one that does not, does not.
+    let p = progress(&f.bard, 1.0);
+    f.bard.report_progress(p);
+    assert_eq!(read()["isPlaying"], true);
+    std::fs::remove_file(&path).unwrap();
+    let p = progress(&f.bard, 2.0);
+    f.bard.report_progress(p);
+    assert!(!path.exists());
+
+    // Every report reaches the overlay.
+    let overlay = f.drain().into_iter().filter(|e| matches!(e, CoreEvent::Overlay(_))).count();
+    assert!(overlay >= 2);
+
+    f.bard.shutdown();
+    let v = read();
+    assert_eq!(v["title"], "");
+    assert_eq!(v["isPlaying"], false);
+    assert_eq!(v["queueLength"], 0);
+    assert_eq!(v["artUrl"], serde_json::Value::Null);
+}
+
+#[test]
+fn nowplaying_json_can_be_turned_off() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.overlay.write_now_playing_json = false);
+    f.bard.enqueue("g1");
+    f.bard.shutdown();
+    assert!(!f.dir().join("nowplaying.json").exists());
+}
+
+#[test]
+fn add_library_path_dedupes_and_persists() {
+    let mut f = fixture(false);
+    assert_eq!(f.bard.add_library_path("/mnt/music/"), ["/mnt/music"]);
+    assert_eq!(f.bard.add_library_path("/mnt/music"), ["/mnt/music"]);
+    assert_eq!(f.bard.add_library_paths(["/a", "/mnt/./music"]), ["/mnt/music", "/a"]);
+    let raw = std::fs::read_to_string(f.dir().join("config.json")).unwrap();
+    assert!(raw.contains("\"libraryPaths\": [\n\t\t\"/mnt/music\",\n\t\t\"/a\"\n\t]"));
+}
+
+#[test]
+fn search_filters_and_matches() {
+    let f = fixture(false);
+    assert_eq!(f.bard.search("").len(), 12);
+    assert_eq!(f.bard.search("RAIN").len(), 4);
+    assert_eq!(f.bard.best_match("title g3").map(|t| t.id.as_str()), Some("g3"));
+    assert!(f.bard.best_match("bohemian rhapsody").is_none());
+}
+
+#[test]
+fn transport_and_notice_relay() {
+    let f = fixture(false);
+    f.bard.transport(TransportAction::Toggle);
+    f.bard.notice("hi");
+    assert_eq!(f.drain(), [CoreEvent::Transport(TransportAction::Toggle), CoreEvent::Notice("hi".into())]);
+}
+
+#[test]
+fn scanning_an_empty_folder_reports_and_installs() {
+    let mut f = fixture(false);
+    let music = f.dir().join("music");
+    std::fs::create_dir_all(&music).unwrap();
+    std::fs::write(music.join("x.flac"), b"junk").unwrap();
+    f.bard.update_config(|c| c.library_paths = vec![music.to_string_lossy().into_owned()]);
+    let tracks = f.bard.scan_library();
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(f.bard.tracks().len(), 1);
+    let ev = f.drain();
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::ScanProgress(p) if p.scanned == 1 && p.total == 1)));
+    assert!(f.bard.artwork_path(&tracks[0].id).is_none());
+}
+
+#[test]
+fn gain_multiplier_is_exported() {
+    let mut t = track("x", "A", 1);
+    t.track_gain_db = Some(-6.0206);
+    assert!((gain_multiplier(&t, NormalizeMode::Track) - 0.5).abs() < 1e-4);
+    assert_eq!(gain_multiplier(&t, NormalizeMode::Off), 1.0);
+}
