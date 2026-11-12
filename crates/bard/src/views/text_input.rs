@@ -259,7 +259,7 @@ impl TextInput {
             .split_word_bound_indices()
             .filter(|(i, w)| *i < offset && !w.trim().is_empty())
             .map(|(i, _)| i)
-            .last()
+            .next_back()
             .unwrap_or(0)
     }
 

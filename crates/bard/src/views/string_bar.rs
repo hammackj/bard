@@ -56,13 +56,13 @@ impl StringState {
         self.shown = ease(self.shown, predict(&sample, now_ms), dt, TAU_MS);
 
         let mut target = 0.;
-        if sample.playing {
-            if let Some(read) = &self.analyser {
-                read(&mut self.buf);
-                // Peak deviation from the 128 midpoint, normalised to 0..1.
-                let peak = self.buf.iter().step_by(4).map(|b| (*b as i32 - 128).abs()).max().unwrap_or(0);
-                target = (peak as f32 / 90.).min(1.) * AMPLITUDE;
-            }
+        if sample.playing
+            && let Some(read) = &self.analyser
+        {
+            read(&mut self.buf);
+            // Peak deviation from the 128 midpoint, normalised to 0..1.
+            let peak = self.buf.iter().step_by(4).map(|b| (*b as i32 - 128).abs()).max().unwrap_or(0);
+            target = (peak as f32 / 90.).min(1.) * AMPLITUDE;
         }
         // Damps toward the target instead of snapping. The rates are per
         // frame in the original, which ran at the display's 60Hz.

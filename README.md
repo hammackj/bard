@@ -55,6 +55,14 @@ cargo run --release -p bard  # what you will actually ship
 cargo test --workspace
 ```
 
+Before committing, formatting and lints must pass clean (`rustfmt.toml` holds
+the formatter settings):
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 The workspace is four crates:
 
 | Crate           | What it holds                                                    |

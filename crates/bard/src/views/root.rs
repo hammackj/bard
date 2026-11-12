@@ -155,13 +155,13 @@ impl BardWindow {
         let number =
             |cx: &mut Context<Self>, field: &Entity<TextInput>, set: fn(&mut bard_core::types::Config, u32)| {
                 cx.subscribe(field, move |this, input, ev, cx| {
-                    if matches!(ev, InputEvent::Blur | InputEvent::Submit) {
-                        if let Ok(v) = input.read(cx).text().trim().parse::<f64>() {
-                            if v.is_finite() && v >= 0. {
-                                let v = v.floor() as u32;
-                                this.ui.backend.update_config(Box::new(move |c| set(c, v)));
-                            }
-                        }
+                    if matches!(ev, InputEvent::Blur | InputEvent::Submit)
+                        && let Ok(v) = input.read(cx).text().trim().parse::<f64>()
+                        && v.is_finite()
+                        && v >= 0.
+                    {
+                        let v = v.floor() as u32;
+                        this.ui.backend.update_config(Box::new(move |c| set(c, v)));
                     }
                 })
                 .detach();

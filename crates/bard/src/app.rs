@@ -32,6 +32,10 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+// CoreEvent carries a whole config or track, so it is the large variant.
+// These go through a channel a few times a second at most, and boxing it
+// would cost the nested `AppEvent::Core(CoreEvent::…)` patterns in `apply`.
+#[allow(clippy::large_enum_variant)]
 pub enum AppEvent {
     Core(CoreEvent),
     Player(PlayerEvent),
@@ -650,10 +654,10 @@ fn toggle_popup(shell: &ShellRef, cx: &mut App) {
     let open = shell.borrow_mut().popup.take();
     // A handle to a popup that was closed some other way fails here, and the
     // click opens a new one instead of doing nothing.
-    if let Some(handle) = open {
-        if handle.update(cx, |_, window, _| window.remove_window()).is_ok() {
-            return;
-        }
+    if let Some(handle) = open
+        && handle.update(cx, |_, window, _| window.remove_window()).is_ok()
+    {
+        return;
     }
     let (config, now, track, artwork_dir) = {
         let s = shell.borrow();
@@ -696,13 +700,13 @@ fn toggle_popup(shell: &ShellRef, cx: &mut App) {
         let shell = shell.clone();
         cx.spawn(async move |cx| {
             cx.background_executor().timer(std::time::Duration::from_secs(seconds as u64)).await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 let mut s = shell.borrow_mut();
-                if s.popup_generation == generation {
-                    if let Some(h) = s.popup.take() {
-                        drop(s);
-                        let _ = h.update(cx, |_, window, _| window.remove_window());
-                    }
+                if s.popup_generation == generation
+                    && let Some(h) = s.popup.take()
+                {
+                    drop(s);
+                    let _ = h.update(cx, |_, window, _| window.remove_window());
                 }
             });
         })
@@ -953,10 +957,10 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             CoreEvent::ConfigChanged(c) => {
                 // Normalisation is a property of playback, not of a track, so
                 // it follows the setting rather than being applied at play time.
-                if c.audio.normalize != ui.config.audio.normalize {
-                    if let Some(t) = &ui.track {
-                        backend.player.set_norm_gain(gain_multiplier(t, c.audio.normalize) as f32);
-                    }
+                if c.audio.normalize != ui.config.audio.normalize
+                    && let Some(t) = &ui.track
+                {
+                    backend.player.set_norm_gain(gain_multiplier(t, c.audio.normalize) as f32);
                 }
                 ui.config = c;
             }
