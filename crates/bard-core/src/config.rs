@@ -31,10 +31,13 @@ type WriteFn = dyn Fn(&Path, &Config) -> anyhow::Result<()> + Send + Sync;
 /// of a drag.
 ///
 /// Each change takes a version; a write records the newest version it
-/// carried, and an older one is never written after it. Both kinds take the
-/// same lock to write, so they cannot interleave on the temp file either.
+/// carried, and an older one is never written after it. Two locks: `state`,
+/// held only to hand a value over, so a slider step never waits on the disk;
+/// and `disk`, held across a write, so writes happen one at a time and in
+/// order. `written` changes only under both.
 struct Writer {
     state: Mutex<WriterState>,
+    disk: Mutex<()>,
     wake: Condvar,
     path: PathBuf,
     write: Box<WriteFn>,
@@ -63,32 +66,45 @@ impl Writer {
         }
     }
 
-    /// Writes what is pending, if it is newer than what is on disk. Called
-    /// with the lock held. Returns whether nothing is left to write.
-    fn write_pending(&self, st: &mut WriterState) -> bool {
-        let Some((version, config)) = st.pending.take() else { return true };
-        if version <= st.written {
-            return true;
-        }
-        match (self.write)(&self.path, &config) {
+    fn disk(&self) -> MutexGuard<'_, ()> {
+        self.disk.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Writes what is pending, if it is newer than what is on disk. The
+    /// state lock is not held during the write: a change arriving meanwhile
+    /// is taken at once and written next. Returns false if the write failed.
+    fn write_pending(&self) -> bool {
+        let _disk = self.disk();
+        let (version, config) = {
+            let mut st = self.lock();
+            match st.pending.take() {
+                None => return true,
+                Some((v, _)) if v <= st.written => return true,
+                Some(p) => p,
+            }
+        };
+        let result = (self.write)(&self.path, &config);
+        let ok = result.is_ok();
+        let mut st = self.lock();
+        let msg = match result {
             Ok(()) => {
                 st.written = version;
-                if std::mem::take(&mut st.failing) {
-                    self.tell("Settings are saving again".into());
-                }
-                true
+                std::mem::take(&mut st.failing).then(|| "Settings are saving again".to_string())
             }
             Err(e) => {
                 // Unless something newer arrived meanwhile, keep it to retry.
                 if st.pending.is_none() {
                     st.pending = Some((version, config));
                 }
-                if !std::mem::replace(&mut st.failing, true) {
-                    self.tell(format!("Could not save settings: {e:#} \u{2014} will keep trying"));
-                }
-                false
+                (!std::mem::replace(&mut st.failing, true))
+                    .then(|| format!("Could not save settings: {e:#} \u{2014} will keep trying"))
             }
+        };
+        drop(st);
+        if let Some(m) = msg {
+            self.tell(m);
         }
+        ok
     }
 
     fn run(self: Arc<Self>) {
@@ -107,8 +123,7 @@ impl Writer {
             }
             // Let a drag settle, without holding the lock.
             std::thread::sleep(wait);
-            let mut st = self.lock();
-            wait = if self.write_pending(&mut st) { SETTLE } else { (wait * 2).min(MAX_RETRY) };
+            wait = if self.write_pending() { SETTLE } else { (wait * 2).min(MAX_RETRY) };
         }
     }
 }
@@ -151,6 +166,7 @@ impl ConfigStore {
     fn with_writer(path: PathBuf, config: Config, write: Box<WriteFn>) -> Self {
         let writer = Arc::new(Writer {
             state: Mutex::new(WriterState::default()),
+            disk: Mutex::new(()),
             wake: Condvar::new(),
             path: path.clone(),
             write,
@@ -180,11 +196,14 @@ impl ConfigStore {
         if next == self.config {
             return Ok(false);
         }
-        let mut st = self.writer.lock();
+        // Waits for a write in flight: this one must be on disk, and after
+        // it, before the change applies.
+        let _disk = self.writer.disk();
         (self.writer.write)(&self.path, &next)?;
         self.version += 1;
         // Carries every deferred change too (they are in `config` already),
         // so anything pending is now older than the file.
+        let mut st = self.writer.lock();
         st.written = self.version;
         st.pending = None;
         drop(st);
@@ -210,7 +229,8 @@ impl ConfigStore {
             if spawned.is_err() {
                 // No thread: write now rather than not at all.
                 st.running = false;
-                self.writer.write_pending(&mut st);
+                drop(st);
+                self.writer.write_pending();
                 return true;
             }
         }
@@ -220,8 +240,7 @@ impl ConfigStore {
 
     /// Writes any deferred change now. Returns whether the file is current.
     pub fn flush(&self) -> bool {
-        let mut st = self.writer.lock();
-        self.writer.write_pending(&mut st)
+        self.writer.write_pending()
     }
 }
 
@@ -417,6 +436,49 @@ mod tests {
         wait_until(|| writes.lock().unwrap().last() == Some(&1.0));
         assert_eq!(on_disk(&dir).audio.volume, 1.0);
         assert!(writes.lock().unwrap().len() <= 2, "coalesced: {:?}", writes.lock().unwrap());
+    }
+
+    /// Slider steps while a slow write is already on the disk: none waits
+    /// for it, and the newest value lands after it. A discrete change in the
+    /// same window waits its turn, and a slider step after that is newer
+    /// than both.
+    #[test]
+    fn slider_steps_during_a_write_in_flight_do_not_wait_for_it() {
+        let (dir, mut store, writes, _) = recording(Duration::from_millis(800), 0);
+        let mut next = store.get().clone();
+        next.audio.volume = 0.21;
+        store.set_deferred(next);
+        // The writer settles, then spends 800 ms writing 0.21.
+        std::thread::sleep(SETTLE + Duration::from_millis(150));
+        let t = std::time::Instant::now();
+        for i in 0..20 {
+            let mut next = store.get().clone();
+            next.audio.volume = 0.3 + i as f64 / 100.;
+            store.set_deferred(next);
+        }
+        assert!(t.elapsed() < Duration::from_millis(50), "slider waited on the disk: {:?}", t.elapsed());
+        wait_until(|| writes.lock().unwrap().last() == Some(&0.49));
+        assert_eq!(on_disk(&dir).audio.volume, 0.49);
+        assert_eq!(*writes.lock().unwrap(), [0.21, 0.49], "in order, coalesced");
+
+        // A transactional change while a deferred write is in flight, then
+        // a slider step: the step is the newest, and lands last.
+        let (dir, mut store, writes, _) = recording(Duration::from_millis(300), 0);
+        let mut next = store.get().clone();
+        next.audio.volume = 0.1;
+        store.set_deferred(next);
+        std::thread::sleep(SETTLE + Duration::from_millis(100));
+        let mut next = store.get().clone();
+        next.streamer.enabled = true;
+        assert!(store.set(next).unwrap(), "waits for the write in flight, then writes");
+        assert!(on_disk(&dir).streamer.enabled, "on disk before set returns");
+        let mut next = store.get().clone();
+        next.audio.volume = 0.7;
+        store.set_deferred(next);
+        wait_until(|| writes.lock().unwrap().last() == Some(&0.7));
+        let disk = on_disk(&dir);
+        assert!(disk.streamer.enabled && disk.audio.volume == 0.7, "{:?}", writes.lock().unwrap());
+        assert_eq!(*writes.lock().unwrap(), [0.1, 0.1, 0.7]);
     }
 
     /// A discrete change while a slider value is being written behind: it
