@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.13] — 2026-11-12
+
 ### Fixed
 
 - **Streamer auto-arm notices an OBS that connects but never finishes the
