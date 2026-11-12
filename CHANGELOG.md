@@ -7,6 +7,22 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+Bard is a native Rust app.
+
+### Changed
+
+- **Rewritten in Rust with GPUI**, replacing Electron. The window looks and
+  behaves as before, and plays through PipeWire directly. Your library, queue, stats, loved tracks, Content ID flags
+  and settings carry over unchanged from `~/.config/bard`. Linux only.
+- **The tray preview is placed by the compositor** in the corner chosen in
+  Settings, so the KWin window rule script is gone.
+- **A saved output device that appears after startup is picked up** without a
+  restart.
+- **Clicking the tray icon brings the window to the front** on Wayland, using
+  the activation token the panel provides.
+
+See `docs/PORT.md` for the small deliberate differences.
+
 ## [0.1.3] — 2026-11-11
 
 The lock screen knows what is playing.

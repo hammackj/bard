@@ -1,3 +1,7 @@
+> **Historical.** This is the original build guide for the Electron app, kept
+> for its reasoning. The Electron code is gone; Bard is now the Rust workspace
+> under `crates/` (see `PORT.md`).
+
 # Bard — Electron Stream Music Player
 
 > [!WARNING]

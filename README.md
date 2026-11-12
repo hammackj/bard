@@ -41,43 +41,37 @@ of staying inside that line.
 
 ## Requirements
 
-Node 20+ and npm. Linux, macOS or Windows.
+Linux with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
+(Wayland); the tray needs a StatusNotifierItem host, which Plasma provides.
+
+Building needs a stable Rust toolchain and the PipeWire, libopus and Wayland
+development headers.
 
 ## Development
 
 ```bash
-npm install
-npm run dev
+cargo run -p bard            # debug build
+cargo run --release -p bard  # what you will actually ship
+cargo test --workspace
 ```
 
-If Electron fails to start with _"Electron failed to install correctly"_, its
-postinstall was blocked — npm 10+ can skip install scripts. Approve it and
-reinstall:
+The workspace is four crates:
 
-```bash
-npm install-scripts approve electron esbuild
-rm -rf node_modules/electron && npm install
-```
+| Crate           | What it holds                                                    |
+| --------------- | ---------------------------------------------------------------- |
+| `bard-core`     | types, library scan, queue, config and stores                    |
+| `bard-audio`    | decode, PipeWire output, gain, fades, the visualiser's analyser  |
+| `bard-services` | overlay server, `nowplaying.json`, OBS, MPRIS, tray, keyring     |
+| `bard`          | the GPUI app: windows, views, and the glue between the above     |
 
-Useful scripts:
+Development environment variables:
 
-| Command                                 | What it does                                 |
-| --------------------------------------- | -------------------------------------------- |
-| `npm run dev`                           | Run with hot reload                          |
-| `npm test`                              | Unit tests (vitest, no Electron)             |
-| `npm run typecheck`                     | Type-check main, preload, renderer and tests |
-| `npm run build`                         | Type-check and bundle                        |
-| `npm run build:linux` / `:win` / `:mac` | Build installers                             |
-
-Two development-only environment variables:
-
-- `BARD_SHOT=/path/to.png` — captures the app window to a PNG after load,
-  which is easier than screenshotting a whole desktop
-- `VITE_BARD_SELFTEST=1` — runs an audio self-test at startup. It renders the
-  graph at full gain into no output device, then asserts the analyser sees a
-  non-zero signal. This exists because a cross-origin-tainted media source
-  emits _pure silence_ while still reporting that it is playing, so every other
-  check passes against nothing.
+- `BARD_DATA_DIR=/some/dir` — runs against that data directory instead of
+  `~/.config/bard`, under its own MPRIS name and keyring entry, so a dev build
+  can run beside the installed one without touching its library or stats
+- `cargo run -p bard --features snapshot --bin snapshot` — renders the real
+  views headless to PNG from a fixture, for checking a screen without a
+  desktop
 
 ## First run
 
@@ -96,20 +90,18 @@ If port 4747 is taken, Bard walks upward and shows the port it actually bound.
 Use the **Copy** button rather than assuming 4747.
 
 For a file-based workflow, `nowplaying.json` is written to the app's config
-directory (`~/.config/bard` on Linux). It is written atomically, so OBS never
-reads a half-written file, and only when the track, play state or queue length
+directory (`~/.config/bard`). It is written atomically, so OBS never reads a
+half-written file, and only when the track, play state or queue length
 changes — not on every progress tick.
 
 ### Choosing an output device
 
-Settings → Audio → Output device. To send music to a virtual cable while your
-own monitoring stays separate, pick that device here.
+Settings → Audio → Output device lists PipeWire's sinks. To send music to a
+virtual cable while your own monitoring stays separate, pick that device here.
 
-**Device names are blank until you open the picker.** Reading them requires
-microphone permission, because that is what unlocks labels in
-`enumerateDevices()`. Bard asks only for that, records nothing, and closes the
-stream immediately. It is deferred until you open the picker because opening a
-capture stream makes the audio pipeline renegotiate, which is audible.
+If the saved device is missing at startup (a USB interface not yet plugged
+in), Bard plays to the system default, keeps your setting, and switches over
+by itself when the device appears.
 
 ## Shortcuts
 
@@ -127,128 +119,63 @@ capture stream makes the audio pipeline renegotiate, which is audible.
 System-wide media keys are available but **off by default** — once taken, they
 stop reaching every other player on your machine. Enable them in Settings.
 
-## Building installers
+## Installing
 
 ```bash
-npm run build:linux    # AppImage + deb
-npm run build:win      # NSIS installer
-npm run build:mac      # dmg (arm64 + x64)
-```
-
-Output lands in `dist/`. `build:linux` also refreshes `dist/linux-unpacked`,
-which the desktop launcher points at, so one command keeps the shortcut, the
-AppImage and the deb in step. All of them type-check first, so a broken build
-cannot be packaged.
-
-**`npm run build` does not update the installed app.** It writes `out/`, which
-is what `npm run dev` and `npm start` run. The launcher in your application
-menu runs the _packaged_ build in `dist/`, and only the `build:*` commands
-above refresh that. You can build and test all day while the installed app
-stays on month-old code — that is not hypothetical, a packaged build once ran
-for a day without the loudness-normalisation code while the source had it, and
-the symptom looked like broken normalisation rather than a stale package.
-
-`npm run build` now warns when `dist/` is behind `out/`, and every build stamps
-in its commit: the startup log, the About section in Settings and the avatar
-menu all show it next to the version, with `-dirty` when the build carried
-uncommitted changes. If the app is not behaving like the source, check that
-first.
-
-> **Debugging a packaged build:** plain `grep` against an `.asar` reports **no
-> matches regardless of content** — it detects binary and suppresses counting,
-> which produces a very convincing false negative. Use `strings file | grep`,
-> `grep -a`, or `npx asar extract` first. Note also that `replaygain_track_gain`
-> appears inside the asar even when Bard's own gain code is absent, because
-> music-metadata ships those strings; it is not a usable probe.
-
-macOS builds are **unsigned**. Gatekeeper will refuse to open them on first
-launch; right-click the app and choose **Open** to get the override prompt.
-Signing and notarisation need an Apple Developer identity, which is not
-configured here.
-
-### Cutting a release
-
-The version in `package.json` is the single source of truth: electron-builder
-interpolates it into every artifact name, and `app.getVersion()` reads it back
-at runtime for the About row and the startup log.
-
-Write the release's entry in `CHANGELOG.md` first, then:
-
-```bash
-npm version patch --no-git-tag-version   # or minor / major; bumps package.json only
-git add -A && git commit -m "Bard 0.1.1"
-git tag -a v0.1.1 -m "Bard 0.1.1"
-npm run build:linux
-git push && git push --tags
-```
-
-`--no-git-tag-version` is deliberate. Plain `npm version` commits _and_ tags in
-one step, so writing the changelog afterwards and amending it in would leave the
-tag pointing at the commit as it was before the amend — orphaned, and no longer
-the release. Bumping without tagging lets the changelog and the version bump
-land as one commit that the tag then points at.
-
-Bard is on a `0.x` line: minor bumps carry breaking changes, patch bumps do
-not. `npm version` refuses to move a version backwards, which is only a problem
-if you ever need to undo a bump by hand.
-
-### Pinning the tray preview (KDE/Wayland)
-
-Wayland compositors place windows themselves and ignore an application's
-request — verified: a request for (4700, 2660) lands at (0, 0). The corner
-setting in Bard therefore only takes effect on X11, Windows and macOS.
-
-On KDE the native fix is a KWin window rule:
-
-```bash
-./scripts/install-kwin-rule.sh --corner bottom-right --screen DP-3 --margin 70
-./scripts/install-kwin-rule.sh --remove   # undo
-```
-
-It matches on a substring of the window caption (exact caption matching turned
-out to be brittle), backs up `kwinrulesrc` before editing, and leaves any rules
-you already had alone. Raise `--margin` past the thickness of a panel that
-overlaps the chosen corner.
-
-### Desktop launcher for a local build
-
-Packaged installers register their own launcher. For a locally built binary:
-
-```bash
-npm run build && npx electron-builder --linux --dir
 ./scripts/install-desktop.sh
 ```
 
-That installs a `.desktop` entry and the full icon set into your per-user
-XDG directories.
+That builds the release binary, installs it to `~/.local/bin/bard`, and
+registers a `.desktop` entry and the icon set in your per-user XDG
+directories. Run it again after pulling to update the installed app; `cargo
+build` alone does not touch the copy your launcher runs. Every build stamps in
+its commit — the About section in Settings and the avatar menu show it next to
+the version, with `-dirty` when the build carried uncommitted changes — so if
+the app is not behaving like the source, check that first.
+
+`--desktop` also drops a launcher on the desktop.
+
+### Cutting a release
+
+The workspace version in `Cargo.toml` is the single source of truth. Write the
+release's entry in `CHANGELOG.md` first, then bump the version, and commit
+both together so the tag points at the release:
+
+```bash
+git add -A && git commit -m "Bard 0.2.1"
+git tag -a v0.2.1 -m "Bard 0.2.1"
+git push && git push --tags
+```
+
+Bard is on a `0.x` line: minor bumps carry breaking changes, patch bumps do
+not.
+
+### The tray preview
+
+The now-playing preview is a layer-shell surface on Wayland, so the compositor
+puts it in the corner chosen in Settings; no window rule is needed.
 
 ## Where things live
 
 ```
-src/
-  shared/     types, the IPC contract, and the pure logic the tests cover
-  main/       library scanning, queue, overlay server, config, tray
-  preload/    the contextBridge surface — the only path into the renderer
-  renderer/   React UI and the audio engine
+crates/       the Rust workspace (see Development)
 resources/
-  overlay/    the OBS browser source page
-  fonts/      self-hosted woff2, so the app works offline
+  overlay/    the OBS browser source page, embedded in the binary
+  icons/      tray and launcher icons
+docs/
+  PORT.md     notes from the port off Electron, and where it deliberately differs
 ```
 
 Some deliberate structure worth knowing before changing things:
 
-- **The queue lives in the main process.** The renderer sends intents and
-  renders what comes back, so there is one source of truth for what plays next.
-- **Audio lives in the renderer**, because `setSinkId` and the Web Audio API
-  only exist there. Output routing sets the sink on the _AudioContext_, not the
-  media element — once an element feeds a `MediaElementAudioSourceNode`, its
-  own `setSinkId` no longer affects what you hear.
-- **Local audio is served over a `bard://` scheme**, not `file://`, which the
-  renderer cannot load. That scheme needs `corsEnabled` _and_ a matching
-  `Access-Control-Allow-Origin` header _and_ `crossOrigin` on the element. Miss
-  any one and playback is silent with no error anywhere.
-- **Every channel the renderer can reach is named in `shared/ipc.ts`.** There
-  is no generic `ipcRenderer` passthrough.
+- **The core owns the queue.** The window sends intents and renders what comes
+  back, so there is one source of truth for what plays next.
+- **The window never touches the core or the audio engine directly.** Views
+  read a model and call a `Backend` trait, which is what lets the snapshot tool
+  render the real views from fixture data.
+- **Closing the window hides to the tray.** GPUI cannot hide a window on
+  Linux, so it really closes; its state is parked and a new window is built
+  from it when the tray asks.
 
 ## Licence
 

@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 #
-# Installs a desktop launcher and icon theme entries for Bard, per-user.
-#
-# Packaged installers (AppImage/deb) ship their own launcher; this exists so a
-# locally built or unpacked binary shows up in the application menu too.
+# Installs Bard per-user: the release binary, a desktop launcher and the icon
+# theme entries.
 #
 #   ./scripts/install-desktop.sh [path-to-bard-binary] [--desktop]
 #
-# With no argument it uses dist/linux-unpacked/bard (the Electron build). For
-# the Rust build pass target/release/bard; its window's app id is "bard", so
-# this same launcher and icon apply.
+# With no argument it builds the release binary and installs it to
+# ~/.local/bin/bard, so the launcher keeps working while target/ is rebuilt.
+# Run it again to update the installed app. A path skips the build and points
+# the launcher at that binary instead.
 # --desktop also drops a copy on the desktop itself.
 set -euo pipefail
 
@@ -23,12 +22,20 @@ for arg in "$@"; do
     *) target="$arg" ;;
   esac
 done
-target="${target:-$repo_root/dist/linux-unpacked/bard}"
+
+if [[ -z "$target" ]]; then
+  (cd "$repo_root" && cargo build --release -p bard)
+  bin_dir="$HOME/.local/bin"
+  mkdir -p "$bin_dir"
+  # Copied to a temporary name and renamed, so a running Bard keeps its
+  # binary and the next launch gets the new one.
+  install -m 755 "$repo_root/target/release/bard" "$bin_dir/.bard.new"
+  mv -f "$bin_dir/.bard.new" "$bin_dir/bard"
+  target="$bin_dir/bard"
+fi
 
 if [[ ! -x "$target" ]]; then
   echo "error: no executable at $target" >&2
-  echo "build one first:  npm run build && npx electron-builder --linux --dir" >&2
-  echo "   or, for the Rust build:  cargo build --release -p bard" >&2
   exit 1
 fi
 target="$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"
@@ -107,7 +114,7 @@ Terminal=false
 Categories=AudioVideo;Audio;Player;
 Keywords=music;player;stream;obs;
 StartupNotify=true
-StartupWMClass=Bard
+StartupWMClass=bard
 EOF
 chmod 644 "$desktop_file"
 

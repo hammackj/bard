@@ -1,8 +1,8 @@
 # Porting Bard to Rust and GPUI
 
-Work happens on the `gpui` branch. The Electron app stays on `master`, working
-and shippable, until the Rust build reaches parity; only then is the Electron
-code removed. Linux only for now (KDE / Wayland, PipeWire).
+The port happened on the `gpui` branch. Once the Rust build reached parity the
+Electron code was removed; `v0.1.3` is the last Electron release. Linux only
+for now (KDE / Wayland, PipeWire).
 
 **Goal: the Rust app looks exactly like the Electron one.** Every screen is
 checked side by side against a screenshot of the Electron build.
