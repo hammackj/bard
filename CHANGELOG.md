@@ -7,6 +7,13 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A rescan that retags the playing track updates nowplaying.json and
+  the overlay.** Only a cover change did; a new title, artist or album
+  reached the window but the file kept the old tags until the next track
+  or pause.
+
 ## [0.2.11] — 2026-11-12
 
 ### Fixed

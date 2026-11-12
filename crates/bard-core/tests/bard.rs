@@ -942,6 +942,84 @@ fn nowplaying_json_timing_follows_the_track() {
     assert_eq!(read_np(&f)["durationSec"], 119.0, "the paused track's first report is written too");
 }
 
+#[test]
+fn review_rescan_updates_persisted_metadata_without_art_change() {
+    let mut f = fixture(false);
+    f.bard.play_now("g1");
+    let p = progress(&f.bard, 5.0);
+    f.bard.report_progress(p);
+    let mut lib = library();
+    lib[0].title = "Retagged current title".into();
+    f.bard.install_library(lib);
+    let p = progress(&f.bard, 6.0);
+    f.bard.report_progress(p);
+    assert_eq!(f.bard.now_playing_snapshot().title, "Retagged current title");
+    assert_eq!(read_np(&f)["title"], "Retagged current title", "file consumers still see the old title");
+}
+
+fn overlay_frames(f: &Fixture) -> Vec<NowPlaying> {
+    f.drain().into_iter().filter_map(|e| if let CoreEvent::Overlay(n) = e { Some(n) } else { None }).collect()
+}
+
+/// A rescan that retags the playing track -- title, artist or album, playing
+/// or paused -- rewrites nowplaying.json and sends the overlay a frame at
+/// once, keeping the track's timing and play state. One that changes
+/// nothing a viewer sees does neither.
+#[test]
+fn a_retag_of_the_current_track_reaches_the_file_and_overlay_at_once() {
+    let mut f = fixture(false);
+    f.bard.play_now("g1");
+    report(&mut f.bard, "g1", 40.0, 119.5, true);
+    let path = f.dir().join("nowplaying.json");
+    type Edit = fn(&mut Track);
+    let edits: [(&str, Edit, &str, &str); 3] = [
+        ("title", |t| t.title = "New title".into(), "title", "New title"),
+        ("artist", |t| t.artist = "New artist".into(), "artist", "New artist"),
+        ("album", |t| t.album = "New album".into(), "album", "New album"),
+    ];
+    for playing in [true, false] {
+        report(&mut f.bard, "g1", 40.0, 119.5, playing);
+        for (what, edit, key, want) in edits {
+            let mut lib = library();
+            edit(&mut lib[0]);
+            f.drain();
+            f.bard.install_library(lib);
+            let v = read_np(&f);
+            assert_eq!(v[key], want, "{what} while playing={playing}");
+            assert_eq!(v["isPlaying"], playing, "{what}: play state kept");
+            assert_eq!((v["positionSec"].as_f64(), v["durationSec"].as_f64()), (Some(40.0), Some(119.5)), "{what}: timing kept");
+            let frames = overlay_frames(&f);
+            assert!(frames.iter().any(|n| n.title == v["title"] && n.artist == v["artist"] && n.album == v["album"]), "{what}: overlay frame");
+            assert_eq!(self::playing(&f.bard).as_deref(), Some("g1"), "{what}: still the same track");
+
+            // Put it back, then an unchanged rescan touches nothing.
+            f.bard.install_library(library());
+            assert_eq!(read_np(&f)["title"], "Title g1");
+            std::fs::remove_file(&path).unwrap();
+            f.drain();
+            f.bard.install_library(library());
+            assert!(!path.exists(), "{what}: an unchanged rescan rewrote the file");
+            assert!(overlay_frames(&f).is_empty(), "{what}: an unchanged rescan sent a frame");
+            report(&mut f.bard, "g1", 40.0, 119.5, !playing);
+            report(&mut f.bard, "g1", 40.0, 119.5, playing);
+        }
+    }
+}
+
+#[test]
+fn a_retag_with_the_file_turned_off_still_reaches_the_overlay() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.overlay.write_now_playing_json = false);
+    f.bard.play_now("g1");
+    report(&mut f.bard, "g1", 3.0, 120.0, true);
+    let mut lib = library();
+    lib[0].artist = "Someone else".into();
+    f.drain();
+    f.bard.install_library(lib);
+    assert!(overlay_frames(&f).iter().any(|n| n.artist == "Someone else"));
+    assert!(!f.dir().join("nowplaying.json").exists());
+}
+
 /// Two folders: a's tracks a1/a2, b's b1/b2.
 fn two_folders(armed: bool) -> Fixture {
     let mut f = fixture(false);

@@ -19,6 +19,28 @@ fn stopped() -> PlaybackProgress {
     PlaybackProgress { position: 0.0, duration: 0.0, playing: false, track_id: None }
 }
 
+/// The parts of a track the overlay and nowplaying.json show.
+#[derive(PartialEq)]
+struct Shown<'a> {
+    title: &'a str,
+    artist: &'a str,
+    album: &'a str,
+    duration_bits: u64,
+    has_artwork: bool,
+}
+
+impl<'a> Shown<'a> {
+    fn of(t: &'a Track) -> Self {
+        Shown {
+            title: &t.title,
+            artist: &t.artist,
+            album: &t.album,
+            duration_bits: t.duration_sec.to_bits(),
+            has_artwork: t.has_artwork,
+        }
+    }
+}
+
 pub(crate) struct NowPlayingState {
     path: PathBuf,
     events: Sender<CoreEvent>,
@@ -66,17 +88,18 @@ impl NowPlayingState {
     }
 
     /// A rescan installed: picks up the current track as the scan found it
-    /// (art added, replaced or removed) and, if its cover changed, sends the
-    /// overlay a new art URL.
+    /// (retagged, art added, replaced or removed) and, if anything a viewer
+    /// sees changed, sends the overlay a new frame and rewrites the file.
+    /// Timing and play state are left alone: the track is still playing.
     pub fn library_changed(&mut self, track: Option<&Track>, write_file: bool) {
         let Some(cur) = self.current.as_mut() else { return };
-        let had = cur.track.has_artwork;
+        let mut changed = false;
         if let Some(t) = track.filter(|t| t.id == cur.track.id) {
+            changed = Shown::of(t) != Shown::of(&cur.track);
             cur.track = t.clone();
         }
-        let has = cur.track.has_artwork;
         let rev = self.art_rev_now();
-        if rev != self.art_rev || had != has {
+        if rev != self.art_rev || changed {
             self.art_rev = rev;
             self.emit();
             self.write_if_interesting(true, write_file);
