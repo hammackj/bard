@@ -426,6 +426,12 @@ impl Bard {
         // A newly claimed album must leave the pending queue, not just future
         // picks -- otherwise it still plays in a few minutes' time.
         self.drop_claimed_from_queue();
+        // Armed, the allow-list applies whatever exclude_claimed says: an
+        // album that stops being safe leaves the queue, and if it is on air
+        // it is skipped, exactly as when the mode is armed.
+        if self.is_streamer_armed() {
+            self.refresh_streamer_mode();
+        }
         self.albums.all()
     }
 

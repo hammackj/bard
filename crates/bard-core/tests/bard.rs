@@ -595,3 +595,55 @@ fn a_setting_that_fails_to_save_is_not_applied() {
     assert_eq!(f.bard.config().streamer.enabled, !before);
     assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::ConfigChanged(c) if c.streamer.enabled == !before)));
 }
+
+/// Armed, with Rain safe and playing r1, and r2 and a second r1 queued.
+fn armed_on_rain(exclude_claimed: bool) -> Fixture {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.exclude_claimed = exclude_claimed);
+    f.bard.set_album_flag("Rain", ContentIdStatus::Safe, None);
+    f.bard.set_album_flag("Moon", ContentIdStatus::Safe, None);
+    f.bard.arm(None);
+    f.bard.enqueue_many(&["r1", "r2", "m1", "r1"], false);
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"));
+    assert_eq!(queue_ids(&f.bard), ["r2", "m1", "r1"]);
+    f.drain();
+    f
+}
+
+#[test]
+fn an_album_that_stops_being_safe_while_armed_leaves_the_air_and_the_queue() {
+    for exclude_claimed in [true, false] {
+        for status in [ContentIdStatus::Claimed, ContentIdStatus::Untested] {
+            let mut f = armed_on_rain(exclude_claimed);
+            f.bard.set_album_flag("Rain", status, None);
+            assert_eq!(
+                playing(&f.bard).as_deref(),
+                Some("m1"),
+                "the track on air is skipped ({status:?}, exclude_claimed {exclude_claimed})"
+            );
+            assert!(queue_ids(&f.bard).iter().all(|id| !id.starts_with('r')), "{:?}", queue_ids(&f.bard));
+            let events = f.drain();
+            assert!(
+                !events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.album == "Rain")),
+                "nothing from Rain is sent to the engine: {events:?}"
+            );
+            // Nor later.
+            for _ in 0..6 {
+                f.bard.report_ended();
+                assert!(playing(&f.bard).is_none_or(|id| !id.starts_with('r')));
+            }
+        }
+    }
+}
+
+#[test]
+fn repeat_one_does_not_replay_a_track_no_longer_safe() {
+    let mut f = armed_on_rain(true);
+    f.bard.update_config(|c| c.playback.repeat = RepeatMode::One);
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"), "repeats while safe");
+    f.bard.set_album_flag("Rain", ContentIdStatus::Untested, None);
+    f.drain();
+    f.bard.report_ended();
+    assert!(playing(&f.bard).is_none_or(|id| !id.starts_with('r')));
+}

@@ -408,6 +408,11 @@ impl Bard {
         // queued to look at.
         self.top_up_endless();
 
+        // The last check before anything goes on air. The queue is pruned when
+        // the mode is armed and when a flag changes, but this is the boundary
+        // that must hold whatever got the queue into its state.
+        self.drop_blocked_from_head();
+
         let write = self.config.get().overlay.write_now_playing_json;
         if self.queue.is_empty() {
             // Not endless: fall back to a single auto-filled track, or stop.
@@ -438,6 +443,21 @@ impl Bard {
         Some(next)
     }
 
+    /// Drops tracks streamer mode does not permit from the head of the queue,
+    /// saying so, until the head may play.
+    fn drop_blocked_from_head(&mut self) {
+        let mut dropped = false;
+        while let Some(reason) = self.queue.first().and_then(|i| self.blocked_reason(&i.track)) {
+            self.queue.remove(0);
+            self.notify(format!("{reason} \u{2014} skipping"));
+            dropped = true;
+        }
+        if dropped {
+            self.emit_queue();
+            self.top_up_endless();
+        }
+    }
+
     pub fn skip(&mut self) {
         self.play_next();
     }
@@ -462,6 +482,11 @@ impl Bard {
             BackStep::Restart => {
                 let Some(np) = &self.now_playing else { return };
                 let track = np.track.clone();
+                if let Some(reason) = self.blocked_reason(&track) {
+                    self.notify(format!("{reason} \u{2014} skipping"));
+                    self.play_next();
+                    return;
+                }
                 self.counted = false;
                 self.position = 0.0;
                 self.emit(CoreEvent::PlayTrack(track));
@@ -490,6 +515,7 @@ impl Bard {
         let mode = self.config.get().playback.repeat;
         if mode == RepeatMode::One
             && let Some(np) = &self.now_playing
+            && self.blocked_reason(&np.track).is_none()
         {
             let track = np.track.clone();
             self.counted = false;
