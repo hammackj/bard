@@ -13,4 +13,15 @@ fn main() {
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
     });
     println!("cargo:rustc-env=BARD_COMMIT={}", commit.unwrap_or_else(|| "dev".into()));
+
+    // The toolchain, for the version row's tooltip (Electron listed its
+    // Electron, Chrome and Node versions there): "1.91.0" from rustc -V.
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+    let version = Command::new(rustc)
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().nth(1).map(str::to_string))
+        .unwrap_or_else(|| "unknown".into());
+    println!("cargo:rustc-env=BARD_RUSTC={version}");
 }

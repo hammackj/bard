@@ -43,10 +43,10 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(action("q-shuffle", "Shuffle", n >= 2, false).on_click(cx.listener(|this, _, _, _| {
+                .child(action("q-shuffle", "Shuffle", n >= 2, false).tooltip(super::tip("Shuffle the pending queue")).on_click(cx.listener(|this, _, _, _| {
                     this.ui.backend.shuffle_queue()
                 })))
-                .child(action("q-fill", "Fill", true, false).on_click(cx.listener(|this, _, _, _| {
+                .child(action("q-fill", "Fill", true, false).tooltip(super::tip("Add random tracks from the library")).on_click(cx.listener(|this, _, _, _| {
                     this.ui.backend.fill_queue()
                 })))
                 .child(action("q-clear", "Clear", n > 0, true).on_click(cx.listener(|this, _, _, _| {

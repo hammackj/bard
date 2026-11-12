@@ -224,7 +224,7 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
         .flex()
         .items_center()
         .gap(px(18.))
-        .child(button("prev", "prev", 18.).on_click(cx.listener(|this, _, _, _| this.ui.backend.previous())))
+        .child(button("prev", "prev", 18.).tooltip(super::tip("Previous track (restarts if a few seconds in)")).on_click(cx.listener(|this, _, _, _| this.ui.backend.previous())))
         .child(
             button("play", if ui.playing { "pause" } else { "play" }, 26.)
                 // `disabled={!track}`: dimmed, and a click does nothing.
@@ -236,6 +236,11 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
     let repeat = ui.config.playback.repeat;
     let repeat_btn = div()
         .id("repeat")
+        .tooltip(super::tip(match repeat {
+            RepeatMode::Off => "Repeat off",
+            RepeatMode::All => "Repeat all — replay what has played once the queue empties",
+            RepeatMode::One => "Repeat one — keep replaying this track",
+        }))
         .relative()
         .ml_4()
         .rounded(px(2.))
@@ -265,6 +270,11 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
     let endless = ui.config.playback.endless;
     let endless_btn = div()
         .id("endless")
+        .tooltip(super::tip(if endless {
+            "Endless play is on — music keeps going indefinitely. Every track plays once before any repeats; when the library is exhausted it reshuffles and carries on."
+        } else {
+            "Endless play: keep music going indefinitely. Every track plays once before any repeats, then the library reshuffles and continues — it does not stop at the end of the library."
+        }))
         .flex()
         .items_center()
         .gap(px(6.))
@@ -288,11 +298,16 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
 
     let mode = ui.config.playback.auto_fill;
     let mut segmented = div().flex().items_center().gap_1().border_1().border_color(theme::edge()).p(px(2.));
-    for (value, label) in [(AutoFillMode::Off, "Off"), (AutoFillMode::Shuffle, "Shuffle"), (AutoFillMode::Album, "Album")] {
+    for (value, label, title) in [
+        (AutoFillMode::Off, "Off", "Stop when the queue runs out"),
+        (AutoFillMode::Shuffle, "Shuffle", "Keep playing — random, avoiding recent tracks"),
+        (AutoFillMode::Album, "Album", "Keep playing — finish the album, then another"),
+    ] {
         let active = mode == value;
         segmented = segmented.child(
             div()
                 .id(label)
+                .tooltip(super::tip(title))
                 .px_2()
                 .py(px(2.))
                 .text_size(theme::S1)
@@ -468,6 +483,10 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
         .child(
             div()
                 .id("sleep")
+                .tooltip(super::tip(match remaining {
+                    Some(r) => format!("Sleeping in {r} min"),
+                    None => "Sleep timer".to_string(),
+                }))
                 .flex()
                 .items_center()
                 .gap_1()

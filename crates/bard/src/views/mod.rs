@@ -143,3 +143,30 @@ pub fn scrollbar(handle: ScrollHandle, view: Entity<root::BardWindow>) -> impl I
     .absolute()
     .inset_0()
 }
+
+/// A `title=` tooltip: shown after a hover delay, near the pointer. Drawn in
+/// the app's panel style rather than imitating Chromium's native bubble.
+pub fn tip(text: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let text = text.into();
+    move |_, cx| cx.new(|_| Tip(text.clone())).into()
+}
+
+struct Tip(SharedString);
+
+impl Render for Tip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .max_w(px(320.))
+            .border_1()
+            .border_color(theme::edge())
+            .bg(theme::panel())
+            .shadow_lg()
+            .px_2()
+            .py_1()
+            .font_family(fonts::UI)
+            .text_size(theme::S1)
+            .line_height(relative(1.4))
+            .text_color(theme::text())
+            .child(self.0.clone())
+    }
+}

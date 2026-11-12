@@ -43,6 +43,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
         let active = ui.view == view && ui.open_album.is_none();
         div()
             .id(id)
+            .when(view == LibraryView::Loved, |el| el.tooltip(super::tip("Only loved tracks")))
             .cursor_pointer()
             .text_color(if active { on } else { theme::muted() })
             .when(!active, |el| el.hover(|s| s.text_color(theme::text())))
@@ -70,6 +71,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
             Some(name) => truncate(
                 div()
                     .id("back-to-albums")
+                    .tooltip(super::tip("Back to albums"))
                     .cursor_pointer()
                     .hover(|s| s.text_color(theme::text()))
                     .child(format!("‹ {name}"))
@@ -218,8 +220,8 @@ fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<Bar
 
     let badge = match status {
         ContentIdStatus::Untested => None,
-        ContentIdStatus::Safe => Some(("✓ safe", theme::green())),
-        ContentIdStatus::Claimed => Some(("⚠ claimed", theme::rose())),
+        ContentIdStatus::Safe => Some(("✓ safe", theme::green(), "Passed Content ID testing")),
+        ContentIdStatus::Claimed => Some(("⚠ claimed", theme::rose(), "Content ID claim — kept out of shuffle and endless")),
     };
 
     div()
@@ -229,6 +231,7 @@ fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<Bar
         .child(
             div()
                 .id(SharedString::from(format!("album-open-{}", album.name)))
+                .tooltip(super::tip(format!("{} — {} tracks", album.name, album.tracks.len())))
                 .relative()
                 .size(px(w))
                 .border_1()
@@ -236,8 +239,10 @@ fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<Bar
                 .overflow_hidden()
                 .cursor_pointer()
                 .child(cover)
-                .children(badge.map(|(label, color)| {
+                .children(badge.map(|(label, color, title)| {
                     div()
+                        .id("cid-badge")
+                        .tooltip(super::tip(title))
                         .absolute()
                         .top(px(6.))
                         .left(px(6.))
@@ -350,6 +355,7 @@ fn track_row(
     let love_id = t.id.clone();
     div()
         .id(SharedString::from(format!("track-{}", t.id)))
+        .tooltip(super::tip(format!("{} — {}", t.title, t.artist)))
         .h(px(ROW_H))
         .w_full()
         .relative()
@@ -381,7 +387,15 @@ fn track_row(
                 .gap_2()
                 .text_color(theme::muted())
                 .child(love_button(&love_id, is_loved, 13., cx))
-                .when(plays > 0, |el| el.child(div().text_color(theme::cyan()).child(format!("{plays}×"))))
+                .when(plays > 0, |el| {
+                    el.child(
+                        div()
+                            .id("plays")
+                            .tooltip(super::tip(format!("Played {plays} times")))
+                            .text_color(theme::cyan())
+                            .child(format!("{plays}×")),
+                    )
+                })
                 .child(fmt_time(t.duration_sec)),
         )
         .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
@@ -398,6 +412,7 @@ pub fn love_button(track_id: &str, on: bool, size: f32, cx: &mut Context<BardWin
     let id = track_id.to_string();
     div()
         .id(SharedString::from(format!("love-{track_id}-{size}")))
+        .tooltip(super::tip(if on { "Loved — played more often" } else { "Love this track so it plays more often" }))
         .flex_none()
         .cursor_pointer()
         .child(icon(
@@ -420,6 +435,11 @@ fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut 
         (ContentIdStatus::Safe, "Safe"),
         (ContentIdStatus::Claimed, "Claimed"),
     ];
+    let title = |s: ContentIdStatus| match s {
+        ContentIdStatus::Untested => "Not checked against Content ID yet",
+        ContentIdStatus::Safe => "Uploaded and produced no claim",
+        ContentIdStatus::Claimed => "Produced a claim — kept out of shuffle, fill and endless",
+    };
     let mut row = div().flex().gap_1();
     for (value, label) in choices {
         let active = status == value;
@@ -434,6 +454,7 @@ fn content_id_bar(this: &mut BardWindow, album: &str, window: &Window, cx: &mut 
         row = row.child(
             div()
                 .id(SharedString::from(format!("cid-{label}")))
+                .tooltip(super::tip(title(value)))
                 .flex_1()
                 .flex()
                 .justify_center()
@@ -555,6 +576,12 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .child(item("menu-shortcuts", "Keyboard shortcuts", "?".into(), cx, |w, _| w.ui.shortcuts_open = true))
             .child(
                 div()
+                    .id("version")
+                    .tooltip(super::tip(format!(
+                        "commit {} · GPUI · Rust {}",
+                        this.ui.commit,
+                        env!("BARD_RUSTC")
+                    )))
                     .mt_1()
                     .flex()
                     .items_center()

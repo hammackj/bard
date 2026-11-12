@@ -411,6 +411,8 @@ rich(&[
         Some(paths) => {
             let path_row = |label: &str, value: &str| {
                 div()
+                    .id(SharedString::from(format!("path-{label}")))
+                    .tooltip(super::tip(value.to_string()))
                     .flex()
                     .items_baseline()
                     .justify_between()

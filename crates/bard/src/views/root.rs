@@ -554,6 +554,7 @@ impl BardWindow {
             .child(
                 div()
                     .id("streamer-off")
+                    .tooltip(super::tip("Stop restricting playback. Nothing re-arms it until OBS goes live again."))
                     .flex_none()
                     .border_1()
                     .border_color(theme::a(theme::green(), 0.5))
@@ -581,6 +582,11 @@ fn dock_toggle(
     let name = format!("{side}-{}", if open { "open" } else { "closed" });
     div()
         .id(side)
+        .tooltip(super::tip(format!(
+            "{} {} panel",
+            if open { "Hide" } else { "Show" },
+            if side == "dock-left" { "library" } else { "queue" }
+        )))
         .rounded(px(2.))
         .px_1()
         .py(px(2.))

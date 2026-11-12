@@ -64,9 +64,14 @@ struct Fixture {
     /// Left clicks, in order, in window pixels.
     #[serde(default)]
     clicks: Vec<[f32; 2]>,
+    /// Rest the pointer here last, long enough for a tooltip to show.
+    #[serde(default)]
+    hover: Option<[f32; 2]>,
 }
 
-fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 4]>, Vec<[f32; 2]>)> {
+type Steps = (f32, Vec<String>, Option<[f32; 4]>, Vec<[f32; 2]>, Option<[f32; 2]>);
+
+fn fixture_ui(path: &str) -> anyhow::Result<(Ui, Steps)> {
     let f: Fixture = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     let home = std::env::var("HOME")?;
     let mut ui = Ui::new(Rc::new(NullBackend), format!("{home}/.config/bard/artwork").into());
@@ -104,7 +109,7 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>, Option<[f32; 
     ui.settings_open = f.settings_open;
     ui.outputs = f.outputs;
     ui.paths = f.paths;
-    Ok((ui, f.settings_scroll, f.keys, f.drag, f.clicks))
+    Ok((ui, (f.settings_scroll, f.keys, f.drag, f.clicks, f.hover)))
 }
 
 struct Fonts;
@@ -144,6 +149,7 @@ fn main() -> anyhow::Result<()> {
     let mut keys = Vec::new();
     let mut drag = None;
     let mut clicks: Vec<[f32; 2]> = Vec::new();
+    let mut hover = None;
     let window: AnyWindowHandle = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
         // `popup <nowplaying.json>`: the tray preview, from a snapshot as the
@@ -164,7 +170,8 @@ fn main() -> anyhow::Result<()> {
             .into()
         }
         fixture if fixture.ends_with(".json") => {
-            let (ui, scroll, k, d, c) = fixture_ui(fixture)?;
+            let (ui, (scroll, k, d, c, hv)) = fixture_ui(fixture)?;
+            hover = hv;
             keys = k;
             drag = d;
             clicks = c;
@@ -234,6 +241,21 @@ fn main() -> anyhow::Result<()> {
             })?;
             cx.run_until_parked();
         }
+    }
+    if let Some([x, y]) = hover {
+        let ev = PlatformInput::MouseMove(MouseMoveEvent {
+            position: point(px(x), px(y)),
+            pressed_button: None,
+            modifiers: Modifiers::default(),
+        });
+        cx.update_window(window, |_, window, cx| {
+            window.dispatch_event(ev, cx);
+            window.refresh();
+        })?;
+        cx.run_until_parked();
+        // Past GPUI's 500ms tooltip delay, on the headless app's own clock.
+        cx.advance_clock(std::time::Duration::from_millis(600));
+        cx.run_until_parked();
     }
     cx.update_window(window, |_, window, _| window.refresh())?;
     cx.run_until_parked();
