@@ -47,3 +47,37 @@ path = "src/main.rs"
 name = "bard-snapshot"
 path = "src/bin/snapshot.rs"
 required-features = ["snapshot"]
+
+# `cargo deb -p bard` (the release workflow runs it on Ubuntu 24.04, where
+# $auto works out the library dependencies with dpkg-shlibdeps).
+[package.metadata.deb]
+name = "bard-player"
+maintainer = "hammackj <172781+hammackj@users.noreply.github.com>"
+copyright = "2026 hammackj"
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+A local music player for streamers. Bard plays the files you point it at and \
+nothing else. Streamer mode only plays albums you have marked safe for Content \
+ID, and can arm itself when OBS goes live. Includes an OBS browser-source \
+overlay, a tray icon and MPRIS. A Secret Service provider (KWallet, \
+gnome-keyring or KeePassXC) is needed to keep the OBS WebSocket password."""
+section = "sound"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/bard", "usr/bin/", "755"],
+    ["../../resources/bard.desktop", "usr/share/applications/", "644"],
+    ["../../resources/icon.svg", "usr/share/icons/hicolor/scalable/apps/bard.svg", "644"],
+    ["../../resources/icons/icon-16.png", "usr/share/icons/hicolor/16x16/apps/bard.png", "644"],
+    ["../../resources/icons/icon-22.png", "usr/share/icons/hicolor/22x22/apps/bard.png", "644"],
+    ["../../resources/icons/icon-24.png", "usr/share/icons/hicolor/24x24/apps/bard.png", "644"],
+    ["../../resources/icons/icon-32.png", "usr/share/icons/hicolor/32x32/apps/bard.png", "644"],
+    ["../../resources/icons/icon-48.png", "usr/share/icons/hicolor/48x48/apps/bard.png", "644"],
+    ["../../resources/icons/icon-64.png", "usr/share/icons/hicolor/64x64/apps/bard.png", "644"],
+    ["../../resources/icons/icon-128.png", "usr/share/icons/hicolor/128x128/apps/bard.png", "644"],
+    ["../../resources/icons/icon-256.png", "usr/share/icons/hicolor/256x256/apps/bard.png", "644"],
+    ["../../resources/icons/icon-512.png", "usr/share/icons/hicolor/512x512/apps/bard.png", "644"],
+    ["../../resources/icons/icon-1024.png", "usr/share/icons/hicolor/1024x1024/apps/bard.png", "644"],
+    ["../../README.md", "usr/share/doc/bard-player/", "644"],
+    ["../../THIRD-PARTY.md", "usr/share/doc/bard-player/", "644"],
+]

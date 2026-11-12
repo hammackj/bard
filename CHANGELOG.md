@@ -7,6 +7,13 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Added
+
+- **A Debian package** (`bard-player`) on each release, for Debian and
+  Ubuntu 24.04 or newer.
+- `resources/bard.desktop`, a standard desktop entry for packages, and an
+  AUR PKGBUILD (`bard-player-bin`) under `packaging/aur/`.
+
 ## [0.2.15] — 2026-11-12
 
 The first release published on GitHub, with a prebuilt Linux binary.

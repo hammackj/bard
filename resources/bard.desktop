@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Bard
+GenericName=Music Player
+Comment=Local music player for streamers
+Exec=bard %U
+Icon=bard
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;player;stream;obs;
+StartupNotify=true
+StartupWMClass=bard

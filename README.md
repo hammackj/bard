@@ -41,9 +41,24 @@ Linux with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
 
 ### From a release
 
-Download `bard-<version>-x86_64-linux.tar.gz` from
-[Releases](https://github.com/hammackj/bard/releases), extract it, and from
-inside the folder run:
+[Releases](https://github.com/hammackj/bard/releases) have a Debian package
+and a tarball for x86_64 Linux.
+
+**Debian / Ubuntu 24.04 or newer:**
+
+```bash
+sudo apt install ./bard-player_<version>-1_amd64.deb
+```
+
+**Arch Linux:** the repo has a PKGBUILD that packages the release tarball. It
+isn't on the AUR yet, so build it from a clone:
+
+```bash
+cd packaging/aur/bard-player-bin && makepkg -si
+```
+
+**Any other distro:** download `bard-<version>-x86_64-linux.tar.gz`, extract
+it, and from inside the folder run:
 
 ```bash
 install -Dm755 bard ~/.local/bin/bard

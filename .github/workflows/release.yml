@@ -43,6 +43,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
       - name: Check the tag matches Cargo.toml
         run: |
           version="$(cargo metadata --format-version 1 --no-deps \
@@ -64,11 +68,26 @@ jobs:
           mkdir -p "dist/$name/scripts" "dist/$name/resources"
           install -m 755 target/release/bard "dist/$name/bard"
           install -m 755 scripts/install-desktop.sh "dist/$name/scripts/"
-          cp -r resources/icons resources/icon.svg "dist/$name/resources/"
+          cp -r resources/icons resources/icon.svg resources/bard.desktop "dist/$name/resources/"
           cp README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
           echo "ASSET=dist/$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Debian package
+        run: |
+          cargo deb -p bard --no-build -o dist/
+          deb="$(ls dist/*.deb)"
+          # $auto fills Depends from the binary's linked libraries; an empty
+          # field would install a package that cannot start.
+          depends="$(dpkg-deb -f "$deb" Depends)"
+          echo "Depends: $depends"
+          if ! grep -q libpipewire <<<"$depends"; then
+            echo "::error::$deb has no library dependencies"
+            exit 1
+          fi
+          (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
+          echo "DEB=$deb" >> "$GITHUB_ENV"
 
       - name: Release notes from CHANGELOG
         run: |
@@ -85,8 +104,11 @@ jobs:
 
           ---
 
-          **Install:** download `bard-*-x86_64-linux.tar.gz`, extract it, and from
-          inside the folder run:
+          **Debian / Ubuntu 24.04 or newer:** download the `.deb` and run
+          `sudo apt install ./bard-player_*_amd64.deb`.
+
+          **Any other distro:** download `bard-*-x86_64-linux.tar.gz`, extract
+          it, and from inside the folder run:
 
           ```bash
           install -Dm755 bard ~/.local/bin/bard
@@ -103,9 +125,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" "$DEB" "$DEB.sha256" --clobber
             gh release edit "$TAG" --notes-file notes.md
           else
-            gh release create "$TAG" "$ASSET" "$ASSET.sha256" \
+            gh release create "$TAG" "$ASSET" "$ASSET.sha256" "$DEB" "$DEB.sha256" \
               --title "Bard $VERSION" --notes-file notes.md --verify-tag
           fi
