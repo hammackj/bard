@@ -199,6 +199,12 @@ impl Renderer {
         let target = if playing { 1.0 } else { 0.0 };
         let step = 1.0 / DECLICK_FRAMES;
         let silent = self.shared.silent;
+        // A new epoch orphans the old track's frames, so its declick has
+        // nothing left to fade. Dropping it here keeps a track loaded paused
+        // from consuming a frame on the way down.
+        if epoch != self.active_epoch {
+            self.declick = 0.0;
+        }
 
         for frame in out.chunks_exact_mut(CHANNELS) {
             if self.declick < target {
@@ -324,6 +330,49 @@ mod tests {
         t.r.render(&mut out);
         let g = t.shared.gain();
         assert!((g - 0.1).abs() < 0.01, "fade-in starts with the track: {g}");
+    }
+
+    #[test]
+    fn a_track_loaded_paused_waits_at_zero_while_the_old_one_was_audible() {
+        let mut t = rig();
+        t.shared.epoch.store(1, Ordering::Release);
+        t.shared.playing.store(true, Ordering::Relaxed);
+        t.chunks.push(dc(1, 0.0, 0.5, false)).ok().unwrap();
+        let mut out = vec![0.0; 480 * CHANNELS];
+        t.r.render(&mut out); // declick has reached its playing level
+        t.shared.playing.store(false, Ordering::Relaxed);
+        t.shared.epoch.store(2, Ordering::Release);
+        t.shared.set_position(0.0);
+        t.chunks.push(dc(2, 0.0, 0.5, false)).ok().unwrap();
+        t.r.render(&mut out);
+        assert!(out.iter().all(|v| *v == 0.0), "new paused track remains silent");
+        assert_eq!(t.shared.position(), 0.0, "new paused track consumed a frame");
+
+        // Resuming starts it from its first frame, declicked in.
+        t.shared.playing.store(true, Ordering::Relaxed);
+        let mut few = vec![0.0; 8 * CHANNELS];
+        t.r.render(&mut few);
+        let left: Vec<f32> = few.iter().step_by(CHANNELS).copied().collect();
+        assert!(left.windows(2).all(|w| w[0] <= w[1]), "ramps up: {left:?}");
+        assert!(left[7] > 0.0 && left[7] < 0.5, "declicked in: {left:?}");
+        assert_eq!(t.shared.position(), 8.0 / OUT_RATE as f64);
+    }
+
+    #[test]
+    fn a_seek_while_paused_holds_the_new_position_exactly() {
+        let mut t = rig();
+        t.shared.epoch.store(1, Ordering::Release);
+        t.shared.playing.store(true, Ordering::Relaxed);
+        t.chunks.push(dc(1, 0.0, 0.5, false)).ok().unwrap();
+        let mut out = vec![0.0; 64 * CHANNELS];
+        t.r.render(&mut out);
+        t.shared.playing.store(false, Ordering::Relaxed);
+        t.shared.epoch.store(2, Ordering::Release);
+        t.shared.set_position(30.0);
+        t.chunks.push(dc(2, 30.0, 0.5, false)).ok().unwrap();
+        t.r.render(&mut out);
+        assert!(out.iter().all(|v| *v == 0.0));
+        assert_eq!(t.shared.position(), 30.0);
     }
 
     #[test]

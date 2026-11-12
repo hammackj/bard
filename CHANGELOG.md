@@ -13,6 +13,9 @@ so minor bumps are where breaking changes land.
   the overlay.** Only a cover change did; a new title, artist or album
   reached the window but the file kept the old tags until the next track
   or pause.
+- **A track loaded paused waits at exactly 0:00.** Replacing an audible
+  track with one loaded paused could consume its first frame, so it
+  started a frame late.
 
 ## [0.2.11] — 2026-11-12
 
