@@ -232,8 +232,31 @@ impl Player {
     /// Returns the generation the events about this request will carry.
     pub fn play(&self, track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32) -> u64 {
         let generation = self.next_generation();
-        self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation });
+        self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation, start: true });
         generation
+    }
+
+    /// Loads a track paused at its beginning, replacing what is loaded --
+    /// and any crossfade under way -- at once: a track that must change
+    /// while the user has paused, without starting playback.
+    ///
+    /// Returns the generation the events about this request will carry.
+    pub fn load_paused(&self, track_id: String, path: PathBuf, norm_gain: f32) -> u64 {
+        let generation = self.next_generation();
+        self.inner.shared.playing.store(false, Ordering::Relaxed);
+        self.send(Cmd::Play { track_id, path, norm_gain, crossfade_sec: 0.0, generation, start: false });
+        generation
+    }
+
+    /// Something is loaded and not playing: paused by the user, or ended.
+    /// Playing, or fading towards a track that will play. Set by the call
+    /// that changes it, not by a later report.
+    pub fn is_playing(&self) -> bool {
+        self.inner.shared.loaded.load(Ordering::Relaxed) && self.inner.shared.playing.load(Ordering::Relaxed)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.inner.shared.loaded.load(Ordering::Relaxed) && !self.inner.shared.playing.load(Ordering::Relaxed)
     }
 
     fn next_generation(&self) -> u64 {

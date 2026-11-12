@@ -27,6 +27,11 @@ so minor bumps are where breaking changes land.
   reads the art again only when that file changed; files without art are no
   longer re-read on every scan either. The first scan after updating reads
   every cover once.
+- **A pause holds when the track it paused can no longer play.** Paused
+  during a crossfade onto a file that then failed to open, paused just as a
+  track ended, or paused while streamer mode replaced a file that had
+  already failed: in each case the next track used to start on its own. It
+  now loads paused, as a replacement made while paused already did.
 
 ### Changed
 
@@ -34,6 +39,18 @@ so minor bumps are where breaking changes land.
   every step.** The change is heard at once and saved in the background, one
   write per pause in the drag; a failed save says so and is retried, and the
   last value is saved on quit.
+
+### Tests
+
+- Seeded random sequences of playback actions -- transport, queue, repeat,
+  crossfade, arm and revoke, folder removal and rescan, files that fail to
+  open, late engine reports -- run against the real core and event handling
+  on a simulated engine, checking after every step that nothing forbidden
+  reaches the engine or is heard, a pause is never overridden, and the
+  window shows the newest request's track and timing. A failure prints its
+  seed and a shortened sequence. A second set runs the real engine at volume
+  0 through generated fades, cuts, pauses and seeks and checks every
+  rendered sample is silent.
 
 ## [0.2.4] — 2026-11-12
 

@@ -25,6 +25,11 @@ pub(super) trait Effects {
     fn stop(&self) -> u64;
     /// Ends a crossfade's fade-out at once (see `Player::cut_fade`).
     fn cut_fade(&self);
+    /// Loads a track paused (see `Player::load_paused`); its generation.
+    fn load_paused(&self, track: &Track, norm_gain: f32) -> u64;
+    /// The engine has a track loaded and is not playing it.
+    fn paused(&self) -> bool;
+    fn playing(&self) -> bool;
     fn pause(&self);
     fn seek(&self, seconds: f64);
     fn set_norm_gain(&self, gain: f32);
@@ -52,11 +57,11 @@ pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
         AppEvent::Control(c) => match c {
             Control::Play => {
                 if !ui.playing {
-                    fx.toggle_play();
+                    toggle(ui, fx);
                 }
             }
-            Control::Pause => fx.pause(),
-            Control::Toggle => fx.toggle_play(),
+            Control::Pause => pause(ui, fx),
+            Control::Toggle => toggle(ui, fx),
             Control::Next => fx.skip(),
             Control::Previous => fx.previous(),
             Control::Seek(s) => fx.seek(s),
@@ -88,7 +93,7 @@ pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
             if ui.sleep_ends_at == Some(at) {
                 ui.sleep_ends_at = None;
                 if ui.playing {
-                    fx.pause();
+                    pause(ui, fx);
                 }
             }
         }
@@ -123,16 +128,38 @@ pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
     }
 }
 
+/// A pause holds what is loaded: if it then fails to open -- a pause during
+/// a fade loads the incoming track paused -- what replaces it waits too.
+fn pause(ui: &mut Ui, fx: &dyn Effects) {
+    if fx.playing() {
+        ui.paused_load = Some(ui.generation);
+    }
+    fx.pause();
+}
+
+fn toggle(ui: &mut Ui, fx: &dyn Effects) {
+    let was = fx.playing();
+    fx.toggle_play();
+    ui.paused_load = was.then_some(ui.generation);
+}
+
 fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
     match ev {
         CoreEvent::QueueChanged(q) => ui.queue = q,
         CoreEvent::PlayTrack(t, transition) => {
             let gain = gain_multiplier(&t, ui.config.audio.normalize) as f32;
-            let crossfade = match transition {
-                Transition::Normal => ui.config.audio.crossfade_sec as f32,
-                Transition::Cut => 0.,
+            // Streamer mode replacing a track while the user has paused: the
+            // replacement waits, paused. Asked of the engine, not of the last
+            // report, which can lag a pause just made -- or of the pause
+            // itself, when what it held has already failed to open.
+            let held = fx.paused() || ui.paused_load == Some(ui.generation);
+            let hold = std::mem::take(&mut ui.next_paused) || (transition == Transition::Cut && held);
+            ui.generation = match transition {
+                _ if hold => fx.load_paused(&t, gain),
+                Transition::Normal => fx.play(&t, gain, ui.config.audio.crossfade_sec as f32),
+                Transition::Cut => fx.play(&t, gain, 0.),
             };
-            ui.generation = fx.play(&t, gain, crossfade);
+            ui.paused_load = hold.then_some(ui.generation);
             ui.track = Some(t);
             ui.position = 0.;
             ui.duration = 0.;
@@ -143,6 +170,7 @@ fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
         // Without this the window kept the finished track's title and
         // cover while the overlay had already gone blank.
         CoreEvent::NowPlaying(None) => {
+            ui.next_paused = false;
             ui.generation = fx.stop();
             ui.track = None;
             ui.position = 0.;
@@ -204,12 +232,17 @@ fn player(ui: &mut Ui, fx: &dyn Effects, ev: PlayerEvent) {
             }
             fx.report_progress(PlaybackProgress { position, duration, playing, track_id });
         }
-        PlayerEvent::Ended { .. } => {
+        PlayerEvent::Ended { generation } => {
             ui.playing = false;
+            // Restarted and paused before this end arrived: the user's pause
+            // stands, so the next track waits.
+            ui.next_paused = ui.paused_load == Some(generation);
             fx.report_ended();
         }
-        PlayerEvent::Failed { message, .. } => {
+        PlayerEvent::Failed { message, generation, .. } => {
             let give_up = ui.open_failed(&message);
+            // What follows a paused load stays paused too.
+            ui.next_paused = ui.paused_load == Some(generation);
             fx.report_failed(give_up);
         }
         PlayerEvent::Error(msg) if msg == "output device: saved output device unavailable, using system default" => {
@@ -234,6 +267,7 @@ mod tests {
     struct Fx {
         calls: RefCell<Vec<String>>,
         generation: RefCell<u64>,
+        paused: RefCell<bool>,
         tracks: Vec<Track>,
     }
 
@@ -262,8 +296,19 @@ mod tests {
         fn cut_fade(&self) {
             self.log("cut fade")
         }
+        fn load_paused(&self, t: &Track, _: f32) -> u64 {
+            self.log(format!("load paused {}", t.id));
+            self.next()
+        }
+        fn paused(&self) -> bool {
+            *self.paused.borrow()
+        }
+        fn playing(&self) -> bool {
+            !*self.paused.borrow()
+        }
         fn pause(&self) {
-            self.log("pause")
+            self.log("pause");
+            *self.paused.borrow_mut() = true;
         }
         fn seek(&self, s: f64) {
             self.log(format!("seek {s}"))
@@ -360,6 +405,52 @@ mod tests {
         reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("b", 60.), Transition::Cut)));
         reduce(&mut u, &fx, AppEvent::Core(CoreEvent::CutFade));
         assert_eq!(fx.take(), ["play a fade 4", "play b", "cut fade"]);
+
+        // Paused: the replacement is loaded paused; a user's skip still plays.
+        *fx.paused.borrow_mut() = true;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("c", 60.), Transition::Cut)));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("d", 60.), Transition::Normal)));
+        assert_eq!(fx.take(), ["load paused c", "play d fade 4"]);
+    }
+
+    /// Paused during a fade, the incoming track is loaded paused; if it
+    /// cannot open, what replaces it is loaded paused too. A resume first
+    /// lets the replacement play.
+    #[test]
+    fn a_failure_after_a_pause_keeps_the_replacement_paused() {
+        let (mut u, fx) = (ui(), Fx::default());
+        let fail =
+            |g| AppEvent::Player(PlayerEvent::Failed { generation: g, track_id: "x".into(), message: "gone".into() });
+        u.config.audio.crossfade_sec = 4.;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 60.), Transition::Normal)));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("x", 60.), Transition::Normal)));
+        reduce(&mut u, &fx, AppEvent::Control(Control::Pause));
+        reduce(&mut u, &fx, fail(2));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("b", 60.), Transition::Normal)));
+        assert_eq!(fx.take(), ["play a fade 4", "play x fade 4", "pause", "failed give_up=false", "load paused b"]);
+
+        // Resumed before the failure: the replacement plays.
+        *fx.paused.borrow_mut() = true;
+        reduce(&mut u, &fx, AppEvent::Control(Control::Toggle));
+        *fx.paused.borrow_mut() = false;
+        reduce(&mut u, &fx, fail(3));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("c", 60.), Transition::Normal)));
+        assert_eq!(fx.take(), ["toggle", "failed give_up=false", "play c fade 4"]);
+
+        // Ended, then restarted and paused before the end arrived.
+        reduce(&mut u, &fx, AppEvent::Control(Control::Pause));
+        reduce(&mut u, &fx, AppEvent::Player(PlayerEvent::Ended { generation: 4 }));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("d", 60.), Transition::Normal)));
+        assert_eq!(fx.take(), ["pause", "ended", "load paused d"]);
+
+        // Paused onto a file that has failed, but before the failure
+        // arrives the track is revoked: the cut still waits.
+        *fx.paused.borrow_mut() = false;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("x", 60.), Transition::Normal)));
+        reduce(&mut u, &fx, AppEvent::Control(Control::Pause));
+        *fx.paused.borrow_mut() = false;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("e", 60.), Transition::Cut)));
+        assert_eq!(fx.take(), ["play x fade 4", "pause", "load paused e"]);
     }
 
     #[test]

@@ -383,6 +383,11 @@ pub struct Ui {
     pub generation: u64,
     /// Tracks that failed to open in a row; see [`Ui::open_failed`].
     pub open_failures: u32,
+    /// The generation of a track loaded paused (a streamer cut while paused).
+    pub paused_load: Option<u64>,
+    /// The next PlayTrack loads paused too: the paused load failed to open,
+    /// and what core moves on to must not start playback the user stopped.
+    pub next_paused: bool,
 
     pub stats: StatsMap,
     pub loved: Vec<String>,
@@ -441,6 +446,8 @@ impl Ui {
             position_at: Instant::now(),
             generation: 0,
             open_failures: 0,
+            paused_load: None,
+            next_paused: false,
             stats: StatsMap::default(),
             loved: Vec::new(),
             album_flags: AlbumFlags::default(),

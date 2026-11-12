@@ -196,6 +196,15 @@ impl super::reduce::Effects for AppBackend {
     fn cut_fade(&self) {
         self.player.cut_fade()
     }
+    fn load_paused(&self, t: &bard_core::types::Track, norm_gain: f32) -> u64 {
+        self.player.load_paused(t.id.clone(), std::path::PathBuf::from(&t.path), norm_gain)
+    }
+    fn paused(&self) -> bool {
+        self.player.is_paused()
+    }
+    fn playing(&self) -> bool {
+        self.player.is_playing()
+    }
     fn pause(&self) {
         self.player.pause()
     }

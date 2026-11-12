@@ -316,3 +316,24 @@ fn revoking_a_track_that_already_faded_out_leaves_playback_alone() {
     assert_eq!(l.ui.generation, gen_before, "no new request to the engine");
     assert!(l.heard("s1"));
 }
+
+/// Paused, then the track's album is revoked: the next safe track is
+/// loaded, and stays paused.
+#[test]
+fn a_revocation_while_paused_stays_paused() {
+    let mut l = Live::new(2.0);
+    l.start("r1", &["s1"]);
+    l.core(|b| b.arm(None));
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Pause));
+    l.pump(Duration::from_millis(100));
+    let t = Instant::now();
+    l.core(|b| b.set_album_flag(RAIN, ContentIdStatus::Claimed, None));
+    l.pump(Duration::from_millis(400));
+    assert!(l.heard_since(t).is_empty(), "nothing plays: {:?}", l.heard_since(t));
+    assert!(l.fx.player.is_paused());
+    assert_eq!(l.fx.with(|b| b.now_playing().map(|n| n.track.id.clone())).as_deref(), Some("s1"));
+    // Play resumes the replacement.
+    reduce(&mut l.ui, &l.fx, AppEvent::Control(super::Control::Play));
+    l.pump(Duration::from_millis(300));
+    assert!(l.heard("s1"));
+}

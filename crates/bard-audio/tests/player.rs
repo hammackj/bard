@@ -588,3 +588,96 @@ fn volume_up_after_a_cut_does_not_revive_the_outgoing_track() {
     );
     assert!((p.current_gain() - 1.0).abs() < 0.01);
 }
+
+/// Loading paused replaces what plays, and any fade, without starting.
+#[test]
+fn load_paused_replaces_without_starting() {
+    let (p, rx) = player();
+    let a = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.pause();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 1.0); // would fade, but nothing audible: loads b playing
+    let c = p.load_paused("c".into(), fixture("bursts.wav"), 1.0);
+    assert!(p.is_paused());
+    let ev = collect(&rx, Duration::from_millis(400));
+    assert!(ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { generation, playing: false, position, .. } if *generation == c && *position == 0.0)), "{ev:?}");
+    let after_c =
+        ev.iter().skip_while(|(_, e)| !matches!(e, PlayerEvent::Progress { generation, .. } if *generation == c));
+    assert!(!after_c.clone().any(|(_, e)| matches!(e, PlayerEvent::Progress { playing: true, .. })), "{ev:?}");
+    assert!(progress_of(&ev, a).iter().all(|_| true));
+    assert!(loudest_for(&p, Duration::from_millis(200)) <= 1);
+    // Resume plays c.
+    p.resume();
+    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. }));
+    assert!(matches!(e, Some(PlayerEvent::Progress { generation, .. }) if generation == c));
+}
+
+/// Generated sequences of transport calls -- fades, cuts, pauses, seeks,
+/// paused loads, stops -- with the volume at 0 from the start: nothing
+/// rendered at any point is audible, and the gain never leaves 0. Seeded,
+/// so a failure names the calls that led to it.
+#[test]
+fn zero_volume_is_silent_through_generated_sequences() {
+    let seeds: u64 = std::env::var("BARD_ENGINE_SEEDS").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+    std::thread::scope(|s| {
+        for seed in 0..seeds {
+            s.spawn(move || {
+                let (p, _rx) = player();
+                p.set_volume(0.0);
+                let mut r = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                let mut below = |n: u64| {
+                    r ^= r >> 12;
+                    r ^= r << 25;
+                    r ^= r >> 27;
+                    r.wrapping_mul(0x2545_F491_4F6C_DD1D) % n
+                };
+                let mut log = Vec::new();
+                for step in 0..40 {
+                    let call = match below(9) {
+                        0 | 1 => {
+                            let fade = [0.0, 0.3, 1.0][below(3) as usize];
+                            p.play(format!("t{step}"), fixture("bursts.wav"), 1.0, fade);
+                            format!("play fade {fade}")
+                        }
+                        2 => {
+                            p.cut_fade();
+                            "cut fade".into()
+                        }
+                        3 => {
+                            p.pause();
+                            "pause".into()
+                        }
+                        4 => {
+                            p.resume();
+                            "resume".into()
+                        }
+                        5 => {
+                            let at = below(4) as f64;
+                            p.seek(at);
+                            format!("seek {at}")
+                        }
+                        6 => {
+                            p.load_paused(format!("t{step}"), fixture("bursts.wav"), 1.0);
+                            "load paused".into()
+                        }
+                        7 => {
+                            p.stop();
+                            "stop".into()
+                        }
+                        _ => {
+                            p.set_volume(0.0);
+                            "volume 0".into()
+                        }
+                    };
+                    log.push(call);
+                    let loudest = loudest_for(&p, Duration::from_millis(20 + 20 * below(5)));
+                    assert!(
+                        loudest <= 1 && p.current_gain() < 0.001,
+                        "seed {seed}: audible ({loudest}, gain {}) after {log:?}",
+                        p.current_gain()
+                    );
+                }
+            });
+        }
+    });
+}

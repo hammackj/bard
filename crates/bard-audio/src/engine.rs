@@ -30,12 +30,14 @@ const DEACTIVATE_AFTER: Duration = Duration::from_millis(200);
 const IDLE_POLL: Duration = Duration::from_millis(5);
 
 pub(crate) enum Cmd {
+    /// `start: false` loads it paused at its beginning (no fade).
     Play {
         track_id: String,
         path: PathBuf,
         norm_gain: f32,
         crossfade_sec: f32,
         generation: u64,
+        start: bool,
     },
     Pause,
     Resume,
@@ -212,7 +214,7 @@ impl Engine {
     /// Returns false to stop the thread.
     fn handle(&mut self, cmd: Cmd) -> bool {
         match cmd {
-            Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation } => {
+            Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation, start } => {
                 let crossfade_sec = if crossfade_sec.is_finite() { crossfade_sec.max(0.0) } else { 0.0 };
                 let play = PendingPlay {
                     track_id,
@@ -222,6 +224,12 @@ impl Engine {
                     generation,
                     start_at: 0.0,
                 };
+                if !start {
+                    // Replaces what is playing and any fade, as a cut does.
+                    self.pending = None;
+                    self.swap(play, false);
+                    return true;
+                }
                 if crossfade_sec > 0.0 {
                     if let Some((p, _)) = &mut self.pending {
                         // Already fading out: the newest request replaces the

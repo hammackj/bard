@@ -38,6 +38,8 @@ mod live_tests;
 mod output;
 mod reduce;
 mod shell;
+#[cfg(test)]
+mod sim_tests;
 
 pub use launch::{Launch, Start};
 
