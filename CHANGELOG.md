@@ -7,6 +7,20 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-11-11
+
+The lock screen knows what is playing.
+
+### Fixed
+
+- **The lock screen, media flyout and MPRIS showed "Bard / Bard"** for every
+  track. Bard never set the media session's metadata, so Chromium filled the
+  title from the window name and left artist, album and cover empty. The
+  current track's title, artist, album and cover art are now published, along
+  with play state and position, and the lock screen's play, pause, next,
+  previous and seek controls drive Bard's own queue rather than only the bare
+  audio element.
+
 ## [0.1.2] — 2026-08-09
 
 Streamer mode, and the window stops looking flat.

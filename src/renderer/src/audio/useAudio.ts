@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Track } from '@shared/types'
 import * as engine from './engine'
+import * as mediaSession from './mediaSession'
 import { useStore } from '../state/store'
 
 export type AudioState = {
@@ -41,6 +42,7 @@ export function useAudio(initialVolume = 0.8): {
     engine.setEvents({
       onProgress: (position, duration, playing, trackId) => {
         setState((s) => ({ ...s, position, duration, playing }))
+        mediaSession.setPlaybackState(playing, position, duration)
         window.bard.reportProgress({ position, duration, playing, trackId })
       },
       onEnded: () => {
@@ -96,6 +98,40 @@ export function useAudio(initialVolume = 0.8): {
       if (item) return
       engine.pause()
       setState((s) => ({ ...s, track: null, position: 0, duration: 0, playing: false }))
+    })
+  }, [])
+
+  /**
+   * Lock screen, media flyout and MPRIS. Metadata goes out the moment the
+   * track changes and again once its cover has loaded, so the title never
+   * waits on the artwork read.
+   */
+  const trackId = state.track?.id ?? null
+  useEffect(() => {
+    const track = state.track
+    mediaSession.setTrackMetadata(track)
+    if (!track?.hasArtwork) return
+    let live = true
+    void window.bard.getArtwork(track.id).then((art) => {
+      if (live && art) mediaSession.setTrackMetadata(track, art)
+    })
+    return () => {
+      live = false
+    }
+    // Keyed on the id: state.track is a fresh object on every play, but the
+    // metadata only needs redoing when the track actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackId])
+
+  useEffect(() => {
+    return mediaSession.setActions({
+      play: () => {
+        if (!engine.getPosition().playing) void engine.togglePlay()
+      },
+      pause: () => engine.pause(),
+      next: () => void window.bard.skip(),
+      previous: () => void window.bard.previous(),
+      seek: (s) => engine.seek(s)
     })
   }, [])
 
