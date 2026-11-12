@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-11-12
+
 ### Fixed
 
 - **A pause from the window holds too.** 0.2.5's fix for a pause lost when
