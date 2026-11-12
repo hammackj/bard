@@ -120,11 +120,20 @@ pub fn read_track(path: &Path, artwork_dir: &Path) -> Track {
     let id = track_id(path);
     let path_str = path.to_string_lossy().into_owned();
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    // Cache the cover once. A rescan of an unchanged library skips the decode.
-    let cached = artwork::has_artwork(artwork_dir, &id);
+    // Read the cover only when the file changed since it was last read (or
+    // the cached one is damaged); an unchanged library skips the decode.
+    let source = artwork::Fingerprint::of(path);
+    let fresh = artwork::cached(artwork_dir, &id, source);
+    let read_art = fresh == artwork::Cached::Stale;
+    // What to say without reading: the cache, or for a file that cannot be
+    // parsed, whatever cover is already there.
+    let cached = match fresh {
+        artwork::Cached::Fresh { has_art } => has_art,
+        artwork::Cached::Stale => artwork::is_whole_jpeg(&artwork::cache_path(artwork_dir, &id)),
+    };
 
     let parsed = Probe::open(path)
-        .and_then(|p| Ok(p.options(ParseOptions::new().read_cover_art(!cached)).guess_file_type()?))
+        .and_then(|p| Ok(p.options(ParseOptions::new().read_cover_art(read_art)).guess_file_type()?))
         .and_then(|p| p.read());
     let Ok(file) = parsed else {
         return Track {
@@ -150,8 +159,18 @@ pub fn read_track(path: &Path, artwork_dir: &Path) -> Track {
     let get = |key: ItemKey| -> Option<String> { tags.iter().find_map(|t| clean(t.get_string(key))) };
 
     let mut has_artwork = cached;
-    if !has_artwork && let Some(pic) = tags.iter().find_map(|t| t.pictures().first()) {
-        has_artwork = artwork::save_artwork(artwork_dir, &id, pic.data());
+    if read_art {
+        has_artwork = tags
+            .iter()
+            .find_map(|t| t.pictures().first())
+            .is_some_and(|pic| artwork::save_artwork(artwork_dir, &id, pic.data()));
+        if !has_artwork {
+            // Removed from the file, or no longer decodable: so is the cover.
+            artwork::forget(artwork_dir, &id);
+        }
+        if let Some(fp) = source {
+            artwork::record(artwork_dir, &id, fp, has_artwork);
+        }
     }
 
     let title = get(ItemKey::TrackTitle).unwrap_or(stem);
@@ -331,6 +350,122 @@ mod tests {
         assert!(!t.has_artwork);
         assert_eq!(t.id, track_id(&f));
         assert!(art.is_dir());
+    }
+
+    /// A copy of the bundled FLAC with a solid `color` cover, or none.
+    fn flac_with_art(path: &Path, color: Option<u8>) {
+        use lofty::config::WriteOptions;
+        use lofty::picture::{MimeType, Picture, PictureType};
+        use lofty::tag::Tag;
+        if !path.exists() {
+            let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../bard-audio/tests/fixtures/bursts.flac");
+            std::fs::copy(fixture, path).unwrap();
+        }
+        let mut f = lofty::read_from_path(path).unwrap();
+        if f.primary_tag_mut().is_none() {
+            f.insert_tag(Tag::new(f.primary_tag_type()));
+        }
+        let tag = f.primary_tag_mut().unwrap();
+        tag.remove_picture_type(PictureType::CoverFront);
+        if let Some(c) = color {
+            let img = image::RgbImage::from_pixel(64, 64, image::Rgb([c, c, c]));
+            let mut png = std::io::Cursor::new(Vec::new());
+            img.write_to(&mut png, image::ImageFormat::Png).unwrap();
+            tag.push_picture(
+                Picture::unchecked(png.into_inner()).pic_type(PictureType::CoverFront).mime_type(MimeType::Png).build(),
+            );
+        }
+        f.save_to_path(path, WriteOptions::default()).unwrap();
+    }
+
+    fn cover_shade(art: &Path, id: &str) -> Option<u8> {
+        let img = image::open(artwork::cache_path(art, id)).ok()?.to_rgb8();
+        Some(img.get_pixel(32, 32)[0])
+    }
+
+    fn modified(p: &Path) -> Option<std::time::SystemTime> {
+        std::fs::metadata(p).and_then(|m| m.modified()).ok()
+    }
+
+    #[test]
+    fn replaced_or_removed_art_at_the_same_path_is_picked_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, art) = (dir.path().join("song.flac"), dir.path().join("artwork"));
+        flac_with_art(&f, Some(40));
+        let t = read_track(&f, &art);
+        assert!(t.has_artwork);
+        assert!(cover_shade(&art, &t.id).unwrap().abs_diff(40) < 4);
+
+        flac_with_art(&f, Some(200));
+        let t = read_track(&f, &art);
+        assert!(t.has_artwork);
+        assert!(cover_shade(&art, &t.id).unwrap().abs_diff(200) < 4, "the new art, not the cached");
+
+        flac_with_art(&f, None);
+        let t = read_track(&f, &art);
+        assert!(!t.has_artwork, "art removed from the file");
+        assert!(!artwork::cache_path(&art, &t.id).exists());
+    }
+
+    #[test]
+    fn a_damaged_cached_cover_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, art) = (dir.path().join("song.flac"), dir.path().join("artwork"));
+        flac_with_art(&f, Some(90));
+        let id = read_track(&f, &art).id;
+        let jpg = artwork::cache_path(&art, &id);
+        let whole = std::fs::read(&jpg).unwrap();
+        std::fs::write(&jpg, &whole[..whole.len() / 2]).unwrap(); // cut short
+        assert!(!artwork::is_whole_jpeg(&jpg));
+        let t = read_track(&f, &art);
+        assert!(t.has_artwork);
+        assert!(artwork::is_whole_jpeg(&jpg), "rewritten");
+        assert!(cover_shade(&art, &id).unwrap().abs_diff(90) < 4);
+    }
+
+    #[test]
+    fn art_added_after_a_miss_is_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, art) = (dir.path().join("song.flac"), dir.path().join("artwork"));
+        flac_with_art(&f, None);
+        assert!(!read_track(&f, &art).has_artwork);
+        flac_with_art(&f, Some(120));
+        assert!(read_track(&f, &art).has_artwork);
+    }
+
+    /// An unchanged file is not read for art again, with art or without:
+    /// neither the cover nor its record is rewritten.
+    #[test]
+    fn an_unchanged_file_is_not_decoded_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let art = dir.path().join("artwork");
+        let (with, without) = (dir.path().join("a.flac"), dir.path().join("b.flac"));
+        flac_with_art(&with, Some(10));
+        flac_with_art(&without, None);
+        let (a, b) = (read_track(&with, &art), read_track(&without, &art));
+        let stamp = |id: &str| art.join(format!("{id}.src"));
+        let before = (modified(&artwork::cache_path(&art, &a.id)), modified(&stamp(&a.id)), modified(&stamp(&b.id)));
+        assert!(before.0.is_some() && before.1.is_some() && before.2.is_some());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let (a2, b2) = (read_track(&with, &art), read_track(&without, &art));
+        assert!(a2.has_artwork && !b2.has_artwork);
+        let after = (modified(&artwork::cache_path(&art, &a.id)), modified(&stamp(&a.id)), modified(&stamp(&b.id)));
+        assert_eq!(before, after, "nothing rewritten");
+    }
+
+    /// A cache from before the records (Electron, 0.2.x) is refreshed once.
+    #[test]
+    fn an_old_cache_without_records_is_refreshed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, art) = (dir.path().join("song.flac"), dir.path().join("artwork"));
+        flac_with_art(&f, Some(70));
+        let id = track_id(&f);
+        std::fs::create_dir_all(&art).unwrap();
+        // A stale cover, as an old build left it.
+        let old = image::RgbImage::from_pixel(8, 8, image::Rgb([250, 250, 250]));
+        old.save(artwork::cache_path(&art, &id)).unwrap();
+        assert!(read_track(&f, &art).has_artwork);
+        assert!(cover_shade(&art, &id).unwrap().abs_diff(70) < 4);
     }
 
     #[test]

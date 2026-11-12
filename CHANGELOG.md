@@ -21,6 +21,12 @@ so minor bumps are where breaking changes land.
   that wrote the same stats and settings. Bard now takes a lock on its data
   directory before opening anything; a second launch raises the running
   window and exits, and exits even when the raise fails.
+- **Covers follow the files.** Replacing or removing a file's embedded art
+  never reached the cover cache, and a damaged cached cover was never
+  rebuilt. Each cached cover now records the file it came from, and a scan
+  reads the art again only when that file changed; files without art are no
+  longer re-read on every scan either. The first scan after updating reads
+  every cover once.
 
 ### Changed
 

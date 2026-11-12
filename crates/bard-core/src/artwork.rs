@@ -4,6 +4,14 @@
 //! several hundred tracks is not something to hold in memory or push through
 //! the UI's state. Only the id crosses the boundary; whoever draws a cover
 //! reads the cached file by path.
+//!
+//! The id comes from the path alone, so the cache cannot tell by name that a
+//! file's art changed. Beside each entry is `<trackId>.src`: the source file's
+//! size and modification time when it was read, and whether it had art. A
+//! scan reads the art again only when those differ, or the JPEG is missing or
+//! cut short; an unchanged file -- with art or without -- costs a stat. The
+//! Electron build kept a cover forever once written, so replaced art never
+//! showed and a truncated file blocked its own repair.
 
 use image::ImageReader;
 use image::codecs::jpeg::JpegEncoder;
@@ -28,8 +36,75 @@ pub fn is_valid_id(id: &str) -> bool {
     (6..=64).contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-pub fn has_artwork(artwork_dir: &Path, track_id: &str) -> bool {
-    cache_path(artwork_dir, track_id).exists()
+fn stamp_path(artwork_dir: &Path, track_id: &str) -> PathBuf {
+    artwork_dir.join(format!("{track_id}.src"))
+}
+
+/// What identifies a version of a source file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fingerprint {
+    pub len: u64,
+    pub mtime_ns: u128,
+}
+
+impl Fingerprint {
+    pub fn of(path: &Path) -> Option<Fingerprint> {
+        let m = std::fs::metadata(path).ok()?;
+        let mtime_ns = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+        Some(Fingerprint { len: m.len(), mtime_ns })
+    }
+}
+
+/// Whether the cache can be trusted for a source file as it is now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cached {
+    /// Read from this version of the file; `has_art` says what it found.
+    Fresh { has_art: bool },
+    /// Never read, or read from another version, or the JPEG is damaged.
+    Stale,
+}
+
+pub fn cached(artwork_dir: &Path, track_id: &str, source: Option<Fingerprint>) -> Cached {
+    let Some(fp) = source else { return Cached::Stale };
+    let Ok(stamp) = std::fs::read_to_string(stamp_path(artwork_dir, track_id)) else { return Cached::Stale };
+    let mut f = stamp.split_whitespace();
+    let (Some("1"), Some(len), Some(mtime), Some(art)) = (f.next(), f.next(), f.next(), f.next()) else {
+        return Cached::Stale;
+    };
+    if len.parse() != Ok(fp.len) || mtime.parse() != Ok(fp.mtime_ns) {
+        return Cached::Stale;
+    }
+    match art {
+        "art" if is_whole_jpeg(&cache_path(artwork_dir, track_id)) => Cached::Fresh { has_art: true },
+        "none" if !cache_path(artwork_dir, track_id).exists() => Cached::Fresh { has_art: false },
+        _ => Cached::Stale,
+    }
+}
+
+/// Records what was found in `source`'s current version. After the cover
+/// itself, so a crash between the two leaves the entry stale, not wrong.
+pub fn record(artwork_dir: &Path, track_id: &str, source: Fingerprint, has_art: bool) {
+    let body = format!("1 {} {} {}", source.len, source.mtime_ns, if has_art { "art" } else { "none" });
+    let _ = crate::util::write_atomic(&stamp_path(artwork_dir, track_id), &body);
+}
+
+/// The file no longer has art: drop the cover.
+pub fn forget(artwork_dir: &Path, track_id: &str) {
+    let _ = std::fs::remove_file(cache_path(artwork_dir, track_id));
+}
+
+/// Starts with the JPEG start marker and ends with the end marker -- what a
+/// cut-short write lacks. Reads four bytes, not the image: this runs for
+/// every track on every scan.
+pub fn is_whole_jpeg(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else { return false };
+    let (mut head, mut tail) = ([0u8; 2], [0u8; 2]);
+    f.read_exact(&mut head).is_ok()
+        && f.seek(SeekFrom::End(-2)).is_ok()
+        && f.read_exact(&mut tail).is_ok()
+        && head == [0xFF, 0xD8]
+        && tail == [0xFF, 0xD9]
 }
 
 /// The cached cover's path, or None when the track has none.
@@ -79,7 +154,10 @@ pub fn save_artwork(artwork_dir: &Path, track_id: &str, data: &[u8]) -> bool {
     if std::fs::create_dir_all(artwork_dir).is_err() {
         return false;
     }
-    std::fs::write(cache_path(artwork_dir, track_id), out).is_ok()
+    // Replaced whole: anything reading the cover sees the old one or the new.
+    let path = cache_path(artwork_dir, track_id);
+    let tmp = path.with_extension("jpg.tmp");
+    std::fs::write(&tmp, out).is_ok() && std::fs::rename(&tmp, &path).is_ok()
 }
 
 #[cfg(test)]

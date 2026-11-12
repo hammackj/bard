@@ -202,6 +202,23 @@ pub struct Covers {
     requested: HashSet<CoverKey>,
     wanted: Vec<CoverKey>,
     evicted: Vec<Arc<RenderImage>>,
+    /// The cached file each entry was decoded from (see [`Covers::revalidate`]).
+    stamps: HashMap<CoverKey, CoverStamp>,
+}
+
+/// Size and modification time of a cached cover file; None when there was
+/// no file.
+pub type CoverStamp = Option<(u64, std::time::SystemTime)>;
+
+/// A decoded cover and the file it came from.
+pub struct Decoded {
+    pub image: Option<Arc<RenderImage>>,
+    pub stamp: CoverStamp,
+}
+
+fn cover_stamp(path: &Path) -> CoverStamp {
+    let m = std::fs::metadata(path).ok()?;
+    Some((m.len(), m.modified().ok()?))
 }
 
 impl Covers {
@@ -233,8 +250,9 @@ impl Covers {
             return hit;
         }
         if self.sync {
-            let img = Self::load(&self.dir, kind, id);
-            self.insert(key, img.clone());
+            let d = Self::load(&self.dir, kind, id);
+            let img = d.image.clone();
+            self.insert(key, d);
             return img;
         }
         if self.requested.insert(key.clone()) {
@@ -271,19 +289,49 @@ impl Covers {
     }
 
     /// Decodes a cover. Slow; call off the render path.
-    pub fn load(dir: &Path, kind: CoverKind, id: &str) -> Option<Arc<RenderImage>> {
-        let img = image::open(dir.join(format!("{id}.jpg"))).ok()?;
-        Some(match kind {
+    pub fn load(dir: &Path, kind: CoverKind, id: &str) -> Decoded {
+        let path = dir.join(format!("{id}.jpg"));
+        // Taken first: a file replaced during the decode reads as changed.
+        let stamp = cover_stamp(&path);
+        let image = image::open(&path).ok().map(|img| match kind {
             CoverKind::Full => crate::backdrop::render_image(img.to_rgba8()),
             CoverKind::Thumb => crate::backdrop::render_image(img.thumbnail(THUMB_PX, THUMB_PX).to_rgba8()),
             CoverKind::Ambient => crate::backdrop::ambient(&img),
-        })
+        });
+        Decoded { image, stamp }
     }
 
-    pub fn insert(&mut self, key: CoverKey, img: Option<Arc<RenderImage>>) {
+    /// After a scan: forgets covers whose file has changed or gone, and every
+    /// miss -- the scan may have found art for it -- so they are decoded
+    /// again when next drawn. Unchanged covers stay; this is a stat per
+    /// cached entry, not a decode.
+    pub fn revalidate(&mut self) {
+        let dir = self.dir.clone();
+        let stale: Vec<CoverKey> = self
+            .cache
+            .iter()
+            .filter(|(key, img)| {
+                img.is_none()
+                    || self.stamps.get(*key).is_none_or(|s| *s != cover_stamp(&dir.join(format!("{}.jpg", key.1))))
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        for key in stale {
+            if let Some(Some(img)) = self.cache.remove(&key) {
+                self.evicted.push(img);
+            }
+            self.stamps.remove(&key);
+            if let Some(order) = self.order.get_mut(&key.0) {
+                order.retain(|x| *x != key.1);
+            }
+        }
+    }
+
+    pub fn insert(&mut self, key: CoverKey, decoded: Decoded) {
         self.requested.remove(&key);
         let (kind, id) = key.clone();
-        if let Some(Some(old)) = self.cache.insert(key, img) {
+        self.stamps.insert(key.clone(), decoded.stamp);
+        if let Some(Some(old)) = self.cache.insert(key, decoded.image) {
             self.evicted.push(old);
         }
         let order = self.order.entry(kind).or_default();
@@ -291,6 +339,7 @@ impl Covers {
         order.push_back(id);
         while order.len() > kind.capacity() {
             let gone = order.pop_front().expect("over capacity");
+            self.stamps.remove(&(kind, gone.clone()));
             if let Some(Some(img)) = self.cache.remove(&(kind, gone)) {
                 self.evicted.push(img);
             }
@@ -432,6 +481,8 @@ impl Ui {
     pub fn set_tracks(&mut self, tracks: Vec<Track>) {
         self.tracks = tracks;
         self.tracks_version += 1;
+        // A scan may have replaced, removed or found covers.
+        self.covers.revalidate();
     }
 
     /// The rows the library list shows, after view, album and filter.
@@ -564,8 +615,12 @@ mod tests {
         assert!(!u.is_current(8));
     }
 
-    fn img() -> Option<Arc<RenderImage>> {
-        Some(crate::backdrop::render_image(image::RgbaImage::new(1, 1)))
+    fn img() -> Decoded {
+        Decoded { image: Some(crate::backdrop::render_image(image::RgbaImage::new(1, 1))), stamp: None }
+    }
+
+    fn miss() -> Decoded {
+        Decoded { image: None, stamp: None }
     }
 
     #[test]
@@ -580,7 +635,7 @@ mod tests {
         assert!(c.cover("a").is_none(), "each kind is its own entry");
         assert_eq!(c.take_wanted(), [(CoverKind::Full, "a".to_string())]);
         // An unreadable cover is remembered, not asked for every frame.
-        c.insert((CoverKind::Full, "a".into()), None);
+        c.insert((CoverKind::Full, "a".into()), miss());
         assert!(c.cover("a").is_none());
         assert!(c.take_wanted().is_empty());
     }
@@ -598,6 +653,63 @@ mod tests {
         assert!(c.cover("0").is_some());
         assert!(c.cover("1").is_none(), "1 was evicted");
         assert_eq!(c.take_wanted(), [(CoverKind::Full, "1".to_string())], "and is decoded again if needed");
+    }
+
+    fn write_cover(dir: &Path, id: &str, shade: u8) {
+        image::RgbImage::from_pixel(4, 4, image::Rgb([shade, shade, shade]))
+            .save(dir.join(format!("{id}.jpg")))
+            .unwrap();
+    }
+
+    /// After a scan, a cover whose file changed is decoded again, a miss is
+    /// tried again, and an unchanged cover is kept as it is.
+    #[test]
+    fn a_rescan_refreshes_changed_covers_and_misses_only() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cover(dir.path(), "same", 10);
+        write_cover(dir.path(), "changed", 20);
+        let mut c = Covers::new(dir.path().to_path_buf());
+        for id in ["same", "changed", "missing"] {
+            c.cover(id);
+        }
+        for key in c.take_wanted() {
+            let d = Covers::load(dir.path(), key.0, &key.1);
+            c.insert(key, d);
+        }
+        assert!(c.cover("same").is_some() && c.cover("changed").is_some());
+        assert!(c.cover("missing").is_none());
+        assert!(c.take_wanted().is_empty(), "the miss is remembered until then");
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write_cover(dir.path(), "changed", 200);
+        write_cover(dir.path(), "missing", 30); // the scan found art
+        c.revalidate();
+        assert_eq!(c.take_evicted().len(), 1, "the changed cover is released");
+        assert!(c.cover("same").is_some(), "kept, not decoded again");
+        assert!(c.cover("changed").is_none());
+        assert!(c.cover("missing").is_none());
+        let mut wanted: Vec<String> = c.take_wanted().into_iter().map(|k| k.1).collect();
+        wanted.sort();
+        assert_eq!(wanted, ["changed", "missing"]);
+
+        // A cover deleted from the cache goes too.
+        std::fs::remove_file(dir.path().join("same.jpg")).unwrap();
+        c.revalidate();
+        assert!(c.cover("same").is_none());
+    }
+
+    /// set_tracks (every LibraryChanged) is what triggers it.
+    #[test]
+    fn new_tracks_revalidate_the_covers() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut u = Ui::new(Rc::new(NullBackend), dir.path().to_path_buf());
+        u.covers.cover("x");
+        let k = u.covers.take_wanted().pop().unwrap();
+        u.covers.insert(k, miss());
+        write_cover(dir.path(), "x", 5);
+        u.set_tracks(Vec::new());
+        assert!(u.covers.cover("x").is_none());
+        assert_eq!(u.covers.take_wanted().len(), 1, "asked for again");
     }
 
     #[test]

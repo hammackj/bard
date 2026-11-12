@@ -429,7 +429,7 @@ impl BardWindow {
         for (kind, id) in self.ui.covers.take_wanted() {
             let dir = dir.clone();
             cx.spawn(async move |this, cx| {
-                let img = cx
+                let decoded = cx
                     .background_executor()
                     .spawn({
                         let id = id.clone();
@@ -437,7 +437,7 @@ impl BardWindow {
                     })
                     .await;
                 let _ = this.update(cx, |w, cx| {
-                    w.ui.covers.insert((kind, id), img);
+                    w.ui.covers.insert((kind, id), decoded);
                     cx.notify();
                 });
             })
