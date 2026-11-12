@@ -431,6 +431,18 @@ impl Bard {
         self.emit_queue();
     }
 
+    /// Moves queue entry `item` to where entry `onto` is now -- a drag
+    /// dropped on a row. By entry id, not position: the queue can change
+    /// under a drag (a track ends, streamer mode prunes, another window
+    /// edits it), and a position captured at drag start then names some
+    /// other song. Nothing moves if either entry has gone.
+    pub fn move_queue_item(&mut self, item: &str, onto: &str) {
+        let find = |id: &str| self.queue.iter().position(|q| q.id == id);
+        if let (Some(from), Some(to)) = (find(item), find(onto)) {
+            self.reorder_queue(from, to);
+        }
+    }
+
     pub fn clear_queue(&mut self) {
         if self.queue.is_empty() {
             return;

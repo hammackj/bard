@@ -21,7 +21,8 @@ pub trait Backend {
     fn enqueue_many(&self, track_ids: &[String], start_now: bool);
     fn play_now(&self, track_id: &str);
     fn remove_from_queue(&self, queue_item_id: &str);
-    fn reorder_queue(&self, from: usize, to: usize);
+    /// Moves queue entry `item` to where entry `onto` is (entry ids).
+    fn move_queue_item(&self, item: &str, onto: &str);
     fn skip(&self);
     fn previous(&self);
     fn clear_queue(&self);
@@ -62,7 +63,7 @@ impl Backend for NullBackend {
     fn enqueue_many(&self, _: &[String], _: bool) {}
     fn play_now(&self, _: &str) {}
     fn remove_from_queue(&self, _: &str) {}
-    fn reorder_queue(&self, _: usize, _: usize) {}
+    fn move_queue_item(&self, _: &str, _: &str) {}
     fn skip(&self) {}
     fn previous(&self) {}
     fn clear_queue(&self) {}

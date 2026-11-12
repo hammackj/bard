@@ -181,6 +181,95 @@ fn removing_with_endless_refills() {
     assert!(f.bard.queue().iter().all(|q| q.id != first));
 }
 
+/// The queue entry holding `track` (the first, if queued twice).
+fn entry(b: &Bard, track: &str) -> String {
+    b.queue().iter().find(|q| q.track.id == track).unwrap().id.clone()
+}
+
+#[test]
+fn review_drag_keeps_the_selected_item_when_playback_advances() {
+    let mut f = fixture(false);
+    f.bard.enqueue_many(&["g1", "g2", "g3", "g4"], true);
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3", "g4"]);
+    // The drag starts on g3.
+    let dragged = entry(&f.bard, "g3");
+    // A track ends while the pointer is still down.
+    f.bard.report_ended();
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4"]);
+    // Dropped on its own row: nothing moves.
+    let onto = f.bard.queue()[0].id.clone();
+    f.bard.move_queue_item(&dragged, &onto);
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4"], "dropping the dragged song on itself must not move another song");
+}
+
+/// A drop names the dragged entry and the row it landed on; both are
+/// resolved against the queue as it is at the drop, whatever happened
+/// during the drag.
+#[test]
+fn a_drag_moves_the_entries_it_names_whatever_changed_meanwhile() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.auto_fill = AutoFillMode::Off);
+    f.bard.enqueue_many(&["g1", "g2", "g3", "g4", "r1", "r2"], true);
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3", "g4", "r1", "r2"]);
+
+    // Ordinary moves, down and up.
+    f.bard.move_queue_item(&entry(&f.bard, "g2"), &entry(&f.bard, "r1"));
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4", "r1", "g2", "r2"]);
+    f.bard.move_queue_item(&entry(&f.bard, "r2"), &entry(&f.bard, "g3"));
+    assert_eq!(queue_ids(&f.bard), ["r2", "g3", "g4", "r1", "g2"]);
+
+    // Playback advances under the drag: r1 onto g4 still means those two.
+    let (r1, g4) = (entry(&f.bard, "r1"), entry(&f.bard, "g4"));
+    f.bard.report_ended();
+    assert_eq!(queue_ids(&f.bard), ["g3", "g4", "r1", "g2"]);
+    f.bard.move_queue_item(&r1, &g4);
+    assert_eq!(queue_ids(&f.bard), ["g3", "r1", "g4", "g2"]);
+
+    // A shuffle under the drag: g2 lands where g3 now is.
+    let (g2, g3) = (entry(&f.bard, "g2"), entry(&f.bard, "g3"));
+    f.bard.shuffle_queue();
+    let mut want = queue_ids(&f.bard);
+    let from = want.iter().position(|t| t == "g2").unwrap();
+    let to = want.iter().position(|t| t == "g3").unwrap();
+    let moved = want.remove(from);
+    want.insert(to, moved);
+    f.bard.move_queue_item(&g2, &g3);
+    assert_eq!(queue_ids(&f.bard), want);
+
+    // The dragged entry or the target removed during the drag: nothing moves.
+    let before = queue_ids(&f.bard);
+    let (g2, g4) = (entry(&f.bard, "g2"), entry(&f.bard, "g4"));
+    f.bard.remove_from_queue(&g2);
+    let after_removal = queue_ids(&f.bard);
+    assert_eq!(after_removal.len(), before.len() - 1);
+    f.bard.move_queue_item(&g2, &g4);
+    assert_eq!(queue_ids(&f.bard), after_removal, "dragged entry gone");
+    let r1 = entry(&f.bard, "r1");
+    f.bard.move_queue_item(&r1, &g2);
+    assert_eq!(queue_ids(&f.bard), after_removal, "target entry gone");
+    f.bard.move_queue_item("nope", "nada");
+    assert_eq!(queue_ids(&f.bard), after_removal);
+}
+
+/// The same song queued twice is two entries; a drag moves the one dragged.
+#[test]
+fn a_drag_tells_two_copies_of_a_song_apart() {
+    let mut f = fixture(false);
+    f.bard.update_config(|c| c.playback.auto_fill = AutoFillMode::Off);
+    f.bard.enqueue_many(&["g1", "g2", "g3", "g2", "g4"], true);
+    let entries: Vec<String> = f.bard.queue().iter().map(|q| q.id.clone()).collect();
+    assert_eq!(queue_ids(&f.bard), ["g2", "g3", "g2", "g4"]);
+    assert_ne!(entries[0], entries[2]);
+    // The second g2 onto the first g2's row.
+    f.bard.move_queue_item(&entries[2], &entries[0]);
+    let now: Vec<String> = f.bard.queue().iter().map(|q| q.id.clone()).collect();
+    assert_eq!(now, [entries[2].clone(), entries[0].clone(), entries[1].clone(), entries[3].clone()]);
+    // An entry onto itself is a no-op.
+    f.bard.move_queue_item(&entries[1], &entries[1]);
+    let same: Vec<String> = f.bard.queue().iter().map(|q| q.id.clone()).collect();
+    assert_eq!(same, now);
+}
+
 #[test]
 fn reorder_clamps_and_ignores_bad_indices() {
     let mut f = fixture(false);

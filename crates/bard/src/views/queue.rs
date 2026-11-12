@@ -62,7 +62,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
     let rows = ui.queue.iter().enumerate().map(|(i, item)| {
         let group = SharedString::from(format!("q-{}", item.id));
         let id = item.id.clone();
-        let drag = QueueDrag { from: i, number: i + 1, title: item.track.title.clone() };
+        let drag = QueueDrag { item: item.id.clone(), number: i + 1, title: item.track.title.clone() };
         div()
             .id(SharedString::from(format!("qrow-{}", item.id)))
             .group(group.clone())
@@ -77,9 +77,13 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
             // dnd-kit's arrayMove. GPUI borders take one colour for all sides,
             // so the target is shown with the hover fill rather than an edge.
             .drag_over::<QueueDrag>(|s, _, _, _| s.bg(theme::panel()))
-            .on_drop(cx.listener(move |this, d: &QueueDrag, _, _| {
-                if d.from != i {
-                    this.ui.backend.reorder_queue(d.from, i);
+            // By entry id: the queue may have moved on since the drag began.
+            .on_drop(cx.listener({
+                let onto = item.id.clone();
+                move |this, d: &QueueDrag, _, _| {
+                    if d.item != onto {
+                        this.ui.backend.move_queue_item(&d.item, &onto);
+                    }
                 }
             }))
             .child(
@@ -191,7 +195,8 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
 /// What a queue row carries while it is dragged.
 #[derive(Clone)]
 pub struct QueueDrag {
-    from: usize,
+    /// The dragged entry's id.
+    item: String,
     number: usize,
     title: String,
 }

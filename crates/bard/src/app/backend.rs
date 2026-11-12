@@ -86,8 +86,8 @@ impl Backend for AppBackend {
     fn remove_from_queue(&self, id: &str) {
         self.with(|b| b.remove_from_queue(id));
     }
-    fn reorder_queue(&self, from: usize, to: usize) {
-        self.with(|b| b.reorder_queue(from, to));
+    fn move_queue_item(&self, item: &str, onto: &str) {
+        self.with(|b| b.move_queue_item(item, onto));
     }
     fn skip(&self) {
         self.with(|b| b.skip());
