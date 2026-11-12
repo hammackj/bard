@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.10] — 2026-11-12
+
 ### Fixed
 
 - **Streamer mode rechecks tracks a rescan retagged.** A track retagged into
