@@ -187,5 +187,9 @@ Some deliberate structure worth knowing before changing things:
 
 ## Licence
 
-The application code is MIT. Music you play through it is governed by whatever
-licence that music carries — Bard neither supplies nor relicenses any audio.
+The application code is MIT — see [`LICENSE`](LICENSE). The bundled fonts
+(Inter, Fira Code) are under the SIL Open Font License and two icons are
+adapted from Feather (MIT); see [`THIRD-PARTY.md`](THIRD-PARTY.md).
+
+Music you play through it is governed by whatever licence that music carries —
+Bard neither supplies nor relicenses any audio.
