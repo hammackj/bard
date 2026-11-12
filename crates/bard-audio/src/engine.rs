@@ -219,9 +219,17 @@ impl Engine {
                     }
                 }
                 self.pending = None;
-                self.swap(play);
+                self.swap(play, true);
             }
             Cmd::Pause => {
+                // Paused mid-fade: the caller has already moved on to the
+                // incoming track, so it is loaded now, paused, rather than
+                // left queued -- the fade's deadline would otherwise start
+                // it with no one having asked to play. Resume starts it.
+                if let Some((p, _)) = self.pending.take() {
+                    self.swap(p, false);
+                    return true;
+                }
                 self.shared.playing.store(false, Ordering::Relaxed);
                 if self.source.is_some() {
                     self.progress();
@@ -246,8 +254,14 @@ impl Engine {
         true
     }
 
-    /// Loads a track and starts it.
-    fn swap(&mut self, p: PendingPlay) {
+    /// Loads a track, and starts it if `start`; otherwise it waits, paused,
+    /// at its beginning, for a resume.
+    fn swap(&mut self, mut p: PendingPlay, start: bool) {
+        if !start {
+            // There is nothing to fade in from a pause; resume plays it at
+            // its level.
+            p.crossfade_sec = 0.0;
+        }
         self.norm_gain = p.norm_gain;
         let target = self.target_gain();
         // Set the level before the audio starts, or the first moments of a
@@ -278,7 +292,13 @@ impl Engine {
                 self.eof_queued = false;
                 self.ended_reported = false;
                 self.shared.loaded.store(true, Ordering::Relaxed);
-                self.shared.playing.store(true, Ordering::Relaxed);
+                self.shared.playing.store(start, Ordering::Relaxed);
+                if !start {
+                    self.decode_some();
+                    self.deactivate_soon();
+                    self.progress();
+                    return;
+                }
                 if p.crossfade_sec > 0.0 {
                     let _ = self.gains.push(GainMsg {
                         after_epoch: epoch,
@@ -365,7 +385,7 @@ impl Engine {
             // next track is already chosen, so start it now. Reporting Ended
             // here as well would make the app advance the queue a second time.
             let (p, _) = self.pending.take().expect("checked above");
-            self.swap(p);
+            self.swap(p, true);
         } else if ran_out {
             // The element's order: a final timeupdate, pause, then ended.
             self.ended_reported = true;

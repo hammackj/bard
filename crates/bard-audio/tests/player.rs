@@ -257,3 +257,44 @@ fn a_track_that_runs_out_mid_fade_hands_over_without_ended() {
         "b started when a ran out: {ev:?}"
     );
 }
+
+/// Pausing while a fade-out is under way: nothing may start playing when the
+/// fade's deadline passes, and the incoming track waits, paused, for resume.
+#[test]
+fn pausing_mid_fade_stays_paused_with_the_incoming_track_loaded() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 0.4);
+    std::thread::sleep(Duration::from_millis(80));
+    p.pause();
+
+    let ev = collect(&rx, Duration::from_millis(650));
+    assert!(!p.position().playing, "still paused after the fade's deadline: {ev:?}");
+    assert!(!ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { playing: true, .. })), "{ev:?}");
+    assert!(
+        ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { track_id: Some(t), playing: false, position, .. } if t == "b" && *position == 0.0)),
+        "b loaded, paused at its start: {ev:?}"
+    );
+
+    // Resume plays b, at its level rather than from the fade's silence.
+    p.resume();
+    let e = wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. }));
+    assert!(matches!(&e, Some(PlayerEvent::Progress { track_id: Some(t), .. }) if t == "b"), "{e:?}");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!((p.current_gain() - 1.0).abs() < 0.01, "{}", p.current_gain());
+}
+
+/// Stop during a fade-out drops the incoming track; nothing starts later.
+#[test]
+fn stopping_mid_fade_starts_nothing() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 0.4);
+    std::thread::sleep(Duration::from_millis(80));
+    p.stop();
+    let ev = collect(&rx, Duration::from_millis(650));
+    assert!(!p.position().playing);
+    assert!(!ev.iter().any(|(_, e)| matches!(e, PlayerEvent::Progress { playing: true, .. })), "{ev:?}");
+}
