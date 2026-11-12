@@ -1,5 +1,6 @@
 //! The GPUI front end of Bard.
 
+pub mod app;
 pub mod assets;
 pub mod backdrop;
 pub mod fonts;

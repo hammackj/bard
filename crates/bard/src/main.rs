@@ -1,18 +1,15 @@
+//! Bard: a local music player for a curated library.
+
 use gpui::*;
 use gpui_platform::application;
 
 fn main() {
-    application().run(|cx: &mut App| {
+    application().with_assets(bard::assets::Assets).run(|cx: &mut App| {
         bard::fonts::load(cx).expect("embedded fonts");
-        gpui_component::init(cx);
-        cx.open_window(WindowOptions::default(), |_, cx| cx.new(|_| Empty)).unwrap();
+        if let Err(e) = bard::app::open(cx, bard::app::Launch::from_env()) {
+            eprintln!("[bard] failed to start: {e:#}");
+            cx.quit();
+        }
         cx.activate(true);
     });
-}
-
-struct Empty;
-impl Render for Empty {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().bg(bard::theme::ink())
-    }
 }
