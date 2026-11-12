@@ -22,7 +22,7 @@ crates/
 
 | Electron                         | Rust                                      |
 | -------------------------------- | ----------------------------------------- |
-| React + Tailwind renderer        | GPUI views (`gpui-pre` + `gpui-component`) |
+| React + Tailwind renderer        | GPUI views (`gpui-pre`)                   |
 | Web Audio graph                  | `bard-audio`                              |
 | `music-metadata`                 | `lofty`                                   |
 | `fuse.js`                        | fuzzy matcher in `bard-core`              |
@@ -44,9 +44,12 @@ The Rust build reads and writes the same `~/.config/bard`:
   `sha1(resolved path).hex[..16]`, or stats and covers detach from tracks.
 - `nowplaying.json` and the overlay's SSE payloads — same shape, so the OBS
   browser source page in `resources/overlay/` is served unchanged.
-- **Not carried over:** `audio.outputDeviceId` (a Chromium-hashed id; falls
-  back to the default sink once) and `obs-password.bin` (Electron
-  safeStorage; re-enter it, or migrate by decrypting Chromium's v11 format).
+- **Not carried over:** `audio.outputDeviceId`. Electron stored a
+  Chromium-hashed id that names no PipeWire sink, so the first Rust run plays
+  through the default with a notice; pick the device once in Settings.
+- `obs-password.bin` (Electron safeStorage) is migrated once into the keyring
+  by `bard-services` and left in place for the Electron build; a
+  `obs-password.bin.migrated` marker stops a later clear being undone.
 
 ## Fixed from Electron that must stay fixed
 
@@ -54,3 +57,41 @@ The Rust build reads and writes the same `~/.config/bard`:
   Electron build showed "Bard / Bard" until 0.1.3.
 - The overlay binds 127.0.0.1, never 0.0.0.0.
 - Global media keys stay off by default.
+
+## Building and running
+
+```
+cargo build --release -p bard
+./scripts/install-desktop.sh target/release/bard   # point the launcher at it
+```
+
+The launcher and icon are the Electron build's: the window's app id is
+`bard`, matching `bard.desktop`. Run `install-desktop.sh` with no argument to
+point the launcher back at `dist/linux-unpacked/bard`.
+
+GPUI's Wayland and X11 backends are opt-in features of `gpui-pre-platform`.
+Without them it runs headless without a word -- audio, MPRIS and the tray all
+work, and no window ever appears.
+
+One Bard per data dir: a second launch finds the first by its MPRIS name,
+asks it to `Raise`, and exits before opening anything. SIGTERM, SIGINT and
+SIGHUP quit as the tray's Quit does: services stopped, stats and loved
+tracks flushed, a stopped `nowplaying.json` written.
+
+### Development switches
+
+| Variable | Effect |
+| --- | --- |
+| `BARD_DATA_DIR` | Use this data dir instead of `~/.config/bard`. Also a dev run: its own MPRIS name (per dir), its own keyring slot, no OBS password migration, no OBS watcher. |
+| `BARD_SILENT` | Everything runs and the visualiser moves, but the device gets zeros. |
+| `BARD_AUTOPLAY` | Start playback once the library is scanned. |
+| `BARD_OBS` | With `BARD_DATA_DIR`, run the OBS watcher anyway. |
+| `BARD_POPUP_DEBUG` | Log how the tray preview opened. |
+| `BARD_POPUP_PLAIN` | Open the preview as a plain window instead of a layer-shell surface. |
+
+Give a scratch data dir its own `overlay.port` in `config.json`, or a dev run
+can take 4747 while the installed Bard is closed and feed OBS.
+
+`bard-snapshot` (`--features snapshot`) renders a view headlessly from a
+fixture, with optional keystrokes, clicks and a drag, for side-by-side checks
+against the Electron build.

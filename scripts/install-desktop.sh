@@ -7,7 +7,9 @@
 #
 #   ./scripts/install-desktop.sh [path-to-bard-binary] [--desktop]
 #
-# With no argument it uses dist/linux-unpacked/bard.
+# With no argument it uses dist/linux-unpacked/bard (the Electron build). For
+# the Rust build pass target/release/bard; its window's app id is "bard", so
+# this same launcher and icon apply.
 # --desktop also drops a copy on the desktop itself.
 set -euo pipefail
 
@@ -26,6 +28,7 @@ target="${target:-$repo_root/dist/linux-unpacked/bard}"
 if [[ ! -x "$target" ]]; then
   echo "error: no executable at $target" >&2
   echo "build one first:  npm run build && npx electron-builder --linux --dir" >&2
+  echo "   or, for the Rust build:  cargo build --release -p bard" >&2
   exit 1
 fi
 target="$(cd "$(dirname "$target")" && pwd)/$(basename "$target")"

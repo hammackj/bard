@@ -255,10 +255,48 @@ impl Launch {
         }
     }
 
+    /// The MPRIS name this instance owns, and a second launch looks for.
+    /// Dev runs take one per data dir: one instance per set of files is what
+    /// single-instance protects, and two scratch copies may run side by side.
+    fn mpris_suffix(&self) -> String {
+        if !self.dev {
+            return bard_services::mpris::BUS_SUFFIX.into();
+        }
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.data_dir.hash(&mut h);
+        // A bus name element may not start with a digit.
+        format!("bard.dev_{:08x}", h.finish() as u32)
+    }
+
+    /// Single instance, as Electron's `requestSingleInstanceLock`: when a
+    /// Bard is already running, ask it to show its window and report true, so
+    /// this launch can exit before it opens the library -- two processes
+    /// writing the same stats and queue would lose one's writes.
+    ///
+    /// The running instance is found by its MPRIS name, which it owns for as
+    /// long as it runs, and raised with MPRIS `Raise` -- the same request the
+    /// desktop's media controls make.
+    pub fn raise_running(&self) -> bool {
+        let name = format!("org.mpris.MediaPlayer2.{}", self.mpris_suffix());
+        let raise = || -> zbus::Result<bool> {
+            let conn = zbus::blocking::Connection::session()?;
+            let dbus = zbus::blocking::fdo::DBusProxy::new(&conn)?;
+            let bus_name = zbus::names::BusName::try_from(name.as_str())?;
+            if !dbus.name_has_owner(bus_name)? {
+                return Ok(false);
+            }
+            conn.call_method(Some(name.as_str()), "/org/mpris/MediaPlayer2", Some("org.mpris.MediaPlayer2"), "Raise", &())?;
+            Ok(true)
+        };
+        // No session bus, or the call failed: carry on and start normally.
+        raise().unwrap_or(false)
+    }
+
     fn services(&self) -> ServicesOptions {
         if self.dev {
             ServicesOptions {
-                mpris_bus_suffix: "bard.dev".into(),
+                mpris_bus_suffix: self.mpris_suffix(),
                 obs_password: bard_services::secrets::ObsPassword::with_service("bard-dev"),
                 migrate_obs_password: false,
                 obs: std::env::var_os("BARD_OBS").is_some(),
@@ -356,13 +394,26 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
         ui.loved = b.loved();
         ui.streamer_source = b.streamer_source();
     }
-    ui.commit = option_env!("BARD_COMMIT").unwrap_or("dev").to_string();
+    ui.commit = env!("BARD_COMMIT").to_string();
     let analyser = player.analyser();
     let read: StringAnalyser = Rc::new(move |out: &mut [u8]| analyser.time_domain(out));
     ui.string.analyser = Some(read);
 
     // Started before the window so Settings has the overlay URL from the
     // first frame. Must not be called with the core lock held.
+    // Logout, shutdown and `kill` end the process with a signal. Quit
+    // properly instead, as Electron's before-quit did: flush stats and loved
+    // tracks, and write a stopped nowplaying.json -- or the overlay keeps
+    // showing a track that stopped with us.
+    {
+        let tx = tx.clone();
+        if let Err(e) = ctrlc::set_handler(move || {
+            let _ = tx.unbounded_send(AppEvent::Control(Control::Quit));
+        }) {
+            eprintln!("[bard] signal handler: {e}");
+        }
+    }
+
     let started = Services::start(bard.clone(), Arc::new(Controls(tx)), launch.services());
     ui.overlay_url = started.overlay_url();
     *services.lock().expect("services lock") = Some(started);
