@@ -7,6 +7,31 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-11-12
+
+### Fixed
+
+- **Pausing during a crossfade stays paused.** Before, playback started again
+  when the fade finished.
+- **A track that will not open is skipped** instead of leaving playback stuck.
+  After three failures in a row Bard stops rather than skipping through the
+  whole queue.
+- **Progress from the outgoing track no longer moves the seek bar** of the
+  incoming one during a crossfade or a restart.
+- **Streamer mode rechecks a track when its album's Content ID flag changes**,
+  and again just before it plays, so a newly claimed album cannot play live.
+- **Settings change only once they are saved.** A failed write no longer
+  leaves the app using a value that is not on disk.
+- **Removing a music folder removes its tracks** from the library, and when
+  scans overlap only the newest one's result is kept.
+
+### Changed
+
+- **The album grid is much faster on large libraries.** Covers are decoded in
+  the background and only visible rows are drawn. On a 2,000-album library the
+  first frame went from about 2.5s to 0.4s and memory from about 1.5GB to
+  260MB.
+
 ## [0.2.1] — 2026-11-12
 
 ### Fixed
