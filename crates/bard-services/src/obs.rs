@@ -35,6 +35,11 @@ pub const RETRY: [Duration; 5] = [
 ];
 
 /// How long the websocket handshake may take before it counts as a failure.
+/// Applied to each step of it: the upgrade, then OBS's Hello, then its
+/// Identified. An endpoint that accepts the upgrade and then says nothing
+/// (a hung OBS, a proxy, the wrong service on the port) otherwise held the
+/// watcher forever with no notice and no retry. Once identified there is no
+/// deadline: a quiet OBS that is not streaming sends nothing for hours.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// obs-websocket close code for a rejected password.
@@ -231,7 +236,26 @@ async fn connection<H: ObsHandler>(url: &str, h: &H, retry: &mut usize, told_use
     };
     let (mut tx, mut rx) = ws.split();
 
-    while let Some(msg) = rx.next().await {
+    // Until Identified, each message OBS owes has a deadline.
+    let mut deadline = Some(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
+    loop {
+        let next = match deadline {
+            Some(d) => match tokio::time::timeout_at(d, rx.next()).await {
+                Ok(m) => m,
+                Err(_) => {
+                    debug(|| "OBS did not finish identifying in time".into());
+                    if !*told_user {
+                        *told_user = true;
+                        h.status(format!(
+                            "OBS at {url} did not finish connecting \u{2014} streamer mode will not arm itself"
+                        ));
+                    }
+                    return End::Retry;
+                }
+            },
+            None => rx.next().await,
+        };
+        let Some(msg) = next else { break };
         let text = match msg {
             Ok(Message::Text(t)) => t,
             Ok(Message::Close(frame)) => {
@@ -273,8 +297,12 @@ async fn connection<H: ObsHandler>(url: &str, h: &H, retry: &mut usize, told_use
                 if tx.send(Message::text(identify(authentication))).await.is_err() {
                     return End::Retry;
                 }
+                // Reading the password may have waited on a keyring; OBS's
+                // reply gets its own full allowance.
+                deadline = Some(tokio::time::Instant::now() + HANDSHAKE_TIMEOUT);
             }
             Step::Identified => {
+                deadline = None;
                 *retry = 0;
                 *told_user = false;
                 debug(|| "identified; asking current output state".into());

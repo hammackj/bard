@@ -7,6 +7,13 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streamer auto-arm notices an OBS that connects but never finishes the
+  handshake.** A hung OBS, or the wrong service on its port, left the
+  watcher waiting forever with no notice and no retry. It now gives up
+  after four seconds, says so once, and keeps retrying.
+
 ## [0.2.12] — 2026-11-12
 
 ### Fixed

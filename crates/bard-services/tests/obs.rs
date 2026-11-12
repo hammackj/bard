@@ -142,6 +142,92 @@ async fn unreachable_obs_is_reported_once_and_retried() {
     assert_eq!(rec.status.lock().unwrap().len(), 1, "{:?}", rec.status.lock().unwrap());
 }
 
+/// Where a fake OBS stops talking.
+#[derive(Clone, Copy, PartialEq)]
+enum Stall {
+    /// Accepts the upgrade, never says Hello.
+    BeforeHello,
+    /// Says Hello, reads Identify, never says Identified.
+    BeforeIdentified,
+    /// Identifies, answers nothing, then stays quiet: an idle OBS.
+    AfterIdentified,
+}
+
+/// Accepts connections one after another, stalling each at `stall`, and
+/// counts them. Each socket is held open until the test ends.
+async fn stalling_obs(listener: TcpListener, stall: Stall, accepted: Arc<Mutex<usize>>) {
+    let mut held = Vec::new();
+    loop {
+        let (tcp, _) = listener.accept().await.unwrap();
+        *accepted.lock().unwrap() += 1;
+        let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+        if stall != Stall::BeforeHello {
+            let hello = json!({"op":0,"d":{"obsWebSocketVersion":"5.5.0","rpcVersion":1}});
+            ws.send(Message::text(hello.to_string())).await.unwrap();
+            let Some(Ok(Message::Text(identify))) = ws.next().await else { continue };
+            assert!(identify.contains("rpcVersion"));
+        }
+        if stall == Stall::AfterIdentified {
+            ws.send(Message::text(json!({"op":2,"d":{"negotiatedRpcVersion":1}}).to_string())).await.unwrap();
+        }
+        // Drain whatever the client sends (its status requests) without
+        // replying, so the socket stays open and quiet.
+        held.push(tokio::spawn(async move { while ws.next().await.is_some() {} }));
+    }
+}
+
+/// A peer that stalls mid-handshake is given up on after the deadline,
+/// reported once, and retried with the usual backoff.
+async fn a_stalled_handshake_is_reported_and_retried(stall: Stall) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let accepted = Arc::new(Mutex::new(0));
+    let server = tokio::spawn(stalling_obs(listener, stall, accepted.clone()));
+    let rec = Arc::new(Rec::default());
+    let watch = ObsWatch::start(&tokio::runtime::Handle::current(), url, rec.clone());
+
+    tokio::time::sleep(Duration::from_millis(3000)).await;
+    assert!(rec.status.lock().unwrap().is_empty(), "nothing said within the deadline");
+    assert_eq!(*accepted.lock().unwrap(), 1);
+
+    // 4s deadline, then the 2s backoff, then a second attempt that stalls too.
+    tokio::time::sleep(Duration::from_millis(3800)).await;
+    let status = rec.status.lock().unwrap().clone();
+    assert_eq!(status.len(), 1, "{status:?}");
+    assert!(status[0].contains("did not finish connecting"), "{status:?}");
+    assert_eq!(*accepted.lock().unwrap(), 2, "reconnected after the backoff");
+    assert!(!watch.is_finished(), "a stall is retried, not given up on");
+    assert!(rec.live.lock().unwrap().is_empty());
+    server.abort();
+}
+
+#[tokio::test]
+async fn an_obs_that_never_says_hello_is_reported_and_retried() {
+    a_stalled_handshake_is_reported_and_retried(Stall::BeforeHello).await;
+}
+
+#[tokio::test]
+async fn an_obs_that_never_says_identified_is_reported_and_retried() {
+    a_stalled_handshake_is_reported_and_retried(Stall::BeforeIdentified).await;
+}
+
+/// Once identified, silence is normal -- OBS sends nothing until an output
+/// changes -- so there is no deadline: no notice, no reconnect.
+#[tokio::test]
+async fn an_identified_idle_obs_stays_connected() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let accepted = Arc::new(Mutex::new(0));
+    let server = tokio::spawn(stalling_obs(listener, Stall::AfterIdentified, accepted.clone()));
+    let rec = Arc::new(Rec::default());
+    let watch = ObsWatch::start(&tokio::runtime::Handle::current(), url, rec.clone());
+    tokio::time::sleep(Duration::from_millis(6500)).await;
+    assert!(rec.status.lock().unwrap().is_empty(), "{:?}", rec.status.lock().unwrap());
+    assert_eq!(*accepted.lock().unwrap(), 1, "an idle identified connection was dropped");
+    assert!(!watch.is_finished());
+    server.abort();
+}
+
 struct NoControls;
 impl AppControls for NoControls {
     fn play(&self) {}
