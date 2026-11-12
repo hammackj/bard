@@ -29,6 +29,8 @@ pub struct BardWindow {
     pub crossfade_bounds: Option<Bounds<Pixels>>,
     pub filter: Entity<TextInput>,
     pub fields: Fields,
+    /// Focus for the window itself, so shortcuts arrive with no field focused.
+    pub focus: FocusHandle,
     /// Backdrop bitmaps, rebuilt when the window's device size changes.
     layers: Option<((u32, u32), Layers)>,
 }
@@ -46,16 +48,28 @@ impl BardWindow {
             cx.new(|cx| TextInput::new(window, cx, placeholder, value))
         };
         let filter = input(window, cx, "Filter tracks…", &ui.filter);
-        cx.subscribe(&filter, |this, input, ev, cx| match ev {
+        cx.subscribe_in(&filter, window, |this, input, ev, window, cx| match ev {
             InputEvent::Changed => {
                 this.ui.filter = input.read(cx).text().to_string();
                 this.ui.selected = 0;
                 cx.notify();
             }
+            // Escape clears the filter and gives focus back to the window.
             InputEvent::Cancel => {
                 input.update(cx, |i, cx| i.set_text("", cx));
                 this.ui.filter.clear();
+                window.focus(&this.focus, cx);
                 cx.notify();
+            }
+            // Enter queues the selected track; Shift+Enter plays it now.
+            InputEvent::Submit | InputEvent::SubmitShift => {
+                if let Some(t) = this.ui.filtered_tracks().get(this.ui.selected) {
+                    if *ev == InputEvent::Submit {
+                        this.ui.backend.enqueue(&t.id);
+                    } else {
+                        this.ui.backend.play_now(&t.id);
+                    }
+                }
             }
             _ => {}
         })
@@ -69,6 +83,20 @@ impl BardWindow {
             obs_password: input(window, cx, if c.streamer.has_obs_password { "••••••••" } else { "none" }, ""),
         };
         fields.obs_password.update(cx, |i, _| i.masked = true);
+
+        // Escape in a settings field closes Settings, as it did in Electron,
+        // and hands focus back to the window so shortcuts work again.
+        for field in [&fields.avoid_repeat, &fields.fill_count, &fields.popup_seconds, &fields.obs_url, &fields.obs_password] {
+            cx.subscribe_in(field, window, |this, _, ev, window, cx| {
+                if *ev == InputEvent::Cancel {
+                    this.ui.settings_open = false;
+                    this.ui.open_select = None;
+                    window.focus(&this.focus, cx);
+                    cx.notify();
+                }
+            })
+            .detach();
+        }
 
         // Number fields commit on blur, as `NumberRow` did: a value that is
         // not a whole number >= 0 is dropped rather than saved.
@@ -129,6 +157,11 @@ impl BardWindow {
             crossfade_bounds: None,
             filter,
             fields,
+            focus: {
+                let focus = cx.focus_handle();
+                window.focus(&focus, cx);
+                focus
+            },
         }
     }
 
@@ -154,6 +187,97 @@ impl BardWindow {
         let placeholder = if c.streamer.has_obs_password { "••••••••" } else { "none" };
         f.obs_password.update(cx, |i, _| i.placeholder = placeholder.into());
         cx.notify();
+    }
+
+    fn typing(&self, window: &Window, cx: &App) -> bool {
+        let f = &self.fields;
+        [&self.filter, &f.avoid_repeat, &f.fill_count, &f.popup_seconds, &f.obs_url, &f.obs_password]
+            .iter()
+            .any(|i| i.focus_handle(cx).is_focused(window))
+    }
+
+    /// `App.tsx`'s global shortcuts, and the library's list keys. Arrow keys
+    /// and Space are left to a field being typed in, except that Up and Down
+    /// in the filter move the list selection, as they did in Electron.
+    fn on_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let k = &ev.keystroke;
+        let typing = self.typing(window, cx);
+        let in_filter = self.filter.focus_handle(cx).is_focused(window);
+        let ctrl = k.modifiers.control || k.modifiers.platform;
+        let key = k.key.as_str();
+        let handled = match key {
+            "/" if !typing => {
+                self.ui.library_open = true;
+                self.filter.focus_handle(cx).focus(window, cx);
+                true
+            }
+            "space" if !typing => {
+                self.ui.backend.toggle_play();
+                true
+            }
+            "right" if !typing => {
+                let to = (self.position_now() + 5.).min(self.ui.duration);
+                self.ui.backend.seek(to);
+                true
+            }
+            "left" if !typing => {
+                self.ui.backend.seek((self.position_now() - 5.).max(0.));
+                true
+            }
+            "up" | "down" if in_filter => {
+                let n = self.ui.filtered_tracks().len();
+                if n > 0 {
+                    self.ui.selected = if key == "down" {
+                        (self.ui.selected + 1).min(n - 1)
+                    } else {
+                        self.ui.selected.saturating_sub(1)
+                    };
+                    self.tracks_scroll.scroll_to_item(self.ui.selected, ScrollStrategy::Nearest);
+                }
+                true
+            }
+            "up" | "down" if !typing => {
+                let step = if key == "up" { 0.05 } else { -0.05 };
+                let v = (self.ui.volume + step).clamp(0., 1.);
+                self.ui.volume = v;
+                self.ui.backend.set_volume(v);
+                true
+            }
+            "?" if !typing => {
+                self.ui.shortcuts_open = !self.ui.shortcuts_open;
+                true
+            }
+            "," if ctrl => {
+                if self.ui.settings_open {
+                    self.ui.settings_open = false;
+                } else {
+                    self.open_settings(cx);
+                }
+                true
+            }
+            "escape" => {
+                self.ui.settings_open = false;
+                self.ui.shortcuts_open = false;
+                self.ui.open_select = None;
+                self.ui.menu_open = false;
+                self.ui.sleep_open = false;
+                true
+            }
+            _ => false,
+        };
+        if handled {
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    /// Where playback is now, between the engine's progress reports.
+    fn position_now(&self) -> f64 {
+        if self.ui.playing {
+            self.ui.position + self.ui.position_at.elapsed().as_secs_f64()
+        } else {
+            self.ui.position
+        }
     }
 
     fn layers(&mut self, window: &Window) -> &Layers {
@@ -196,6 +320,8 @@ impl Render for BardWindow {
 
         div()
             .id("bard")
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
             .relative()
             .size_full()
             .flex()

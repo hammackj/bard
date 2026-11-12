@@ -36,6 +36,7 @@ actions!(
         Cut,
         Copy,
         Submit,
+        SubmitShift,
         Cancel,
     ]
 );
@@ -57,6 +58,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("home", Home, c),
         KeyBinding::new("end", End, c),
         KeyBinding::new("enter", Submit, c),
+        KeyBinding::new("shift-enter", SubmitShift, c),
         KeyBinding::new("escape", Cancel, c),
     ]);
 }
@@ -66,6 +68,8 @@ pub enum InputEvent {
     Changed,
     /// Enter.
     Submit,
+    /// Shift+Enter.
+    SubmitShift,
     /// Escape.
     Cancel,
     /// Focus left the field.
@@ -117,6 +121,10 @@ impl TextInput {
         self.content = text.to_string().into();
         self.selected_range = text.len()..text.len();
         cx.notify();
+    }
+
+    fn submit_shift(&mut self, _: &SubmitShift, _: &mut Window, cx: &mut Context<Self>) {
+        cx.emit(InputEvent::SubmitShift);
     }
 
     fn submit(&mut self, _: &Submit, _: &mut Window, cx: &mut Context<Self>) {
@@ -756,6 +764,7 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::submit))
+            .on_action(cx.listener(Self::submit_shift))
             .on_action(cx.listener(Self::cancel))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))

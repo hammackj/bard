@@ -54,9 +54,12 @@ struct Fixture {
     outputs: Vec<(String, String)>,
     #[serde(default)]
     paths: Option<bard_core::types::AppPaths>,
+    /// Keystrokes to send before capturing, in GPUI's syntax ("ctrl-,", "/", "down").
+    #[serde(default)]
+    keys: Vec<String>,
 }
 
-fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32)> {
+fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32, Vec<String>)> {
     let f: Fixture = serde_json::from_str(&std::fs::read_to_string(path)?)?;
     let home = std::env::var("HOME")?;
     let mut ui = Ui::new(Rc::new(NullBackend), format!("{home}/.config/bard/artwork").into());
@@ -94,7 +97,7 @@ fn fixture_ui(path: &str) -> anyhow::Result<(Ui, f32)> {
     ui.settings_open = f.settings_open;
     ui.outputs = f.outputs;
     ui.paths = f.paths;
-    Ok((ui, f.settings_scroll))
+    Ok((ui, f.settings_scroll, f.keys))
 }
 
 struct Fonts;
@@ -129,10 +132,12 @@ fn main() -> anyhow::Result<()> {
         gpui_platform::current_headless_renderer()
     });
     cx.update(|cx| fonts::load(cx))?;
-    let window = match scene {
+    let mut keys = Vec::new();
+    let window: AnyWindowHandle = match scene {
         "fonts" => cx.open_window(size(px(w), px(h)), |_, cx| cx.new(|_| Fonts))?.into(),
         fixture if fixture.ends_with(".json") => {
-            let (ui, scroll) = fixture_ui(fixture)?;
+            let (ui, scroll, k) = fixture_ui(fixture)?;
+            keys = k;
             cx.open_window(size(px(w), px(h)), move |window, cx| {
                 cx.new(|cx| {
                     let w = BardWindow::new(ui, window, cx);
@@ -146,6 +151,14 @@ fn main() -> anyhow::Result<()> {
     };
     // Two passes: images decoded during the first frame are drawn in the second.
     cx.run_until_parked();
+    for k in &keys {
+        // parse() takes a 'static str; this tool runs once and exits.
+        let stroke = Keystroke::parse(k.clone().leak()).map_err(|e| anyhow::anyhow!("{k}: {e:?}"))?;
+        cx.update_window(window, |_, window, cx| {
+            window.dispatch_keystroke(stroke, cx);
+        })?;
+        cx.run_until_parked();
+    }
     cx.update_window(window, |_, window, _| window.refresh())?;
     cx.run_until_parked();
     let img = cx.capture_screenshot(window)?;
