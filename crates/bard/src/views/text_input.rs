@@ -38,6 +38,18 @@ actions!(
         Submit,
         SubmitShift,
         Cancel,
+        WordLeft,
+        WordRight,
+        SelectWordLeft,
+        SelectWordRight,
+        BackspaceWord,
+        DeleteWord,
+        SelectHome,
+        SelectEnd,
+        Undo,
+        Redo,
+        StepUp,
+        StepDown,
     ]
 );
 
@@ -60,6 +72,21 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", Submit, c),
         KeyBinding::new("shift-enter", SubmitShift, c),
         KeyBinding::new("escape", Cancel, c),
+        KeyBinding::new("ctrl-left", WordLeft, c),
+        KeyBinding::new("ctrl-right", WordRight, c),
+        KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
+        KeyBinding::new("ctrl-shift-right", SelectWordRight, c),
+        KeyBinding::new("ctrl-backspace", BackspaceWord, c),
+        KeyBinding::new("ctrl-delete", DeleteWord, c),
+        KeyBinding::new("shift-home", SelectHome, c),
+        KeyBinding::new("shift-end", SelectEnd, c),
+        KeyBinding::new("ctrl-z", Undo, c),
+        KeyBinding::new("ctrl-shift-z", Redo, c),
+        KeyBinding::new("ctrl-y", Redo, c),
+        // Only a numeric field takes these; others pass them on (the filter's
+        // Up/Down move the library selection).
+        KeyBinding::new("up", StepUp, c),
+        KeyBinding::new("down", StepDown, c),
     ]);
 }
 
@@ -93,6 +120,13 @@ pub struct TextInput {
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
+    /// `<input type="number" min=0>`: digits only, and Up/Down step by one.
+    pub numeric: bool,
+    /// Earlier (content, selection) states for Ctrl+Z, and undone ones for redo.
+    undo: Vec<(SharedString, Range<usize>)>,
+    redo: Vec<(SharedString, Range<usize>)>,
+    /// Where the last typed insertion ended, so the next one can join its step.
+    undo_coalesce: Option<usize>,
 }
 
 impl TextInput {
@@ -110,6 +144,10 @@ impl TextInput {
             last_layout: None,
             last_bounds: None,
             is_selecting: false,
+            numeric: false,
+            undo: Vec::new(),
+            redo: Vec::new(),
+            undo_coalesce: None,
         }
     }
 
@@ -120,7 +158,122 @@ impl TextInput {
     pub fn set_text(&mut self, text: &str, cx: &mut Context<Self>) {
         self.content = text.to_string().into();
         self.selected_range = text.len()..text.len();
+        self.undo.clear();
+        self.redo.clear();
+        self.undo_coalesce = None;
         cx.notify();
+    }
+
+    fn word_left(&mut self, _: &WordLeft, window: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.previous_word(self.cursor_offset()), window, cx);
+    }
+
+    fn word_right(&mut self, _: &WordRight, window: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.next_word(self.cursor_offset()), window, cx);
+    }
+
+    fn select_word_left(&mut self, _: &SelectWordLeft, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.previous_word(self.cursor_offset()), window, cx);
+    }
+
+    fn select_word_right(&mut self, _: &SelectWordRight, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.next_word(self.cursor_offset()), window, cx);
+    }
+
+    fn select_home(&mut self, _: &SelectHome, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(0, window, cx);
+    }
+
+    fn select_end(&mut self, _: &SelectEnd, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_to(self.content.len(), window, cx);
+    }
+
+    fn backspace_word(&mut self, _: &BackspaceWord, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected_range.is_empty() {
+            self.select_to(self.previous_word(self.cursor_offset()), window, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx)
+    }
+
+    fn delete_word(&mut self, _: &DeleteWord, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected_range.is_empty() {
+            self.select_to(self.next_word(self.cursor_offset()), window, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx)
+    }
+
+    fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((text, sel)) = self.undo.pop() {
+            self.redo.push((self.content.clone(), self.selected_range.clone()));
+            self.restore(text, sel, window, cx);
+        }
+    }
+
+    fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((text, sel)) = self.redo.pop() {
+            self.undo.push((self.content.clone(), self.selected_range.clone()));
+            self.restore(text, sel, window, cx);
+        }
+    }
+
+    fn restore(&mut self, text: SharedString, sel: Range<usize>, window: &mut Window, cx: &mut Context<Self>) {
+        self.content = text;
+        self.selected_range = sel;
+        self.selection_reversed = false;
+        self.marked_range = None;
+        self.undo_coalesce = None;
+        window.notify_text_input_changed(&self.focus_handle);
+        cx.emit(InputEvent::Changed);
+        cx.notify();
+    }
+
+    fn step_up(&mut self, _: &StepUp, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(1, window, cx);
+    }
+
+    fn step_down(&mut self, _: &StepDown, window: &mut Window, cx: &mut Context<Self>) {
+        self.step(-1, window, cx);
+    }
+
+    /// Chromium's number stepping, floored at min=0; an empty field steps to 0.
+    fn step(&mut self, by: i64, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.numeric {
+            cx.propagate();
+            return;
+        }
+        let next = match self.content.trim().parse::<i64>() {
+            Ok(v) => (v + by).max(0),
+            Err(_) => 0,
+        };
+        self.selected_range = 0..self.content.len();
+        self.replace_text_in_range(None, &next.to_string(), window, cx);
+        self.undo_coalesce = None;
+    }
+
+    /// Start of the word before `offset`, as Ctrl+Left goes. A masked field
+    /// shows no words, so it goes to the start, as Chromium's does.
+    fn previous_word(&self, offset: usize) -> usize {
+        if self.masked {
+            return 0;
+        }
+        self.content
+            .split_word_bound_indices()
+            .filter(|(i, w)| *i < offset && !w.trim().is_empty())
+            .map(|(i, _)| i)
+            .last()
+            .unwrap_or(0)
+    }
+
+    fn next_word(&self, offset: usize) -> usize {
+        if self.masked {
+            return self.content.len();
+        }
+        self.content
+            .split_word_bound_indices()
+            .map(|(i, w)| (i + w.len(), w))
+            .find(|(end, w)| *end > offset && !w.trim().is_empty())
+            .map(|(end, _)| end)
+            .unwrap_or(self.content.len())
     }
 
     fn submit_shift(&mut self, _: &SubmitShift, _: &mut Window, cx: &mut Context<Self>) {
@@ -451,6 +604,27 @@ impl EntityInputHandler for TextInput {
             .map(|range_utf16| self.range_from_utf16(range_utf16))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        let filtered: String;
+        let new_text = if self.numeric {
+            filtered = new_text.chars().filter(char::is_ascii_digit).collect();
+            filtered.as_str()
+        } else {
+            new_text
+        };
+        if range.is_empty() && new_text.is_empty() {
+            return;
+        }
+        // A run of typing undoes as one step, as in a browser field: a new
+        // step starts unless this insertion continues the last one in place.
+        let typing = range.is_empty() && !new_text.is_empty() && !new_text.contains(' ');
+        if !(typing && self.undo_coalesce == Some(range.start)) {
+            self.undo.push((self.content.clone(), self.selected_range.clone()));
+            if self.undo.len() > 100 {
+                self.undo.remove(0);
+            }
+        }
+        self.redo.clear();
+        self.undo_coalesce = typing.then_some(range.start + new_text.len());
 
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
@@ -766,6 +940,18 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::submit))
             .on_action(cx.listener(Self::submit_shift))
             .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(Self::word_left))
+            .on_action(cx.listener(Self::word_right))
+            .on_action(cx.listener(Self::select_word_left))
+            .on_action(cx.listener(Self::select_word_right))
+            .on_action(cx.listener(Self::select_home))
+            .on_action(cx.listener(Self::select_end))
+            .on_action(cx.listener(Self::backspace_word))
+            .on_action(cx.listener(Self::delete_word))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(Self::step_up))
+            .on_action(cx.listener(Self::step_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))

@@ -145,7 +145,10 @@ fn main() -> anyhow::Result<()> {
     let mut cx = HeadlessAppContext::with_platform(text, Arc::new(bard::assets::Assets), || {
         gpui_platform::current_headless_renderer()
     });
-    cx.update(|cx| fonts::load(cx))?;
+    cx.update(|cx| {
+        bard::views::text_input::bind_keys(cx);
+        fonts::load(cx)
+    })?;
     let mut keys = Vec::new();
     let mut drag = None;
     let mut clicks: Vec<[f32; 2]> = Vec::new();

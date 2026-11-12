@@ -127,6 +127,9 @@ impl BardWindow {
             obs_password: input(window, cx, if c.streamer.has_obs_password { "••••••••" } else { "none" }, ""),
         };
         fields.obs_password.update(cx, |i, _| i.masked = true);
+        for f in [&fields.avoid_repeat, &fields.fill_count, &fields.popup_seconds] {
+            f.update(cx, |i, _| i.numeric = true);
+        }
 
         // Escape in a settings field closes Settings, as it did in Electron,
         // and hands focus back to the window so shortcuts work again.
