@@ -44,9 +44,10 @@ The Rust build reads and writes the same `~/.config/bard`:
   `sha1(resolved path).hex[..16]`, or stats and covers detach from tracks.
 - `nowplaying.json` and the overlay's SSE payloads — same shape, so the OBS
   browser source page in `resources/overlay/` is served unchanged.
-- **Not carried over:** `audio.outputDeviceId`. Electron stored a
-  Chromium-hashed id that names no PipeWire sink, so the first Rust run plays
-  through the default with a notice; pick the device once in Settings.
+- `audio.outputDeviceId` — Electron stored a Chromium-hashed id. Since 0.2.1
+  it is matched back to its PipeWire sink (`bard-core/src/electron_device.rs`,
+  HMAC with the salt from Electron's `Preferences`) and rewritten as the sink
+  name; one that matches no sink falls back to the default with a notice.
 - `obs-password.bin` (Electron safeStorage) is migrated once into the keyring
   by `bard-services` and left in place for the Electron build; a
   `obs-password.bin.migrated` marker stops a later clear being undone.
@@ -70,13 +71,22 @@ The Rust build reads and writes the same `~/.config/bard`:
 ## Building and running
 
 ```
-cargo build --release -p bard
-./scripts/install-desktop.sh target/release/bard   # point the launcher at it
+./scripts/install-desktop.sh             # build, install to ~/.local/bin/bard, write the launcher
+./scripts/install-desktop.sh --desktop   # also put a shortcut on the desktop
 ```
 
-The launcher and icon are the Electron build's: the window's app id is
-`bard`, matching `bard.desktop`. Run `install-desktop.sh` with no argument to
-point the launcher back at `dist/linux-unpacked/bard`.
+The window's app id is `bard`, matching `bard.desktop`.
+
+### Leftovers from an Electron checkout
+
+The Electron build is gone from the tree, but a checkout that built it still
+has its ignored output. Quit the Electron app first, then:
+
+```
+rm -rf node_modules out dist
+```
+
+`.gitignore` keeps those entries so a stale copy never shows up as untracked.
 
 GPUI's Wayland and X11 backends are opt-in features of `gpui-pre-platform`.
 Without them it runs headless without a word -- audio, MPRIS and the tray all
