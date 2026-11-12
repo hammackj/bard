@@ -7,6 +7,17 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-12
+
+### Fixed
+
+- **The output device chosen in the Electron app now carries over.** Electron
+  saved it as Chromium's hashed device id, which the Rust app could not match,
+  so music went to the system default until the device was picked again. Bard
+  now recomputes that id for each PipeWire sink, using the salt Electron left
+  in the data directory, and rewrites the setting to the sink's name — at
+  startup, or when the device appears later.
+
 ## [0.2.0] — 2026-11-12
 
 Bard is a native Rust app.

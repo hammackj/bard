@@ -104,6 +104,7 @@
 pub mod artwork;
 mod bard;
 mod config;
+pub mod electron_device;
 pub mod deck;
 pub mod gain;
 pub mod history;

@@ -13,6 +13,8 @@ lofty = "0.25.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
 sha1 = "0.11.0"
+hmac = "0.13"
+sha2 = "0.11"
 unicode-normalization = "0.1.26"
 uuid = { version = "1.29.2", features = ["v4"] }
 walkdir = "2.5.0"

@@ -22,14 +22,14 @@ use bard_audio::{Player, PlayerEvent, PlayerOptions};
 use bard_core::types::{
     AppPaths, Config, ContentIdStatus, PlaybackProgress, TransportAction,
 };
-use bard_core::{Bard, CoreEvent, gain_multiplier};
+use bard_core::{Bard, CoreEvent, electron_device, gain_multiplier};
 use bard_services::{AppControls, Services, ServicesOptions};
 use crate::views::popup::{self, Popup};
 use std::cell::RefCell;
 use futures::StreamExt;
 use futures::channel::mpsc::{UnboundedSender, unbounded};
 use gpui::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -45,8 +45,9 @@ pub enum AppEvent {
     Control(Control),
     /// A sleep timer armed for this deadline has run out.
     SleepDue(Instant),
-    /// The saved output device, missing at startup, is now a sink.
-    OutputAppeared(String),
+    /// The saved output device appeared: the saved id and the sink's id,
+    /// which differ when the setting came from Electron.
+    OutputAppeared { saved: String, id: String },
     /// The OBS password save finished: whether it was stored, and its length.
     ObsSaved { stored: bool, chars: usize },
 }
@@ -409,8 +410,30 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
     // A device missing at startup can appear later (Electron retried on
     // `devicechange`), so a watcher applies it when it does, for as long as
     // it is still the saved choice.
+    //
+    // A device saved by the Electron app is named by Chromium's hashed id,
+    // which is recomputed from each sink's name to find it (see
+    // `electron_device`); once found, the setting is rewritten to the name.
+    let mut config = config;
     if config.audio.output_device_id != "default" {
-        let want = config.audio.output_device_id.clone();
+        let saved = config.audio.output_device_id.clone();
+        let salt = electron_device::is_chromium_id(&saved)
+            .then(|| electron_device::salt(Path::new(&paths.config_dir)))
+            .flatten();
+        let find = move |player: &Player| -> Option<String> {
+            let outputs = player.outputs();
+            let ids = outputs.iter().map(|o| o.id.as_str());
+            match &salt {
+                Some(salt) => electron_device::resolve(&saved, salt, ids).map(str::to_string),
+                None => ids.into_iter().find(|id| *id == saved).map(str::to_string),
+            }
+        };
+        let found = find(&player);
+        if let Some(id) = found.as_ref().filter(|id| **id != config.audio.output_device_id) {
+            eprintln!("[bard] output device: carried over the Electron setting as {id}");
+            config = bard.lock().expect("core lock").update_config(|c| c.audio.output_device_id = id.clone());
+        }
+        let want = found.unwrap_or_else(|| config.audio.output_device_id.clone());
         if player.set_output(&want).is_err() {
             let (player, bard, tx) = (player.clone(), bard.clone(), tx.clone());
             std::thread::Builder::new().name("bard-output-watch".into()).spawn(move || loop {
@@ -418,8 +441,8 @@ pub fn open(cx: &mut App, launch: Launch) -> anyhow::Result<()> {
                 if bard.lock().map(|b| b.config().audio.output_device_id != want).unwrap_or(true) {
                     break;
                 }
-                if player.outputs().iter().any(|o| o.id == want) {
-                    let _ = tx.unbounded_send(AppEvent::OutputAppeared(want));
+                if let Some(id) = find(&player) {
+                    let _ = tx.unbounded_send(AppEvent::OutputAppeared { saved: want, id });
                     break;
                 }
             })?;
@@ -790,14 +813,21 @@ fn apply(ui: &mut Ui, backend: &AppBackend, ev: AppEvent, cx: &mut App) {
             // Handled by dispatch.
             Control::ShowWindow(_) | Control::ShowPopup | Control::Quit => {}
         },
-        AppEvent::OutputAppeared(id) => {
-            if ui.config.audio.output_device_id == id && backend.set_output(&id).is_ok() {
+        // Only while that is still the saved choice.
+        AppEvent::OutputAppeared { saved, id } if ui.config.audio.output_device_id == saved => {
+            if id != saved {
+                eprintln!("[bard] output device: carried over the Electron setting as {id}");
+                let new = id.clone();
+                backend.update_config(Box::new(move |c| c.audio.output_device_id = new));
+            }
+            if backend.set_output(&id).is_ok() {
                 // Only the fallback notice is cleared; an unrelated one stays.
                 if ui.notice.as_deref() == Some(DEVICE_FALLBACK) {
                     ui.notice = None;
                 }
             }
         }
+        AppEvent::OutputAppeared { .. } => {}
         AppEvent::SleepDue(at) => {
             // Pauses rather than quitting: waking to a closed app and a lost
             // queue is worse than waking to a paused one.
