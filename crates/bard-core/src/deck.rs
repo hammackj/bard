@@ -87,13 +87,60 @@ pub fn new_deck(ids: &[String], rng: Rng, avoid_first: Option<&str>, weight_of: 
     // Avoid dealing the track that just played as the first of a new deck: the
     // seam between decks is the one place a repeat can still feel wrong.
     if let Some(avoid) = avoid_first
-        && remaining.len() > 1
-        && remaining[0] == avoid
+        && remaining.first().is_some_and(|f| f == avoid)
     {
-        let swap_with = 1 + pick_index(rng, remaining.len() - 1);
-        remaining.swap(0, swap_with);
+        avoid_seam(&mut remaining, avoid, rng);
     }
     Deck { remaining, dealt: 0, last: None }
+}
+
+/// Brings a different track to the front, keeping every card. A weighted
+/// deck holds several copies of a track, so "any other slot" may hold the
+/// same one. Preferred: a rotation that starts on another track and leaves
+/// no two equal cards side by side (a rotation keeps the deck's spacing,
+/// only joining its ends); then a swap with a slot holding another track
+/// that leaves none; then any such swap. With one distinct track there is
+/// nothing else to deal, and the deck stays as it is.
+fn avoid_seam(deck: &mut Vec<String>, avoid: &str, rng: Rng) {
+    let n = deck.len();
+    // Equal neighbours, counted once; a rotation or a swap changes only a
+    // few pairs, so each candidate is checked in O(1), not by rebuilding.
+    let eq = |d: &[String], i: usize, j: usize| usize::from(d[i] == d[j]);
+    let pairs: usize = (1..n).map(|i| eq(deck, i - 1, i)).sum();
+    // Rotating left by k splits the pair (k-1, k) and joins (n-1, 0).
+    let rotations: Vec<usize> =
+        (1..n).filter(|&k| deck[k] != avoid && pairs - eq(deck, k - 1, k) + eq(deck, n - 1, 0) == 0).collect();
+    if !rotations.is_empty() {
+        deck.rotate_left(rotations[pick_index(rng, rotations.len())]);
+        return;
+    }
+    // Swapping 0 and j changes only the pairs touching either slot: count
+    // those before and after, reading slot i from where the swap puts it.
+    let after_swap = |j: usize| {
+        let mut touched: Vec<(usize, usize)> = vec![(0, 1), (j - 1, j)];
+        if j + 1 < n {
+            touched.push((j, j + 1));
+        }
+        touched.sort_unstable();
+        touched.dedup();
+        let from = |i: usize| {
+            if i == 0 {
+                j
+            } else if i == j {
+                0
+            } else {
+                i
+            }
+        };
+        let count = |at: &dyn Fn(usize) -> usize| touched.iter().filter(|&&(a, b)| deck[at(a)] == deck[at(b)]).count();
+        pairs - count(&|i| i) + count(&from)
+    };
+    let differs: Vec<usize> = (1..n).filter(|&j| deck[j] != avoid).collect();
+    let clean: Vec<usize> = differs.iter().copied().filter(|&j| after_swap(j) == 0).collect();
+    let from = if clean.is_empty() { &differs } else { &clean };
+    if !from.is_empty() {
+        deck.swap(0, from[pick_index(rng, from.len())]);
+    }
 }
 
 /// Deals the next id, rebuilding the deck when it runs out.
@@ -203,6 +250,49 @@ mod tests {
         let ids = ids();
         let deck = new_deck(&ids, &mut || 0.0, Some("a"), None);
         assert_ne!(deck.remaining[0], "a");
+    }
+
+    /// A weighted deck has several copies of a track: the seam swaps in a
+    /// different track, not another copy of the one just played -- for
+    /// every rng value, keeping each track's copies, and without leaving two
+    /// equal cards side by side where it need not.
+    #[test]
+    fn a_weighted_seam_swaps_in_a_different_track() {
+        let counts = |d: &[String]| {
+            let mut m: HashMap<String, usize> = HashMap::new();
+            d.iter().for_each(|id| *m.entry(id.clone()).or_default() += 1);
+            m
+        };
+        let adjacent = |d: &[String]| d.windows(2).any(|w| w[0] == w[1]);
+        // The reviewer's: a twice, b and c once, rng always 0.5.
+        let abc = strs(&["a", "b", "c"]);
+        let w2 = |id: &str| if id == "a" { 2.0 } else { 1.0 };
+        let deck = new_deck(&abc, &mut || 0.5, Some("a"), Some(&w2));
+        assert_ne!(deck.remaining[0], "a", "{:?}", deck.remaining);
+
+        let cases: [(&[&str], fn(&str) -> f64); 3] = [
+            (&["a", "b", "c"], |id| if id == "a" { 2.0 } else { 1.0 }),
+            (&["a", "b", "c", "d", "e"], |id| if id == "a" { 3.0 } else { 1.0 }),
+            (&["a", "b"], |id| if id == "a" { 3.0 } else { 1.0 }),
+        ];
+        for (lib, weight) in cases {
+            let lib = strs(lib);
+            for step in 0..20 {
+                let r = step as f64 / 20.;
+                let plain = new_deck(&lib, &mut || r, None, Some(&weight));
+                let deck = new_deck(&lib, &mut || r, Some("a"), Some(&weight));
+                assert_ne!(deck.remaining[0], "a", "{lib:?} r={r}: {:?}", deck.remaining);
+                assert_eq!(counts(&deck.remaining), counts(&plain.remaining), "copies kept");
+                if !adjacent(&plain.remaining) && lib.len() > 2 {
+                    assert!(!adjacent(&deck.remaining), "{lib:?} r={r}: {:?}", deck.remaining);
+                }
+            }
+        }
+
+        // Only one distinct track: nothing else to deal.
+        let one = strs(&["a"]);
+        let deck = new_deck(&one, &mut || 0.5, Some("a"), Some(&|_: &str| 3.0));
+        assert!(deck.remaining.iter().all(|id| id == "a") && !deck.remaining.is_empty());
     }
 
     #[test]
