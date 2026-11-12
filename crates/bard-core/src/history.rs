@@ -82,9 +82,17 @@ pub fn step_back<T: Clone>(played: &[T], position_sec: f64) -> BackStep<T> {
 /// it wholesale plays that track twice across the seam. It is dropped here and
 /// kept as the sole history entry, which both starts the next lap's history
 /// cleanly and leaves one step of "back" still working across the wrap.
+///
+/// Except when it is the whole lap: a single track under Repeat All loops
+/// rather than wrapping to nothing and stopping. It is re-queued and the
+/// history starts empty -- carried as well, every lap would hold the track
+/// twice, and a song queued later would join a lap of two copies.
 pub fn wrap_for_repeat_all<T: Clone + HasId>(played: &[T], current: Option<&T>) -> (Vec<T>, Vec<T>) {
     let current_id = current.map(|c| c.id()).or_else(|| played.last().map(|p| p.id()));
-    let queue = played.iter().filter(|i| Some(i.id()) != current_id).cloned().collect();
+    let queue: Vec<T> = played.iter().filter(|i| Some(i.id()) != current_id).cloned().collect();
+    if queue.is_empty() {
+        return (played.last().cloned().into_iter().collect(), Vec::new());
+    }
     let played = current.map(|c| vec![c.clone()]).unwrap_or_default();
     (queue, played)
 }
@@ -184,6 +192,17 @@ mod tests {
         assert_eq!(ids(&q2), ["c", "a"]);
         let unique: std::collections::HashSet<_> = ids(&q2).into_iter().collect();
         assert_eq!(unique.len(), q2.len());
+    }
+
+    #[test]
+    fn wrap_of_a_one_track_lap_loops_that_track() {
+        let (queue, played) = wrap_for_repeat_all(&[item("a")], Some(&item("a")));
+        assert_eq!(ids(&queue), ["a"]);
+        assert!(played.is_empty(), "the next lap's play is its only history");
+        let (queue, _) = wrap_for_repeat_all(&[item("a")], None);
+        assert_eq!(ids(&queue), ["a"]);
+        let (queue, played) = wrap_for_repeat_all::<Item>(&[], None);
+        assert!(queue.is_empty() && played.is_empty());
     }
 
     #[test]

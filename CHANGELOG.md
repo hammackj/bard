@@ -7,6 +7,12 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Repeat All loops a single track.** With one track played and nothing
+  queued, Repeat All stopped at its end (or, with auto-fill on, moved on
+  to unrelated music) instead of playing it again.
+
 ## [0.2.13] — 2026-11-12
 
 ### Fixed

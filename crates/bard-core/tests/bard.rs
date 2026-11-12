@@ -424,6 +424,78 @@ fn repeat_one_and_all() {
     assert_eq!(playing(&f.bard).as_deref(), Some("g2"));
 }
 
+fn repeat_all_alone(f: &mut Fixture) {
+    f.bard.update_config(|c| {
+        c.playback.auto_fill = AutoFillMode::Off;
+        c.playback.repeat = RepeatMode::All;
+    });
+}
+
+#[test]
+fn review_repeat_all_keeps_a_single_track_playing() {
+    let mut f = fixture(false);
+    repeat_all_alone(&mut f);
+    f.bard.play_now("g1");
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("g1"), "Repeat All of a single selected track must loop that track");
+}
+
+/// One track under Repeat All loops lap after lap, one copy at a time, and
+/// a multi-track lap still never plays its last track twice across the seam.
+#[test]
+fn repeat_all_loops_a_single_track_for_many_laps() {
+    let mut f = fixture(false);
+    repeat_all_alone(&mut f);
+    f.bard.play_now("g1");
+    for lap in 0..5 {
+        f.bard.report_ended();
+        assert_eq!(playing(&f.bard).as_deref(), Some("g1"), "lap {lap}");
+        assert!(f.bard.queue().is_empty(), "lap {lap}: {:?}", queue_ids(&f.bard));
+    }
+
+    // Queue a second track: the lap becomes g1, g2 without a double.
+    f.bard.enqueue("g2");
+    let mut heard = Vec::new();
+    for _ in 0..6 {
+        f.bard.report_ended();
+        heard.push(playing(&f.bard).unwrap());
+    }
+    assert!(heard.windows(2).all(|w| w[0] != w[1]), "{heard:?}");
+    assert!(heard.iter().all(|t| t == "g1" || t == "g2"), "{heard:?}");
+}
+
+/// Nothing played: Repeat All has no lap, and stops.
+#[test]
+fn repeat_all_with_no_history_stops() {
+    let mut f = fixture(false);
+    repeat_all_alone(&mut f);
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard), None);
+}
+
+/// A sole track that has left the library, or that streamer mode now
+/// forbids, is not brought back just to keep the loop going.
+#[test]
+fn repeat_all_does_not_revive_a_removed_or_forbidden_sole_track() {
+    let mut f = fixture(false);
+    repeat_all_alone(&mut f);
+    f.bard.play_now("g1");
+    f.bard.install_library(library().into_iter().filter(|t| t.id != "g1").collect());
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard), None, "a removed track was replayed");
+
+    let mut f = fixture(false);
+    repeat_all_alone(&mut f);
+    f.bard.set_album_flag("Rain", ContentIdStatus::Safe, None);
+    f.bard.arm(None);
+    f.bard.play_now("r1");
+    assert_eq!(playing(&f.bard).as_deref(), Some("r1"));
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    f.bard.report_ended();
+    assert_ne!(playing(&f.bard).as_deref(), Some("r1"), "a forbidden track was replayed");
+}
+
 #[test]
 fn claiming_an_album_drops_it_from_the_queue_and_auto_play() {
     let mut f = fixture(false);
