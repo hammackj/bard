@@ -59,26 +59,85 @@ pub fn record_bounds<T: 'static>(
     .inset_0()
 }
 
+/// The thumb's height and top, relative to the scroller, or None when the
+/// content fits.
+fn thumb(handle: &ScrollHandle) -> Option<(f32, f32)> {
+    let max = f32::from(handle.max_offset().y);
+    if max <= 0.5 {
+        return None;
+    }
+    let h = f32::from(handle.bounds().size.height);
+    let thumb = (h * h / (h + max)).max(18.);
+    let y = (-f32::from(handle.offset().y) / max).clamp(0., 1.) * (h - thumb);
+    Some((thumb, y))
+}
+
+/// Scrolls so the thumb's top sits `grab` pixels above the pointer at `y`.
+pub fn scroll_thumb_to(handle: &ScrollHandle, y: Pixels, grab: f32) {
+    let Some((thumb, _)) = thumb(handle) else { return };
+    let view = handle.bounds();
+    let travel = f32::from(view.size.height) - thumb;
+    if travel <= 0. {
+        return;
+    }
+    let top = (f32::from(y - view.origin.y) - grab).clamp(0., travel);
+    let max = f32::from(handle.max_offset().y);
+    let offset = handle.offset();
+    handle.set_offset(point(offset.x, px(-(top / travel) * max)));
+}
+
 /// `::-webkit-scrollbar`: a 9px gutter whose thumb is edge-grey inside a 3px
 /// ink border, with a transparent track. Painted over the gutter the scroller
-/// reserves, from the scroll handle's state in the same frame.
-pub fn scrollbar(handle: ScrollHandle) -> impl IntoElement {
+/// reserves, from the scroll handle's state in the same frame. The thumb can
+/// be dragged, and a press on the track pages towards the pointer.
+pub fn scrollbar(handle: ScrollHandle, view: Entity<root::BardWindow>) -> impl IntoElement {
+    let paint_handle = handle.clone();
     canvas(
-        |_, _, _| {},
-        move |_, _, window, _| {
-            let view = handle.bounds();
-            let max = f32::from(handle.max_offset().y);
-            if max <= 0.5 {
-                return;
-            }
-            let h = f32::from(view.size.height);
-            let thumb = (h * h / (h + max)).max(18.);
-            let y = (-f32::from(handle.offset().y) / max).clamp(0., 1.) * (h - thumb);
-            let x = view.origin.x + view.size.width - px(library::SCROLLBAR_W);
-            let outer = Bounds::new(point(x, view.origin.y + px(y)), size(px(library::SCROLLBAR_W), px(thumb)));
+        move |_, window, _| {
+            let v = handle.bounds();
+            let gutter = Bounds::new(
+                point(v.origin.x + v.size.width - px(library::SCROLLBAR_W), v.origin.y),
+                size(px(library::SCROLLBAR_W), v.size.height),
+            );
+            window.insert_hitbox(gutter, HitboxBehavior::Normal)
+        },
+        move |_, hitbox, window, _| {
+            let handle = paint_handle;
+            let Some((thumb_h, y)) = thumb(&handle) else { return };
+            let view_bounds = handle.bounds();
+            let x = view_bounds.origin.x + view_bounds.size.width - px(library::SCROLLBAR_W);
+            let outer = Bounds::new(point(x, view_bounds.origin.y + px(y)), size(px(library::SCROLLBAR_W), px(thumb_h)));
             window.paint_quad(fill(outer, theme::ink()));
-            let inner = Bounds::new(outer.origin + point(px(3.), px(3.)), size(px(3.), px(thumb - 6.)));
+            let inner = Bounds::new(outer.origin + point(px(3.), px(3.)), size(px(3.), px(thumb_h - 6.)));
             window.paint_quad(fill(inner, theme::edge()));
+
+            window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
+                if phase != DispatchPhase::Bubble || ev.button != MouseButton::Left || !hitbox.is_hovered(window) {
+                    return;
+                }
+                let Some((thumb_h, top)) = thumb(&handle) else { return };
+                let at = f32::from(ev.position.y - handle.bounds().origin.y);
+                let grab = if at >= top && at <= top + thumb_h {
+                    at - top
+                } else {
+                    // Chromium pages on a track press; one page, then the
+                    // thumb follows the pointer while held.
+                    let page = f32::from(handle.bounds().size.height);
+                    let offset = handle.offset();
+                    let max = f32::from(handle.max_offset().y);
+                    let dir = if at < top { 1. } else { -1. };
+                    let next = (f32::from(offset.y) + dir * page).clamp(-max, 0.);
+                    handle.set_offset(point(offset.x, px(next)));
+                    let (_, top) = thumb(&handle).unwrap_or((thumb_h, top));
+                    at - top
+                };
+                let handle = handle.clone();
+                view.update(cx, |this, cx| {
+                    this.drag = Some(root::Drag::Scroll { handle, grab });
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            });
         },
     )
     .absolute()

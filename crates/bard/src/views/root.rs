@@ -45,8 +45,20 @@ pub struct BardWindow {
     /// inside them is not taken as a click away.
     pub menu_bounds: Option<Bounds<Pixels>>,
     pub sleep_bounds: Option<Bounds<Pixels>>,
+    /// A press on a slider or scrollbar that the pointer is still holding.
+    pub drag: Option<Drag>,
     /// Backdrop bitmaps, rebuilt when the window's device size changes.
     layers: Option<((u32, u32), Layers)>,
+}
+
+/// What a held left button is dragging. Followed window-wide until release,
+/// as Chromium's pointer capture did, so leaving the control does not drop it.
+pub enum Drag {
+    String,
+    Volume,
+    Crossfade,
+    /// A scrollbar thumb, grabbed `grab` pixels below its top.
+    Scroll { handle: ScrollHandle, grab: f32 },
 }
 
 struct Layers {
@@ -180,6 +192,7 @@ this.ui.backend.set_obs_password(&value);
             scrolled_to: None,
             menu_bounds: None,
             sleep_bounds: None,
+            drag: None,
             string_bounds: None,
             volume_bounds: None,
             album_scroll: ScrollHandle::new(),
@@ -350,6 +363,53 @@ this.ui.backend.set_obs_password(&value);
     }
 }
 
+/// While a drag is held, every pointer move and the release reach the window,
+/// wherever the pointer is.
+fn drag_tracker(view: Entity<BardWindow>) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |_, _, window, _| {
+            let v = view.clone();
+            window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
+                if phase == DispatchPhase::Capture {
+                    v.update(cx, |this, cx| {
+                        // A release outside the window can go unreported.
+                        if ev.pressed_button != Some(MouseButton::Left) {
+                            this.drag = None;
+                        } else {
+                            this.drag_to(ev.position);
+                        }
+                        cx.notify();
+                    });
+                }
+            });
+            let v = view.clone();
+            window.on_mouse_event(move |ev: &MouseUpEvent, phase, _, cx| {
+                if phase == DispatchPhase::Capture && ev.button == MouseButton::Left {
+                    v.update(cx, |this, cx| {
+                        this.drag = None;
+                        cx.notify();
+                    });
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_0()
+}
+
+impl BardWindow {
+    pub fn drag_to(&mut self, pos: Point<Pixels>) {
+        match &self.drag {
+            Some(Drag::String) => self.seek_from(pos.x),
+            Some(Drag::Volume) => self.volume_from(pos.x),
+            Some(Drag::Crossfade) => self.crossfade_from(pos.x),
+            Some(Drag::Scroll { handle, grab }) => super::scroll_thumb_to(handle, pos.y, *grab),
+            None => {}
+        }
+    }
+}
+
 fn full(img: Arc<RenderImage>) -> Img {
     gpui::img(ImageSource::Render(img))
         .absolute()
@@ -413,6 +473,7 @@ impl Render for BardWindow {
             .children(settings::panel(self, cx))
             // Last, so a notice shows above Settings and Shortcuts.
             .children(overlays::notice(self, cx))
+            .when(self.drag.is_some(), |el| el.child(drag_tracker(cx.entity())))
     }
 }
 

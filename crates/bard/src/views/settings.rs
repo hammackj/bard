@@ -223,13 +223,6 @@ fn select<T: Copy + PartialEq + 'static>(
 fn crossfade(value: f64, cx: &mut Context<BardWindow>) -> impl IntoElement {
     const W: f32 = 128.;
     const THUMB: f32 = 16.;
-    let set = |this: &mut BardWindow, x: Pixels| {
-        if let Some(b) = this.crossfade_bounds {
-            let v = (((x - b.origin.x) - px(THUMB / 2.)) / (b.size.width - px(THUMB))).clamp(0., 1.);
-            let secs = (v * 12.).round() as f64;
-            this.ui.backend.update_config(Box::new(move |c| c.audio.crossfade_sec = secs));
-        }
-    };
     div()
         .flex()
         .items_center()
@@ -252,11 +245,9 @@ fn crossfade(value: f64, cx: &mut Context<BardWindow>) -> impl IntoElement {
                         .bg(theme::cyan()),
                 )
                 .child(super::record_bounds(cx.entity(), |this, b| this.crossfade_bounds = Some(b)))
-                .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, _| set(this, ev.position.x)))
-                .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, _| {
-                    if ev.dragging() {
-                        set(this, ev.position.x)
-                    }
+                .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, _| {
+                    this.crossfade_from(ev.position.x);
+                    this.drag = Some(super::root::Drag::Crossfade);
                 })),
         )
         .child(
@@ -265,6 +256,20 @@ fn crossfade(value: f64, cx: &mut Context<BardWindow>) -> impl IntoElement {
                 .text_color(theme::muted())
                 .child(if value == 0. { "off".to_string() } else { format!("{value}s") }),
         )
+}
+
+impl BardWindow {
+    pub fn crossfade_from(&mut self, x: Pixels) {
+        const THUMB: f32 = 16.;
+        if let Some(b) = self.crossfade_bounds {
+            let v = (((x - b.origin.x) - px(THUMB / 2.)) / (b.size.width - px(THUMB))).clamp(0., 1.);
+            let secs = (v * 12.).round() as f64;
+            // Only on a change: each one rewrites config.json.
+            if secs != self.ui.config.audio.crossfade_sec {
+                self.ui.backend.update_config(Box::new(move |c| c.audio.crossfade_sec = secs));
+            }
+        }
+    }
 }
 
 pub fn panel(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> Option<impl IntoElement> {
@@ -633,7 +638,7 @@ rich(&[
                                 .child(group("About", about)),
                         ),
                 )
-                .child(super::scrollbar(this.settings_scroll.clone())),
+                .child(super::scrollbar(this.settings_scroll.clone(), cx.entity())),
             ),
     )
 }

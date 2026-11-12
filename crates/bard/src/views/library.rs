@@ -196,7 +196,7 @@ fn album_grid(this: &mut BardWindow, _window: &mut Window, cx: &mut Context<Bard
                     )
                 }),
         ))
-        .child(super::scrollbar(handle))
+        .child(super::scrollbar(handle, cx.entity()))
 }
 
 fn album_card(this: &mut BardWindow, album: &Album, w: f32, cx: &mut Context<BardWindow>) -> impl IntoElement {
@@ -321,7 +321,6 @@ fn track_list(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoE
         .flex_1()
         .min_h_0()
         .flex()
-        .child(super::scrollbar(base))
         .child(
             uniform_list("library-tracks", count, cx.processor(move |_this, range: std::ops::Range<usize>, _, cx| {
                 range
@@ -333,6 +332,8 @@ fn track_list(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoE
             .px(px(6.))
             .pr(px(6. + SCROLLBAR_W)),
         )
+        // After the list, so its bounds are this frame's when the bar is laid out.
+        .child(super::scrollbar(base, cx.entity()))
 }
 
 fn track_row(

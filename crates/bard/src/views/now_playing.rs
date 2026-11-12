@@ -1,7 +1,7 @@
 //! `NowPlaying.tsx` and `SleepTimer.tsx` -- the centre of the window.
 
 use super::library::{love_button, svg_image};
-use super::root::BardWindow;
+use super::root::{BardWindow, Drag};
 use super::{icon, mono, string_bar, truncate};
 use crate::model::fmt_time;
 use crate::{fonts, theme};
@@ -112,13 +112,8 @@ pub fn pane(this: &mut BardWindow, width: f32, window: &mut Window, cx: &mut Con
 
     let seek_listener = cx.listener(|this, ev: &MouseDownEvent, _, cx| {
         this.seek_from(ev.position.x);
+        this.drag = Some(Drag::String);
         cx.notify();
-    });
-    let drag_listener = cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
-        if ev.dragging() {
-            this.seek_from(ev.position.x);
-            cx.notify();
-        }
     });
     let string = div()
         .child(
@@ -128,7 +123,6 @@ pub fn pane(this: &mut BardWindow, width: f32, window: &mut Window, cx: &mut Con
                 .cursor_pointer()
                 .child(string_bar::element(frame))
                 .on_mouse_down(MouseButton::Left, seek_listener)
-                .on_mouse_move(drag_listener)
                 .child(super::record_bounds(cx.entity(), |this, b| this.string_bounds = Some(b))),
         )
         .child(
@@ -192,7 +186,15 @@ pub fn pane(this: &mut BardWindow, width: f32, window: &mut Window, cx: &mut Con
 
 impl BardWindow {
     /// Click or drag anywhere on the string seeks there.
-    fn seek_from(&mut self, x: Pixels) {
+    pub fn volume_from(&mut self, x: Pixels) {
+        if let Some(b) = self.volume_bounds {
+            let v = (((x - b.origin.x) - px(THUMB / 2.)) / (b.size.width - px(THUMB))).clamp(0., 1.) as f64;
+            self.ui.volume = (v * 100.).round() / 100.;
+            self.ui.backend.set_volume(self.ui.volume);
+        }
+    }
+
+    pub fn seek_from(&mut self, x: Pixels) {
         let Some(bounds) = self.string_bounds else { return };
         if self.ui.duration <= 0. {
             return;
@@ -332,15 +334,10 @@ fn transport(this: &mut BardWindow, wide: bool, cx: &mut Context<BardWindow>) ->
 
 /// `<input type="range" class="h-px bg-edge accent-cyan">`: a hairline track
 /// and Chromium's round thumb, in the accent colour.
+/// Chromium's range thumb.
+const THUMB: f32 = 16.;
+
 fn volume_slider(volume: f64, w: f32, cx: &mut Context<BardWindow>) -> impl IntoElement {
-    const THUMB: f32 = 16.;
-    let set = move |this: &mut BardWindow, x: Pixels| {
-        if let Some(b) = this.volume_bounds {
-            let v = (((x - b.origin.x) - px(THUMB / 2.)) / (b.size.width - px(THUMB))).clamp(0., 1.) as f64;
-            this.ui.volume = (v * 100.).round() / 100.;
-            this.ui.backend.set_volume(this.ui.volume);
-        }
-    };
     div()
         .id("volume")
         .relative()
@@ -360,14 +357,9 @@ fn volume_slider(volume: f64, w: f32, cx: &mut Context<BardWindow>) -> impl Into
         )
         .child(super::record_bounds(cx.entity(), |this, b| this.volume_bounds = Some(b)))
         .on_mouse_down(MouseButton::Left, cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
-            set(this, ev.position.x);
+            this.volume_from(ev.position.x);
+            this.drag = Some(Drag::Volume);
             cx.notify();
-        }))
-        .on_mouse_move(cx.listener(move |this, ev: &MouseMoveEvent, _, cx| {
-            if ev.dragging() {
-                set(this, ev.position.x);
-                cx.notify();
-            }
         }))
 }
 

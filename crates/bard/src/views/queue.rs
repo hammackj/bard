@@ -155,7 +155,7 @@ pub fn pane(this: &mut BardWindow, window: &mut Window, cx: &mut Context<BardWin
                 .border_t_1()
                 .border_color(theme::edge())
                 .child(header)
-                .child(div().relative().flex_1().min_h_0().flex().flex_col().child(list).child(super::scrollbar(handle))),
+                .child(div().relative().flex_1().min_h_0().flex().flex_col().child(list).child(super::scrollbar(handle, cx.entity()))),
         )
         .child(
             div()
