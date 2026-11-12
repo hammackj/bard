@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.12] — 2026-11-12
+
 ### Fixed
 
 - **A rescan that retags the playing track updates nowplaying.json and
