@@ -308,8 +308,15 @@ fn track_list(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl IntoE
     let stats = this.ui.stats.clone();
     let loved = this.ui.loved.clone();
     let handle = this.tracks_scroll.clone();
+    // Keep the selection in view as it moves, and when the rows change.
+    if count > 0 && this.scrolled_to != Some((selected, count)) {
+        handle.scroll_to_item(selected.min(count - 1), ScrollStrategy::Nearest);
+    }
+    this.scrolled_to = Some((selected, count));
     let base = handle.0.borrow().base_handle.clone();
     div()
+        .id("library-list")
+        .track_focus(&this.list_focus)
         .relative()
         .flex_1()
         .min_h_0()
@@ -541,6 +548,7 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .py_1()
             .shadow_2xl()
             .occlude()
+            .child(super::record_bounds(cx.entity(), |this, b| this.menu_bounds = Some(b)))
             .child(item("menu-settings", "Settings", "Ctrl ,".into(), cx, |w, cx| w.open_settings(cx)))
             .child(item("menu-rescan", "Rescan library", format!("{count} tracks"), cx, |w, _| w.ui.backend.rescan()))
             .child(item("menu-shortcuts", "Keyboard shortcuts", "?".into(), cx, |w, _| w.ui.shortcuts_open = true))
@@ -568,9 +576,19 @@ fn avatar_menu(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
     });
 
     div()
+        .id("avatar-menu")
         .relative()
         .border_t_1()
         .border_color(theme::edge())
+        // A click anywhere else closes the menu, as the document listener did.
+        .when(open, |el| {
+            el.on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                if !this.menu_bounds.is_some_and(|b| b.contains(&ev.position)) {
+                    this.ui.menu_open = false;
+                    cx.notify();
+                }
+            }))
+        })
         .children(menu)
         .child(
             div()

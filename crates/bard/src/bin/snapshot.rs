@@ -54,7 +54,8 @@ struct Fixture {
     outputs: Vec<(String, String)>,
     #[serde(default)]
     paths: Option<bard_core::types::AppPaths>,
-    /// Keystrokes to send before capturing, in GPUI's syntax ("ctrl-,", "/", "down").
+    /// Keystrokes to send before capturing, after any clicks, in GPUI's syntax
+    /// ("ctrl-,", "/", "down").
     #[serde(default)]
     keys: Vec<String>,
     /// A left-button drag from (x0, y0) to (x1, y1), left held, in window pixels.
@@ -180,14 +181,6 @@ fn main() -> anyhow::Result<()> {
     };
     // Two passes: images decoded during the first frame are drawn in the second.
     cx.run_until_parked();
-    for k in &keys {
-        // parse() takes a 'static str; this tool runs once and exits.
-        let stroke = Keystroke::parse(k.clone().leak()).map_err(|e| anyhow::anyhow!("{k}: {e:?}"))?;
-        cx.update_window(window, |_, window, cx| {
-            window.dispatch_keystroke(stroke, cx);
-        })?;
-        cx.run_until_parked();
-    }
     for [x, y] in clicks {
         let position = point(px(x), px(y));
         let events = [
@@ -208,6 +201,14 @@ fn main() -> anyhow::Result<()> {
             })?;
             cx.run_until_parked();
         }
+    }
+    for k in &keys {
+        // parse() takes a 'static str; this tool runs once and exits.
+        let stroke = Keystroke::parse(k.clone().leak()).map_err(|e| anyhow::anyhow!("{k}: {e:?}"))?;
+        cx.update_window(window, |_, window, cx| {
+            window.dispatch_keystroke(stroke, cx);
+        })?;
+        cx.run_until_parked();
     }
     if let Some([x0, y0, x1, y1]) = drag {
         let steps = 8;

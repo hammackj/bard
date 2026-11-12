@@ -36,6 +36,15 @@ pub struct BardWindow {
     pub fields: Fields,
     /// Focus for the window itself, so shortcuts arrive with no field focused.
     pub focus: FocusHandle,
+    /// The track list, focused by clicking a row, takes ↑/↓, Enter and Esc
+    /// as the Electron list's buttons did.
+    pub list_focus: FocusHandle,
+    /// The (selection, row count) the track list last scrolled for.
+    pub scrolled_to: Option<(usize, usize)>,
+    /// Where the avatar menu and the sleep popover were drawn, so a click
+    /// inside them is not taken as a click away.
+    pub menu_bounds: Option<Bounds<Pixels>>,
+    pub sleep_bounds: Option<Bounds<Pixels>>,
     /// Backdrop bitmaps, rebuilt when the window's device size changes.
     layers: Option<((u32, u32), Layers)>,
 }
@@ -167,6 +176,10 @@ this.ui.backend.set_obs_password(&value);
         Self {
             ui,
             layers: None,
+            list_focus: cx.focus_handle(),
+            scrolled_to: None,
+            menu_bounds: None,
+            sleep_bounds: None,
             string_bounds: None,
             volume_bounds: None,
             album_scroll: ScrollHandle::new(),
@@ -225,6 +238,7 @@ this.ui.backend.set_obs_password(&value);
         let k = &ev.keystroke;
         let typing = self.typing(window, cx);
         let in_filter = self.filter.focus_handle(cx).is_focused(window);
+        let in_list = self.list_focus.is_focused(window);
         let ctrl = k.modifiers.control || k.modifiers.platform;
         let key = k.key.as_str();
         let handled = match key {
@@ -246,7 +260,7 @@ this.ui.backend.set_obs_password(&value);
                 self.ui.backend.seek((self.position_now() - 5.).max(0.));
                 true
             }
-            "up" | "down" if in_filter => {
+            "up" | "down" if in_filter || in_list => {
                 let n = self.ui.filtered_tracks().len();
                 if n > 0 {
                     self.ui.selected = if key == "down" {
@@ -265,6 +279,16 @@ this.ui.backend.set_obs_password(&value);
                 self.ui.backend.set_volume(v);
                 true
             }
+            "enter" if in_list => {
+                if let Some(t) = self.ui.filtered_tracks().get(self.ui.selected) {
+                    if k.modifiers.shift {
+                        self.ui.backend.play_now(&t.id);
+                    } else {
+                        self.ui.backend.enqueue(&t.id);
+                    }
+                }
+                true
+            }
             "?" if !typing => {
                 self.ui.shortcuts_open = !self.ui.shortcuts_open;
                 true
@@ -278,6 +302,11 @@ this.ui.backend.set_obs_password(&value);
                 true
             }
             "escape" => {
+                // In the list, Esc also clears the filter, as in Electron.
+                if in_list {
+                    self.filter.update(cx, |i, cx| i.set_text("", cx));
+                    self.ui.filter.clear();
+                }
                 self.ui.settings_open = false;
                 self.ui.shortcuts_open = false;
                 self.ui.open_select = None;

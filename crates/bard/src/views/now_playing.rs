@@ -427,12 +427,14 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
             .flex()
             .justify_center()
             .child(div()
+            .relative()
             .border_1()
             .border_color(theme::edge())
             .bg(theme::panel())
             .p_2()
             .shadow_2xl()
             .occlude()
+            .child(super::record_bounds(cx.entity(), |this, b| this.sleep_bounds = Some(b)))
             .child(div().mb(px(6.)).whitespace_nowrap().text_size(theme::S1).text_color(theme::muted()).child("Pause playback in…"))
             .child(presets)
             .children(remaining.map(|r| {
@@ -460,7 +462,16 @@ fn sleep_timer(this: &mut BardWindow, cx: &mut Context<BardWindow>) -> impl Into
     });
 
     div()
+        .id("sleep-timer")
         .relative()
+        .when(open, |el| {
+            el.on_mouse_down_out(cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                if !this.sleep_bounds.is_some_and(|b| b.contains(&ev.position)) {
+                    this.ui.sleep_open = false;
+                    cx.notify();
+                }
+            }))
+        })
         .children(popover)
         .child(
             div()

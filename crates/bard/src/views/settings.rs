@@ -562,6 +562,14 @@ rich(&[
             // the sheet is a little more opaque instead.
             .bg(theme::a(theme::ink(), 0.975))
             .occlude()
+            // The sheet hides the window's own focus target from the pointer,
+            // so a click on it that no field took hands focus back here: a
+            // field being edited blurs (and commits), as in the browser.
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                if !window.default_prevented() {
+                    window.focus(&this.focus, cx);
+                }
+            }))
             .on_click(cx.listener(|this, _, _, cx| {
                 if this.ui.open_select.take().is_some() {
                     cx.notify();
