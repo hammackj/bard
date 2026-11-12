@@ -33,6 +33,8 @@ use std::time::Instant;
 
 mod backend;
 mod launch;
+#[cfg(test)]
+mod live_tests;
 mod output;
 mod reduce;
 mod shell;

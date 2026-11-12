@@ -25,7 +25,10 @@ use std::time::{Duration, Instant};
 pub enum CoreEvent {
     QueueChanged(Vec<QueueItem>),
     /// Start playing this track from the beginning (also used to restart).
-    PlayTrack(Track),
+    PlayTrack(Track, Transition),
+    /// Whatever is still fading out must stop now: it may no longer be heard
+    /// (streamer mode). The incoming track carries on.
+    CutFade,
     ScanProgress(ScanProgress),
     /// The queue item now playing, or None when playback stopped.
     NowPlaying(Option<QueueItem>),
@@ -54,6 +57,16 @@ pub enum CoreEvent {
     LibraryChanged,
     /// What armed streamer mode; None when armed by hand or disarmed.
     StreamerSource(Option<StreamerSource>),
+}
+
+/// How a [`CoreEvent::PlayTrack`] replaces what is playing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transition {
+    /// The user's crossfade setting applies.
+    Normal,
+    /// No fade: what was playing stops at once, any fade under way included.
+    /// Streamer mode taking a track off the air.
+    Cut,
 }
 
 /// Debounce intervals for the stores; tests shorten them.
@@ -120,6 +133,13 @@ pub struct Bard {
     pub(crate) played: Vec<QueueItem>,
     /// Shuffle deck: dealt through completely before any track repeats.
     pub(crate) deck: Option<Deck>,
+    /// The track of the latest PlayTrack, and the one it replaced with a
+    /// normal transition -- which may still be fading out. None after a cut
+    /// or a stop.
+    pub(crate) on_air: Option<Track>,
+    pub(crate) fading_from: Option<Track>,
+    /// The next PlayTrack is a cut.
+    pub(crate) cutting: bool,
 
     // streamer.ts state
     /// What armed the mode, for the banner to name.
@@ -163,6 +183,9 @@ impl Bard {
             position: 0.0,
             history: Vec::new(),
             played: Vec::new(),
+            on_air: None,
+            fading_from: None,
+            cutting: false,
             deck: None,
             streamer_source: None,
             scan_generation: Arc::new(AtomicU64::new(0)),
@@ -367,7 +390,8 @@ impl Bard {
     /// Drops tracks outside `roots` from the library and the pending queue,
     /// so a removed folder's music stops being picked straight away rather
     /// than at the next scan. The track on air finishes: cutting it off would
-    /// be a surprise, and nothing from the folder follows it.
+    /// be a surprise, and nothing from the folder follows it -- nor does it
+    /// play again (see `may_replay`).
     fn prune_library_to(&mut self, roots: &[String]) {
         let inside = |t: &Track| crate::paths::is_allowed(roots, &t.path);
         if self.library.tracks().iter().all(inside) {
@@ -383,6 +407,10 @@ impl Bard {
             self.emit(CoreEvent::QueueChanged(self.queue.clone()));
             self.np.set_queue_length(self.queue.len());
         }
+        // History too, which Previous and Repeat All replay from. The entry for
+        // the track on air stays: it is what Previous steps back from.
+        let current = self.now_playing.as_ref().map(|n| n.id.clone());
+        self.played.retain(|i| inside(&i.track) || Some(&i.id) == current.as_ref());
         self.refresh_endless();
     }
 

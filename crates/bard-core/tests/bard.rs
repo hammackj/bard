@@ -3,7 +3,7 @@
 //! queue.ts did, which the TypeScript had no tests for.
 
 use bard_core::types::*;
-use bard_core::{Bard, CoreEvent, Options, gain_multiplier};
+use bard_core::{Bard, CoreEvent, Options, Transition, gain_multiplier};
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
@@ -111,7 +111,7 @@ fn enqueue_starts_playback_when_idle() {
     assert!(f.bard.queue().is_empty());
     let ev = f.drain();
     assert!(matches!(&ev[0], CoreEvent::QueueChanged(q) if q.len() == 1));
-    assert!(ev.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.id == "g1")));
+    assert!(ev.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t, _) if t.id == "g1")));
     assert!(ev.iter().any(|e| matches!(e, CoreEvent::NowPlaying(Some(i)) if i.track.id == "g1")));
 
     f.bard.enqueue("g2");
@@ -308,7 +308,7 @@ fn previous_restarts_or_steps_back() {
     f.drain();
     f.bard.previous();
     assert_eq!(playing(&f.bard).as_deref(), Some("g2"), "restart");
-    assert!(matches!(&f.drain()[..], [CoreEvent::PlayTrack(t)] if t.id == "g2"));
+    assert!(matches!(&f.drain()[..], [CoreEvent::PlayTrack(t, _)] if t.id == "g2"));
 
     f.bard.previous(); // position reset to 0 by the restart: steps back
     assert_eq!(playing(&f.bard).as_deref(), Some("g1"));
@@ -624,7 +624,7 @@ fn an_album_that_stops_being_safe_while_armed_leaves_the_air_and_the_queue() {
             assert!(queue_ids(&f.bard).iter().all(|id| !id.starts_with('r')), "{:?}", queue_ids(&f.bard));
             let events = f.drain();
             assert!(
-                !events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.album == "Rain")),
+                !events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(t, _) if t.album == "Rain")),
                 "nothing from Rain is sent to the engine: {events:?}"
             );
             // Nor later.
@@ -657,7 +657,7 @@ fn a_track_that_fails_to_open_is_skipped_or_playback_stops() {
 
     f.bard.report_failed(false);
     assert_eq!(playing(&f.bard).as_deref(), Some("g2"), "moves on");
-    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::PlayTrack(t) if t.id == "g2")));
+    assert!(f.drain().iter().any(|e| matches!(e, CoreEvent::PlayTrack(t, _) if t.id == "g2")));
     assert_eq!(f.bard.track_stats("g1").skips, 0, "a track that never played is not a skip");
 
     f.bard.report_failed(true);
@@ -665,7 +665,7 @@ fn a_track_that_fails_to_open_is_skipped_or_playback_stops() {
     assert_eq!(queue_ids(&f.bard), ["g3"], "the queue is kept");
     let events = f.drain();
     assert!(events.iter().any(|e| matches!(e, CoreEvent::NowPlaying(None))), "{events:?}");
-    assert!(!events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(_))), "{events:?}");
+    assert!(!events.iter().any(|e| matches!(e, CoreEvent::PlayTrack(..))), "{events:?}");
 }
 
 #[test]
@@ -721,4 +721,223 @@ fn removing_a_folder_drops_its_tracks_from_the_library_and_queue() {
             assert!(id.starts_with('g'), "{id}");
         }
     }
+}
+
+fn transitions(events: &[CoreEvent]) -> Vec<(String, Transition)> {
+    events
+        .iter()
+        .filter_map(|e| if let CoreEvent::PlayTrack(t, tr) = e { Some((t.id.clone(), *tr)) } else { None })
+        .collect()
+}
+
+/// Streamer mode taking a track off the air does it with a cut, so the
+/// engine does not fade the forbidden track out over the crossfade; the
+/// user's own moves keep the normal transition.
+#[test]
+fn streamer_enforcement_cuts_and_everything_else_does_not() {
+    let mut f = armed_on_rain(true);
+    f.bard.skip();
+    assert_eq!(transitions(&f.drain()), [("r2".to_string(), Transition::Normal)]);
+
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    let events = f.drain();
+    assert_eq!(transitions(&events), [("m1".to_string(), Transition::Cut)]);
+    // The track fading out (r1) is gone with the one on air; no separate cut.
+    assert!(!events.iter().any(|e| matches!(e, CoreEvent::CutFade)), "{events:?}");
+
+    f.bard.report_ended();
+    assert!(transitions(&f.drain()).iter().all(|(_, t)| *t == Transition::Normal));
+
+    // Arming over a track that is not safe.
+    let mut f = fixture(false);
+    f.bard.set_album_flag("Moon", ContentIdStatus::Safe, None);
+    f.bard.enqueue_many(&["r1", "m1"], false);
+    f.drain();
+    f.bard.arm(None);
+    assert_eq!(transitions(&f.drain()), [("m1".to_string(), Transition::Cut)]);
+}
+
+/// The track before the current one may still be fading out. When it stops
+/// being safe the fade is cut, and only then.
+#[test]
+fn a_forbidden_track_fading_out_is_cut() {
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Gold", ContentIdStatus::Safe, None);
+    f.bard.enqueue("g1");
+    f.bard.clear_queue();
+    f.bard.enqueue("m1");
+    f.bard.skip(); // r1 -> m1, r1 fading out
+    f.drain();
+
+    f.bard.set_album_flag("Gold", ContentIdStatus::Claimed, None);
+    assert!(!f.drain().iter().any(|e| matches!(e, CoreEvent::CutFade)), "nothing of Gold is fading out");
+
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None);
+    let events = f.drain();
+    assert_eq!(events.iter().filter(|e| matches!(e, CoreEvent::CutFade)).count(), 1, "{events:?}");
+    assert!(transitions(&events).is_empty(), "m1 plays on: {events:?}");
+    assert_eq!(playing(&f.bard).as_deref(), Some("m1"));
+
+    // Once cut, not again.
+    f.bard.set_album_flag("Rain", ContentIdStatus::Untested, None);
+    assert!(!f.drain().iter().any(|e| matches!(e, CoreEvent::CutFade)));
+
+    // After a cut there is nothing left fading.
+    let mut f = armed_on_rain(true);
+    f.bard.set_album_flag("Rain", ContentIdStatus::Claimed, None); // cut r1 -> m1
+    f.drain();
+    f.bard.set_album_flag("Rain", ContentIdStatus::Untested, None);
+    assert!(!f.drain().iter().any(|e| matches!(e, CoreEvent::CutFade)));
+}
+
+/// Two folders, a's track played, then b's; a is removed.
+fn played_a_then_b(repeat: RepeatMode) -> Fixture {
+    let mut f = fixture(false);
+    let mut a = track("a1", "A", 1);
+    a.path = "/music/a/a1.flac".into();
+    let mut b = track("b1", "B", 1);
+    b.path = "/music/b/b1.flac".into();
+    let mut b2 = track("b2", "B", 2);
+    b2.path = "/music/b/b2.flac".into();
+    f.bard.update_config(|c| {
+        c.library_paths = vec!["/music/a".into(), "/music/b".into()];
+        c.playback.auto_fill = AutoFillMode::Off;
+        c.playback.repeat = repeat;
+    });
+    f.bard.install_library(vec![a, b, b2]);
+    f.bard.enqueue_many(&["a1", "b1"], false);
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("b1"));
+    f.bard.update_config(|c| c.library_paths.retain(|p| p != "/music/a"));
+    assert!(f.bard.track("a1").is_none());
+    f.drain();
+    f
+}
+
+#[test]
+fn repeat_all_does_not_bring_back_a_removed_folder() {
+    let mut f = played_a_then_b(RepeatMode::All);
+    f.bard.enqueue("b2");
+    f.bard.report_ended();
+    assert_eq!(playing(&f.bard).as_deref(), Some("b2"));
+    f.drain();
+    let mut heard = Vec::new();
+    for _ in 0..4 {
+        f.bard.report_ended();
+        heard.push(playing(&f.bard).unwrap_or_default());
+    }
+    assert_eq!(heard, ["b1", "b2", "b1", "b2"], "laps b's tracks only");
+    assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "a1"));
+}
+
+#[test]
+fn previous_does_not_step_back_into_a_removed_folder() {
+    let mut f = played_a_then_b(RepeatMode::Off);
+    f.bard.previous();
+    assert_ne!(playing(&f.bard).as_deref(), Some("a1"));
+    assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "a1"));
+}
+
+/// The track on air from a removed folder finishes; it is not replayed.
+#[test]
+fn a_removed_track_on_air_finishes_but_does_not_come_back() {
+    // Repeat One.
+    let mut f = played_a_then_b(RepeatMode::Off);
+    f.bard.enqueue("a1"); // gone: nothing
+    f.bard.play_now("b2");
+    f.bard.update_config(|c| c.library_paths = vec!["/music/a".into()]);
+    // b2 is on air and now outside the library, as is all of B.
+    f.bard.update_config(|c| c.playback.repeat = RepeatMode::One);
+    f.drain();
+    f.bard.report_ended();
+    assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "b2"), "not repeated");
+
+    // Previous mid-track does not restart it, nor put it back in the queue.
+    let mut f = played_a_then_b(RepeatMode::Off);
+    f.bard.update_config(|c| c.library_paths = vec!["/music/a".into()]);
+    f.drain();
+    let p = progress(&f.bard, 60.0);
+    f.bard.report_progress(p);
+    f.bard.previous();
+    assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "b1"), "not restarted");
+    assert!(!queue_ids(&f.bard).contains(&"b1".to_string()));
+}
+
+/// A scan that started before the folder was removed cannot put it back.
+#[test]
+fn a_scan_from_before_the_removal_cannot_bring_the_folder_back() {
+    let mut f = fixture(false);
+    let mut a = track("a1", "A", 1);
+    a.path = "/music/a/a1.flac".into();
+    let mut b = track("b1", "B", 1);
+    b.path = "/music/b/b1.flac".into();
+    f.bard.update_config(|c| {
+        c.library_paths = vec!["/music/a".into(), "/music/b".into()];
+        c.playback.auto_fill = AutoFillMode::Off;
+        c.playback.repeat = RepeatMode::All;
+    });
+    f.bard.install_library(vec![a.clone(), b.clone()]);
+    let before = f.bard.scanner();
+    f.bard.enqueue_many(&["a1", "b1"], false);
+    f.bard.report_ended();
+    f.bard.update_config(|c| c.library_paths.retain(|p| p != "/music/a"));
+    assert!(!f.bard.install_scan(&before, vec![a, b]));
+    f.drain();
+    for _ in 0..3 {
+        f.bard.report_ended();
+    }
+    assert!(!transitions(&f.drain()).iter().any(|(id, _)| id == "a1"));
+}
+
+fn read_np(f: &Fixture) -> serde_json::Value {
+    serde_json::from_str(&std::fs::read_to_string(f.dir().join("nowplaying.json")).unwrap()).unwrap()
+}
+
+fn report(b: &mut Bard, id: &str, position: f64, duration: f64, playing: bool) {
+    b.report_progress(PlaybackProgress { position, duration, playing, track_id: Some(id.into()) });
+}
+
+/// nowplaying.json pairs a track with its own timing: a switch resets it,
+/// the new track's first report is written, later ticks are not.
+#[test]
+fn nowplaying_json_timing_follows_the_track() {
+    let mut f = fixture(false);
+    let mut long = track("long", "Gold", 9);
+    long.duration_sec = 200.0;
+    let mut lib = library();
+    lib.push(long);
+    f.bard.install_library(lib);
+    f.bard.enqueue_many(&["g1", "long", "g2"], false);
+    report(&mut f.bard, "g1", 90.0, 120.0, true);
+    assert_eq!(read_np(&f)["positionSec"], 90.0);
+
+    // Playing to playing.
+    f.bard.skip();
+    let v = read_np(&f);
+    assert_eq!(v["title"], "Title long");
+    assert_eq!(v["durationSec"], 200, "the tag duration until the engine reports");
+    assert_eq!(v["positionSec"], 0);
+    assert_eq!(v["isPlaying"], true);
+
+    // The outgoing track's reports (a crossfade) change nothing.
+    report(&mut f.bard, "g1", 91.0, 120.0, true);
+    assert_eq!(read_np(&f)["positionSec"], 0);
+
+    // The first report of the new track is written, with the decoder's duration.
+    report(&mut f.bard, "long", 0.25, 199.5, true);
+    let v = read_np(&f);
+    assert_eq!((v["positionSec"].as_f64(), v["durationSec"].as_f64()), (Some(0.25), Some(199.5)));
+    // Later ticks are not.
+    report(&mut f.bard, "long", 10.0, 199.5, true);
+    assert_eq!(read_np(&f)["positionSec"], 0.25);
+
+    // Paused, then switched: still paused, timing reset.
+    report(&mut f.bard, "long", 50.0, 199.5, false);
+    f.bard.skip();
+    let v = read_np(&f);
+    assert_eq!(v["title"], "Title g2");
+    assert_eq!((v["positionSec"].as_f64(), v["durationSec"].as_f64()), (Some(0.0), Some(120.0)));
+    assert_eq!(v["isPlaying"], false);
+    report(&mut f.bard, "g2", 0.0, 119.0, false);
+    assert_eq!(read_np(&f)["durationSec"], 119.0, "the paused track's first report is written too");
 }

@@ -30,13 +30,21 @@ const DEACTIVATE_AFTER: Duration = Duration::from_millis(200);
 const IDLE_POLL: Duration = Duration::from_millis(5);
 
 pub(crate) enum Cmd {
-    Play { track_id: String, path: PathBuf, norm_gain: f32, crossfade_sec: f32, generation: u64 },
+    Play {
+        track_id: String,
+        path: PathBuf,
+        norm_gain: f32,
+        crossfade_sec: f32,
+        generation: u64,
+    },
     Pause,
     Resume,
     Seek(f64),
     Volume(f32),
     Norm(f32),
     Stop(u64),
+    /// Ends a fade-out now: the incoming track starts at once.
+    CutFade,
     SetTarget(Option<String>),
     Quit,
 }
@@ -54,6 +62,8 @@ struct PendingPlay {
     norm_gain: f32,
     crossfade_sec: f32,
     generation: u64,
+    /// Where it starts: a seek made while it waits on the fade-out.
+    start_at: f64,
 }
 
 pub(crate) struct Engine {
@@ -203,7 +213,14 @@ impl Engine {
         match cmd {
             Cmd::Play { track_id, path, norm_gain, crossfade_sec, generation } => {
                 let crossfade_sec = if crossfade_sec.is_finite() { crossfade_sec.max(0.0) } else { 0.0 };
-                let play = PendingPlay { track_id, path, norm_gain: clamp_norm(norm_gain), crossfade_sec, generation };
+                let play = PendingPlay {
+                    track_id,
+                    path,
+                    norm_gain: clamp_norm(norm_gain),
+                    crossfade_sec,
+                    generation,
+                    start_at: 0.0,
+                };
                 if crossfade_sec > 0.0 {
                     if let Some((p, _)) = &mut self.pending {
                         // Already fading out: the newest request replaces the
@@ -243,7 +260,17 @@ impl Engine {
                 self.deactivate_soon();
             }
             Cmd::Resume => self.resume(),
-            Cmd::Seek(secs) => self.seek(secs),
+            Cmd::Seek(secs) => match &mut self.pending {
+                // The caller has moved on to the incoming track, so a seek is
+                // about that one. It starts there when the fade-out ends; the
+                // outgoing track fades out undisturbed.
+                Some((p, _)) => {
+                    if secs.is_finite() {
+                        p.start_at = secs.max(0.0);
+                    }
+                }
+                None => self.seek(secs),
+            },
             Cmd::Volume(v) => {
                 self.volume = clamp_volume(v);
                 // Ramped rather than set, so volume changes don't click.
@@ -254,6 +281,14 @@ impl Engine {
                 self.gain_now(GainCmd::Target(self.target_gain()));
             }
             Cmd::Stop(generation) => self.stop(generation),
+            Cmd::CutFade => {
+                if let Some((mut p, _)) = self.pending.take() {
+                    // Straight in at its level: a fade-in would still be a
+                    // fade, and the point is that the outgoing track is gone.
+                    p.crossfade_sec = 0.0;
+                    self.swap(p, true);
+                }
+            }
             Cmd::SetTarget(t) => self.output.set_target(t),
             Cmd::Quit => return false,
         }
@@ -293,8 +328,16 @@ impl Engine {
         self.shared.set_position(0.0);
 
         match Source::open(&p.path) {
-            Ok(src) => {
+            Ok(mut src) => {
                 self.shared.set_duration(src.duration());
+                if p.start_at > 0.0 {
+                    let dur = src.duration();
+                    let at = if dur > 0.0 { p.start_at.min(dur) } else { p.start_at };
+                    match src.seek(at) {
+                        Ok(()) => self.shared.set_position(at),
+                        Err(e) => self.emit(PlayerEvent::Error(format!("{e:#}"))),
+                    }
+                }
                 self.source = Some(src);
                 self.eof_queued = false;
                 self.ended_reported = false;

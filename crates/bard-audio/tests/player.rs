@@ -353,3 +353,112 @@ fn a_missing_file_after_a_playing_track_fails_and_stops() {
     assert!(!p.position().playing);
     assert!(!p.toggle(), "nothing loaded to resume");
 }
+
+fn progress_of(ev: &[(Instant, PlayerEvent)], generation: u64) -> Vec<f64> {
+    ev.iter()
+        .filter_map(|(_, e)| match e {
+            PlayerEvent::Progress { generation: g, position, .. } if *g == generation => Some(*position),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A seek during the fade-out is about the track the caller moved on to: the
+/// incoming track starts where it asked, and the outgoing one is not jumped.
+#[test]
+fn a_seek_during_a_fade_moves_the_incoming_track() {
+    let (p, rx) = player();
+    let a = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let b = p.play("b".into(), fixture("bursts.wav"), 1.0, 0.5);
+    std::thread::sleep(Duration::from_millis(80));
+    p.seek(1.5);
+
+    let ev = collect(&rx, Duration::from_millis(900));
+    let outgoing = progress_of(&ev, a);
+    assert!(outgoing.iter().all(|&pos| pos < 1.0), "the outgoing track kept its place: {outgoing:?}");
+    let incoming = progress_of(&ev, b);
+    assert!(incoming.first().is_some_and(|&pos| pos >= 1.5), "b starts at the seek: {incoming:?}");
+}
+
+/// The same when paused mid-fade: the incoming track waits at the seek.
+#[test]
+fn a_seek_then_pause_during_a_fade_loads_the_incoming_track_there() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let b = p.play("b".into(), fixture("bursts.wav"), 1.0, 0.5);
+    std::thread::sleep(Duration::from_millis(80));
+    p.seek(2.0);
+    p.pause();
+    let ev = collect(&rx, Duration::from_millis(300));
+    let incoming = progress_of(&ev, b);
+    assert!(incoming.first().is_some_and(|&pos| (pos - 2.0).abs() < 0.01), "{incoming:?}");
+    assert!(!p.position().playing);
+}
+
+/// Skipping again during a fade starts the newest track from its beginning,
+/// not from a seek meant for the one it replaced.
+#[test]
+fn a_newer_request_during_a_fade_drops_the_earlier_seek() {
+    let (p, rx) = player();
+    p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    p.play("b".into(), fixture("bursts.wav"), 1.0, 0.4);
+    std::thread::sleep(Duration::from_millis(50));
+    p.seek(1.5);
+    let c = p.play("c".into(), fixture("bursts.wav"), 1.0, 0.4);
+    let ev = collect(&rx, Duration::from_millis(700));
+    let incoming = progress_of(&ev, c);
+    assert!(incoming.first().is_some_and(|&pos| pos < 0.1), "{incoming:?}");
+}
+
+/// cut_fade ends a fade-out at once: the outgoing track is gone and the
+/// incoming one plays at its level, not from the fade's silence.
+#[test]
+fn cutting_a_fade_starts_the_incoming_track_at_once() {
+    let (p, rx) = player();
+    let a = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let b = p.play("b".into(), fixture("bursts.wav"), 1.0, 2.0);
+    std::thread::sleep(Duration::from_millis(100));
+    let cut_at = Instant::now();
+    p.cut_fade();
+    let e = wait_for(
+        &rx,
+        Duration::from_millis(300),
+        |e| matches!(e, PlayerEvent::Progress { generation, .. } if *generation == b),
+    );
+    assert!(e.is_some(), "b started well before the 2 s fade would have ended");
+    assert!(cut_at.elapsed() < Duration::from_millis(300));
+    let ev = collect(&rx, Duration::from_millis(300));
+    assert!(progress_of(&ev, a).is_empty(), "nothing more from a: {ev:?}");
+    assert!((p.current_gain() - 1.0).abs() < 0.01, "at its level: {}", p.current_gain());
+
+    // With no fade under way it does nothing.
+    p.cut_fade();
+    let ev = collect(&rx, Duration::from_millis(300));
+    assert!(
+        ev.iter()
+            .all(|(_, e)| matches!(e, PlayerEvent::Progress { generation, playing: true, .. } if *generation == b))
+    );
+}
+
+/// A play request with no crossfade during a fade-out replaces the fade:
+/// the outgoing track stops at once.
+#[test]
+fn an_immediate_play_during_a_fade_cuts_the_outgoing_track() {
+    let (p, rx) = player();
+    let a = p.play("a".into(), fixture("bursts.wav"), 1.0, 0.0);
+    wait_for(&rx, Duration::from_secs(1), |e| matches!(e, PlayerEvent::Progress { playing: true, .. })).unwrap();
+    let b = p.play("b".into(), fixture("bursts.wav"), 1.0, 2.0);
+    std::thread::sleep(Duration::from_millis(100));
+    let c = p.play("c".into(), fixture("bursts.wav"), 1.0, 0.0);
+    let ev = collect(&rx, Duration::from_millis(500));
+    let first_c =
+        ev.iter().position(|(_, e)| matches!(e, PlayerEvent::Progress { generation, .. } if *generation == c));
+    let first_c = first_c.expect("c started at once");
+    assert!(progress_of(&ev[first_c..], a).is_empty(), "{ev:?}");
+    assert!(progress_of(&ev, b).is_empty(), "b never played: {ev:?}");
+    assert!((p.current_gain() - 1.0).abs() < 0.01, "{}", p.current_gain());
+}

@@ -7,6 +7,7 @@
 
 use crate::CoreEvent;
 use crate::bard::Bard;
+use crate::bard::Transition;
 use crate::deck::draw;
 use crate::history::{BackStep, push_played, remember_recent, step_back, wrap_for_repeat_all};
 use crate::playlist::{next_in_album_rolling, pick_random, shuffled};
@@ -365,13 +366,52 @@ impl Bard {
         // The track on air matters most. Skipping is not enough on its own: if
         // nothing safe can follow, play_next lands on None and stops, which is
         // the correct outcome -- silence beats an unchecked track going out.
+        //
+        // And it goes at once. With a crossfade set, a normal skip keeps the
+        // outgoing track audible for the whole fade-out, up to twelve seconds
+        // of exactly the track that must not be heard.
         let playing_reason = self.now_playing.as_ref().and_then(|n| self.blocked_reason(&n.track));
         if let Some(reason) = playing_reason {
             self.notify(format!("{reason} \u{2014} skipping"));
-            self.play_next();
+            self.cut_to_next();
             return;
         }
+        // The track before may still be fading out under a permitted one.
+        if self.fading_from.as_ref().is_some_and(|t| self.blocked_reason(t).is_some()) {
+            self.fading_from = None;
+            self.emit(CoreEvent::CutFade);
+        }
         self.top_up_endless();
+    }
+
+    /// Plays the next track with no fade: the current one may not be heard.
+    fn cut_to_next(&mut self) {
+        self.cutting = true;
+        self.play_next();
+        // Stopping instead also cuts; the flag must not outlive this.
+        self.cutting = false;
+    }
+
+    /// Tells the engine to play `track`. The one place PlayTrack is sent, so
+    /// what may still be fading out is always known.
+    fn emit_play(&mut self, track: Track) {
+        let cut = std::mem::take(&mut self.cutting);
+        let before = self.on_air.replace(track.clone());
+        self.fading_from = if cut { None } else { before };
+        self.emit(CoreEvent::PlayTrack(track, if cut { Transition::Cut } else { Transition::Normal }));
+    }
+
+    /// Playback stopped; the engine's stop ends any fade too.
+    fn went_off_air(&mut self) {
+        self.on_air = None;
+        self.fading_from = None;
+    }
+
+    /// Whether a track may play again from history (Repeat One, Repeat All,
+    /// Previous): still in the library -- a removed folder's track finishes,
+    /// but does not come back -- and permitted by streamer mode.
+    fn may_replay(&self, track: &Track) -> bool {
+        self.library.get(&track.id).is_some() && self.blocked_reason(track).is_none()
     }
 
     /// Moves the item at `from` to `to` (clamped into range).
@@ -423,10 +463,11 @@ impl Bard {
                 self.played = push_played(&self.played, item.clone());
                 self.np.set_now_playing(Some(item.clone()), write);
                 self.emit(CoreEvent::NowPlaying(Some(item.clone())));
-                self.emit(CoreEvent::PlayTrack(filled));
+                self.emit_play(filled);
                 return Some(item);
             }
             self.now_playing = None;
+            self.went_off_air();
             self.np.set_now_playing(None, write);
             self.emit(CoreEvent::NowPlaying(None));
             return None;
@@ -439,7 +480,7 @@ impl Bard {
         self.top_up_endless();
         self.np.set_now_playing(Some(next.clone()), write);
         self.emit(CoreEvent::NowPlaying(Some(next.clone())));
-        self.emit(CoreEvent::PlayTrack(next.track.clone()));
+        self.emit_play(next.track.clone());
         Some(next)
     }
 
@@ -468,6 +509,7 @@ impl Bard {
         self.counted = false;
         self.position = 0.0;
         self.now_playing = None;
+        self.went_off_air();
         let write = self.config.get().overlay.write_now_playing_json;
         self.np.set_now_playing(None, write);
         self.emit(CoreEvent::NowPlaying(None));
@@ -489,24 +531,34 @@ impl Bard {
             self.played = played.into_iter().filter(|i| self.blocked_reason(&i.track).is_none()).collect();
         }
 
-        match step_back(&self.played, self.position) {
+        // A track whose folder was removed is let finish, not restarted: back
+        // goes to the one before it instead, wherever it is in the track.
+        let removed = self.now_playing.as_ref().is_some_and(|n| self.library.get(&n.track.id).is_none());
+        let position = if removed { 0.0 } else { self.position };
+        match step_back(&self.played, position) {
             BackStep::Restart => {
                 let Some(np) = &self.now_playing else { return };
                 let track = np.track.clone();
+                if removed {
+                    return;
+                }
                 if let Some(reason) = self.blocked_reason(&track) {
                     self.notify(format!("{reason} \u{2014} skipping"));
-                    self.play_next();
+                    self.cut_to_next();
                     return;
                 }
                 self.counted = false;
                 self.position = 0.0;
-                self.emit(CoreEvent::PlayTrack(track));
+                self.emit_play(track);
             }
             BackStep::Back { prior, played } => {
                 self.credit_skip_if_unplayed();
                 self.played = played;
-                // Put the current track back at the head so forward still works.
-                if let Some(np) = self.now_playing.take() {
+                // Put the current track back at the head so forward still works
+                // -- unless it may not play again.
+                if let Some(np) = self.now_playing.take()
+                    && self.may_replay(&np.track)
+                {
                     self.queue.insert(0, np);
                 }
                 self.now_playing = Some(prior.clone());
@@ -516,7 +568,7 @@ impl Bard {
                 let write = self.config.get().overlay.write_now_playing_json;
                 self.np.set_now_playing(Some(prior.clone()), write);
                 self.emit(CoreEvent::NowPlaying(Some(prior.clone())));
-                self.emit(CoreEvent::PlayTrack(prior.track));
+                self.emit_play(prior.track);
             }
         }
     }
@@ -526,12 +578,12 @@ impl Bard {
         let mode = self.config.get().playback.repeat;
         if mode == RepeatMode::One
             && let Some(np) = &self.now_playing
-            && self.blocked_reason(&np.track).is_none()
+            && self.may_replay(&np.track)
         {
             let track = np.track.clone();
             self.counted = false;
             self.position = 0.0;
-            self.emit(CoreEvent::PlayTrack(track));
+            self.emit_play(track);
             return;
         }
         if mode == RepeatMode::All && self.queue.is_empty() && !self.played.is_empty() {
@@ -539,11 +591,8 @@ impl Bard {
             let (queue, played) = wrap_for_repeat_all(&self.played, self.now_playing.as_ref());
             // Re-queuing a lap replays what was played earlier in the session,
             // which may predate the mode being armed.
-            self.queue = queue
-                .into_iter()
-                .filter(|i| self.blocked_reason(&i.track).is_none())
-                .map(|i| new_item(i.track))
-                .collect();
+            // Removed folders' tracks stay in history until then, too.
+            self.queue = queue.into_iter().filter(|i| self.may_replay(&i.track)).map(|i| new_item(i.track)).collect();
             self.played = played;
             self.emit_queue();
         }
@@ -566,7 +615,7 @@ impl Bard {
         let write = self.config.get().overlay.write_now_playing_json;
         self.np.set_now_playing(Some(item.clone()), write);
         self.emit(CoreEvent::NowPlaying(Some(item.clone())));
-        self.emit(CoreEvent::PlayTrack(item.track));
+        self.emit_play(item.track);
     }
 
     /// Plays a specific track immediately, leaving the pending queue intact.

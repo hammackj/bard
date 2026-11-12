@@ -665,6 +665,7 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "serde_json",
+ "tempfile",
  "unicode-segmentation",
  "wayland-backend",
  "wayland-client",

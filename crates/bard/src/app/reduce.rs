@@ -9,7 +9,7 @@ use super::{AppEvent, Control};
 use crate::model::Ui;
 use bard_audio::PlayerEvent;
 use bard_core::types::{AlbumFlags, Config, PlaybackProgress, QueueItem, StatsMap, Track, TransportAction};
-use bard_core::{CoreEvent, gain_multiplier};
+use bard_core::{CoreEvent, Transition, gain_multiplier};
 use std::time::Instant;
 
 /// The fallback notice, worded as Electron's, which also said the choice stays.
@@ -23,6 +23,8 @@ pub(super) trait Effects {
     fn play(&self, track: &Track, norm_gain: f32, crossfade_sec: f32) -> u64;
     /// Returns the request's generation.
     fn stop(&self) -> u64;
+    /// Ends a crossfade's fade-out at once (see `Player::cut_fade`).
+    fn cut_fade(&self);
     fn pause(&self);
     fn seek(&self, seconds: f64);
     fn set_norm_gain(&self, gain: f32);
@@ -124,9 +126,13 @@ pub(super) fn reduce(ui: &mut Ui, fx: &dyn Effects, ev: AppEvent) {
 fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
     match ev {
         CoreEvent::QueueChanged(q) => ui.queue = q,
-        CoreEvent::PlayTrack(t) => {
+        CoreEvent::PlayTrack(t, transition) => {
             let gain = gain_multiplier(&t, ui.config.audio.normalize) as f32;
-            ui.generation = fx.play(&t, gain, ui.config.audio.crossfade_sec as f32);
+            let crossfade = match transition {
+                Transition::Normal => ui.config.audio.crossfade_sec as f32,
+                Transition::Cut => 0.,
+            };
+            ui.generation = fx.play(&t, gain, crossfade);
             ui.track = Some(t);
             ui.position = 0.;
             ui.duration = 0.;
@@ -144,6 +150,7 @@ fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
             ui.playing = false;
         }
         CoreEvent::NowPlaying(Some(_)) => {}
+        CoreEvent::CutFade => fx.cut_fade(),
         CoreEvent::ScanProgress(p) => {
             // Progress and the end of a scan arrive on different channels,
             // so a last report can land after `Scanned`; one that says the
@@ -244,13 +251,16 @@ mod tests {
     }
 
     impl Effects for Fx {
-        fn play(&self, t: &Track, _: f32, _: f32) -> u64 {
-            self.log(format!("play {}", t.id));
+        fn play(&self, t: &Track, _: f32, crossfade: f32) -> u64 {
+            self.log(if crossfade > 0. { format!("play {} fade {crossfade}", t.id) } else { format!("play {}", t.id) });
             self.next()
         }
         fn stop(&self) -> u64 {
             self.log("stop");
             self.next()
+        }
+        fn cut_fade(&self) {
+            self.log("cut fade")
         }
         fn pause(&self) {
             self.log("pause")
@@ -340,12 +350,24 @@ mod tests {
         })
     }
 
+    /// A cut plays with no crossfade whatever the setting; CutFade reaches
+    /// the engine.
+    #[test]
+    fn a_cut_ignores_the_crossfade_setting() {
+        let (mut u, fx) = (ui(), Fx::default());
+        u.config.audio.crossfade_sec = 4.;
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 60.), Transition::Normal)));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("b", 60.), Transition::Cut)));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::CutFade));
+        assert_eq!(fx.take(), ["play a fade 4", "play b", "cut fade"]);
+    }
+
     #[test]
     fn the_outgoing_tracks_progress_never_reaches_the_model() {
         let (mut u, fx) = (ui(), Fx::default());
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.), Transition::Normal)));
         reduce(&mut u, &fx, progress(1, 120., 300., "a"));
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("b", 90.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("b", 90.), Transition::Normal)));
         fx.take();
 
         // During b's fade-in, a's fade-out still reports, as generation 1.
@@ -361,8 +383,8 @@ mod tests {
     #[test]
     fn restarting_the_same_track_ignores_the_old_runs_reports_and_end() {
         let (mut u, fx) = (ui(), Fx::default());
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.))));
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.), Transition::Normal)));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.), Transition::Normal)));
         fx.take();
         reduce(&mut u, &fx, progress(1, 200., 300., "a"));
         reduce(&mut u, &fx, AppEvent::Player(PlayerEvent::Ended { generation: 1 }));
@@ -374,7 +396,7 @@ mod tests {
     #[test]
     fn reports_after_stop_are_ignored() {
         let (mut u, fx) = (ui(), Fx::default());
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("a", 300.), Transition::Normal)));
         reduce(&mut u, &fx, AppEvent::Core(CoreEvent::NowPlaying(None)));
         assert_eq!(fx.take(), ["play a", "stop"]);
         reduce(&mut u, &fx, progress(1, 10., 300., "a"));
@@ -388,7 +410,7 @@ mod tests {
         let fail =
             |g| AppEvent::Player(PlayerEvent::Failed { generation: g, track_id: "x".into(), message: "gone".into() });
         for (i, id) in ["a", "b", "c"].into_iter().enumerate() {
-            reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track(id, 60.))));
+            reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track(id, 60.), Transition::Normal)));
             reduce(&mut u, &fx, fail(i as u64 + 1));
         }
         assert_eq!(
@@ -399,14 +421,14 @@ mod tests {
         assert!(!u.playing);
 
         // A stale failure (a request since replaced) is not counted.
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("d", 60.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("d", 60.), Transition::Normal)));
         fx.take();
         reduce(&mut u, &fx, fail(3));
         assert!(fx.take().is_empty());
 
         // A track that plays resets the count.
         reduce(&mut u, &fx, fail(4));
-        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("e", 60.))));
+        reduce(&mut u, &fx, AppEvent::Core(CoreEvent::PlayTrack(track("e", 60.), Transition::Normal)));
         reduce(&mut u, &fx, progress(5, 0.1, 60., "e"));
         assert_eq!(u.open_failures, 0);
     }

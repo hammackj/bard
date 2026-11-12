@@ -189,6 +189,9 @@ impl super::reduce::Effects for AppBackend {
     fn stop(&self) -> u64 {
         self.player.stop()
     }
+    fn cut_fade(&self) {
+        self.player.cut_fade()
+    }
     fn pause(&self) {
         self.player.pause()
     }

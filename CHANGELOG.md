@@ -7,6 +7,22 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streamer mode takes a track off the air at once**, even with a
+  crossfade set. Before, a track whose album stopped being safe (or that was
+  playing when the mode was armed) faded out over the whole crossfade, up to
+  12 seconds of exactly what must not be heard. The same applies to a track
+  still fading out under a safe one.
+- **A removed music folder's tracks do not come back** through Repeat All,
+  Repeat One or Previous. The track playing when its folder is removed still
+  finishes.
+- **A seek during a crossfade applies to the incoming track**, which starts
+  there. It used to move the outgoing track and be lost.
+- **nowplaying.json no longer pairs a new track with the previous track's
+  position and duration**; the new track's own timing is written as soon as
+  it starts.
+
 ## [0.2.2] — 2026-11-12
 
 ### Fixed

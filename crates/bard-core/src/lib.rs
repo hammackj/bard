@@ -120,6 +120,6 @@ mod streamer;
 pub mod types;
 pub mod util;
 
-pub use bard::{Bard, CoreEvent, LibraryScanner, Options, default_data_dir};
+pub use bard::{Bard, CoreEvent, LibraryScanner, Options, Transition, default_data_dir};
 pub use gain::{gain_db_for, gain_multiplier};
 pub use stores::{PLAY_THRESHOLD_RATIO, PLAY_THRESHOLD_SEC};

@@ -29,6 +29,9 @@ pub(crate) struct NowPlayingState {
     /// running. Pushed in by whoever runs the server.
     overlay_port: Option<u16>,
     last_written: String,
+    /// The current track has had no report from the engine yet; the file
+    /// shows its tag duration until the first one, which is written.
+    awaiting_report: bool,
 }
 
 impl NowPlayingState {
@@ -41,6 +44,7 @@ impl NowPlayingState {
             queue_length: 0,
             overlay_port: None,
             last_written: String::new(),
+            awaiting_report: false,
         }
     }
 
@@ -91,9 +95,26 @@ impl NowPlayingState {
     }
 
     /// Track changed, or playback stopped entirely.
+    ///
+    /// Position and duration belong to the track: carried across a switch,
+    /// the file paired the new title with the old track's timing, and as the
+    /// file is only rewritten on a track or play/pause change, it kept it.
+    /// Play state carries over until the engine reports.
     pub fn set_now_playing(&mut self, item: Option<QueueItem>, write_file: bool) {
-        if item.is_none() {
-            self.progress = stopped();
+        match &item {
+            None => self.progress = stopped(),
+            Some(next) => {
+                let switched = self.current.as_ref().map(|c| &c.id) != Some(&next.id);
+                if switched {
+                    self.progress = PlaybackProgress {
+                        position: 0.0,
+                        duration: 0.0,
+                        playing: self.progress.playing,
+                        track_id: Some(next.track.id.clone()),
+                    };
+                    self.awaiting_report = true;
+                }
+            }
         }
         self.current = item;
         self.emit();
@@ -108,12 +129,16 @@ impl NowPlayingState {
         self.emit();
     }
 
+    /// Progress for the current track (the caller drops the outgoing one's).
+    /// Written on play/pause, and once for a new track's first report, which
+    /// carries the decoder's duration and the starting point; not per tick.
     pub fn set_progress(&mut self, p: PlaybackProgress, write_file: bool) {
         let play_state_changed = p.playing != self.progress.playing;
+        let first = std::mem::take(&mut self.awaiting_report);
         self.progress = p;
         self.emit();
-        if play_state_changed {
-            self.write_if_interesting(false, write_file);
+        if play_state_changed || first {
+            self.write_if_interesting(first, write_file);
         }
     }
 

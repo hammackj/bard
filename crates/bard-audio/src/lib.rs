@@ -267,9 +267,17 @@ impl Player {
         self.send(Cmd::Resume);
     }
 
-    /// Seconds; clamped to the track.
+    /// Seconds; clamped to the track. During a crossfade's fade-out it
+    /// applies to the incoming track, which then starts there.
     pub fn seek(&self, seconds: f64) {
         self.send(Cmd::Seek(seconds));
+    }
+
+    /// Cuts short a crossfade's fade-out, if one is under way: the outgoing
+    /// track stops at once and the incoming one starts at its level. For a
+    /// track that must not be heard any longer (streamer mode).
+    pub fn cut_fade(&self) {
+        self.send(Cmd::CutFade);
     }
 
     /// 0..1, ramped so it does not click. Kept separate from the
