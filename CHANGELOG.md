@@ -7,6 +7,18 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A rescan updates the now-playing card and the queue.** Retagged titles,
+  albums and covers showed in the library but not for the playing or
+  queued tracks until they changed; media keys' and the tray's track info
+  kept the old tags too. Playback is not interrupted.
+- **Changing normalisation during a crossfade applies to the incoming
+  track.** It started at the old level instead, and the outgoing track
+  jumped to the incoming one's level for the rest of the fade.
+- **Shuffle with loved-track weighting no longer repeats the last track**
+  at the start of a new pass through the library.
+
 ## [0.2.10] — 2026-11-12
 
 ### Fixed

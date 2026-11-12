@@ -189,7 +189,7 @@ impl Bard {
         self.emit(CoreEvent::StatsChanged);
     }
 
-    fn emit_queue(&mut self) {
+    pub(crate) fn emit_queue(&mut self) {
         self.emit(CoreEvent::QueueChanged(self.queue.clone()));
         self.np.set_queue_length(self.queue.len());
     }

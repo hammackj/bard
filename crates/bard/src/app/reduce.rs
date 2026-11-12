@@ -168,7 +168,14 @@ fn core(ui: &mut Ui, fx: &dyn Effects, ev: CoreEvent) {
             ui.duration = 0.;
             ui.playing = false;
         }
-        CoreEvent::NowPlaying(Some(_)) => {}
+        // A rescan's refresh of the track on screen: its title, album, art
+        // as the scan found them. Nothing about playback changes. (A new
+        // track's NowPlaying is followed by its PlayTrack, which sets it.)
+        CoreEvent::NowPlaying(Some(item)) => {
+            if ui.track.as_ref().is_some_and(|t| t.id == item.track.id) {
+                ui.track = Some(item.track);
+            }
+        }
         CoreEvent::CutFade => fx.cut_fade(),
         CoreEvent::ScanProgress(p) => {
             // Progress and the end of a scan arrive on different channels,

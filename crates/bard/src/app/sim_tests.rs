@@ -707,6 +707,22 @@ impl World {
             if self.ui.track.as_ref().map(|t| t.id.clone()) != e.latest.1 {
                 return Err(format!("model shows {:?}, the newest request is {:?}", self.ui.track, e.latest.1));
             }
+            // What the window shows is what core has: a retag or rescan
+            // reaches it too.
+            let core = self.fx.bard.borrow();
+            if let (Some(shown), Some(np)) = (&self.ui.track, core.now_playing())
+                && shown.id == np.track.id
+                && *shown != np.track
+            {
+                return Err(format!(
+                    "the window shows {} as {:?}, core has {:?}",
+                    shown.id, shown.album, np.track.album
+                ));
+            }
+            if self.ui.queue != core.queue() {
+                return Err("the window's queue is not core's".into());
+            }
+            drop(core);
             if self.ui.duration != 0. {
                 let current = e.source.as_ref().filter(|s| s.generation == self.ui.generation);
                 if current.is_none_or(|s| s.track.duration_sec != self.ui.duration) {

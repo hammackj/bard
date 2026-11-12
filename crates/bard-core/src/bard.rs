@@ -320,6 +320,7 @@ impl Bard {
         // the same path reaches the overlay without waiting for a track
         // change; an album retagged at the same path is judged as what it is
         // now, not as what it was when it was queued.
+        let (was_playing, was_queued) = (self.now_playing.clone(), self.queue.clone());
         let library = &self.library;
         let fresh = |t: &mut Track| {
             if let Some(now) = library.get(&t.id) {
@@ -336,6 +337,16 @@ impl Bard {
         let write = self.config.get().overlay.write_now_playing_json;
         self.np.library_changed(current.as_ref(), write);
         self.emit(CoreEvent::LibraryChanged);
+        // And to everyone showing them -- the window's now-playing and queue,
+        // MPRIS, the tray -- only when the scan changed them. The same item
+        // (same id) is sent again: a refresh, not a new track, so nothing
+        // restarts and no position resets.
+        if self.now_playing != was_playing {
+            self.emit(CoreEvent::NowPlaying(self.now_playing.clone()));
+        }
+        if self.queue != was_queued {
+            self.emit_queue();
+        }
         // Stock the queue now the library is known.
         //
         // Endless only ever reacted to something happening -- a track ending,

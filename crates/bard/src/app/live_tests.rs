@@ -597,3 +597,72 @@ fn a_normalisation_change_during_a_fade_belongs_to_the_incoming_track() {
     assert!(l.heard("s2"));
     assert!((l.fx.player.current_gain() - 0.1).abs() < 0.02, "cut: {}", l.fx.player.current_gain());
 }
+
+/// The reviewer's reproduction: a rescan that retitles the playing and the
+/// queued track reaches the window's now-playing and queue.
+#[test]
+fn review_rescan_updates_current_and_queued_ui_metadata() {
+    let mut l = Live::new(0.0);
+    l.start("s1", &["s2"]);
+    l.core(|b| {
+        let mut current = track("s1", SAFE);
+        current.title = "Updated current title".into();
+        let mut queued = track("s2", SAFE);
+        queued.title = "Updated queued title".into();
+        b.install_library(vec![current, queued]);
+    });
+    l.pump(Duration::from_millis(350));
+    assert_eq!(l.fx.with(|b| b.now_playing().unwrap().track.title.clone()), "Updated current title");
+    assert_eq!(l.fx.with(|b| b.queue()[0].track.title.clone()), "Updated queued title");
+    assert_eq!(
+        (l.ui.track.as_ref().unwrap().title.as_str(), l.ui.queue[0].track.title.as_str()),
+        ("Updated current title", "Updated queued title"),
+        "current and queued UI snapshots stayed stale"
+    );
+}
+
+/// Title, album, duration and art all reach the window, without a new
+/// request, a restart, a moved position or a reordered queue; an unchanged
+/// rescan sends nothing at all.
+#[test]
+fn a_rescan_refreshes_the_window_without_touching_playback() {
+    let mut l = Live::new(0.0);
+    l.start("s1", &["s2", "s3"]);
+    l.pump(Duration::from_millis(300));
+    let (generation, queue_ids): (u64, Vec<String>) =
+        (l.ui.generation, l.ui.queue.iter().map(|q| q.id.clone()).collect());
+    let position = l.ui.position;
+    assert!(position > 0.2, "{position}");
+
+    // Unchanged: no NowPlaying or QueueChanged. (Installed directly, not
+    // through `core`, which would hand the events to the reducer first.)
+    let same = ["s1", "s2", "s3", "r1", "r2"].iter().zip([SAFE, SAFE, SAFE, RAIN, RAIN]);
+    let same: Vec<Track> = same.map(|(id, album)| track(id, album)).collect();
+    l.fx.with(|b| b.install_library(same));
+    let quiet: Vec<_> = l.core_rx.try_iter().collect();
+    assert!(quiet.iter().any(|e| matches!(e, CoreEvent::LibraryChanged)), "the events are here: {quiet:?}");
+    assert!(
+        !quiet.iter().any(|e| matches!(e, CoreEvent::NowPlaying(_) | CoreEvent::QueueChanged(_))),
+        "an unchanged rescan sends nothing: {quiet:?}"
+    );
+
+    let mut s1 = track("s1", SAFE);
+    s1.title = "Retitled".into();
+    s1.album = "Renamed".into();
+    s1.duration_sec = 999.;
+    s1.has_artwork = !s1.has_artwork;
+    let mut s3 = track("s3", SAFE);
+    s3.title = "Queued retitled".into();
+    l.core(|b| b.set_album_flag("Renamed", ContentIdStatus::Safe, None));
+    l.core(|b| b.install_library(vec![s1.clone(), track("s2", SAFE), s3]));
+    l.pump(Duration::from_millis(200));
+    let t = l.ui.track.clone().unwrap();
+    assert_eq!(
+        (t.title.as_str(), t.album.as_str(), t.duration_sec, t.has_artwork),
+        ("Retitled", "Renamed", 999., s1.has_artwork)
+    );
+    assert_eq!(l.ui.queue[1].track.title, "Queued retitled");
+    assert_eq!(l.ui.queue.iter().map(|q| q.id.clone()).collect::<Vec<_>>(), queue_ids, "same items, same order");
+    assert_eq!(l.ui.generation, generation, "no new request");
+    assert!(l.heard("s1") && l.ui.position >= position, "playing on from where it was: {}", l.ui.position);
+}
