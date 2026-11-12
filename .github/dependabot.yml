@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Rust dependencies. Grouped so a week's minor and patch bumps arrive as
+  # one pull request instead of a dozen.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+    ignore:
+      # gpui-pre is pinned exactly (=0.3.x) on purpose; its upgrades change
+      # the UI framework under the app and are done by hand.
+      - dependency-name: "gpui-pre*"
+
+  # The actions the CI and release workflows use.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

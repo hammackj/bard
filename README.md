@@ -37,12 +37,43 @@ running under a stream without wondering whether the next track is licensed.
 Linux with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
 (Wayland). The tray needs a StatusNotifierItem host, which Plasma provides.
 
-Building needs a stable Rust toolchain and the PipeWire, libopus and Wayland
-development headers.
-
 ## Installing
 
+### From a release
+
+Download `bard-<version>-x86_64-linux.tar.gz` from
+[Releases](https://github.com/hammackj/bard/releases), extract it, and from
+inside the folder run:
+
 ```bash
+install -Dm755 bard ~/.local/bin/bard
+./scripts/install-desktop.sh ~/.local/bin/bard
+```
+
+That adds a launcher and icons for your user. The binary needs the PipeWire,
+Opus and xkbcommon libraries, which most desktops already have.
+
+### From source
+
+You need a stable Rust toolchain from [rustup](https://rustup.rs) and these
+development packages:
+
+```bash
+# Debian / Ubuntu (24.04 or newer)
+sudo apt install build-essential pkg-config clang libclang-dev \
+  libpipewire-0.3-dev libspa-0.2-dev libopus-dev libwayland-dev \
+  libxkbcommon-dev libxkbcommon-x11-dev libxcb1-dev libfontconfig-dev libfreetype-dev
+
+# Arch
+sudo pacman -S --needed base-devel clang libpipewire opus wayland \
+  libxkbcommon libxkbcommon-x11 libxcb fontconfig freetype2
+```
+
+Then:
+
+```bash
+git clone https://github.com/hammackj/bard.git
+cd bard
 ./scripts/install-desktop.sh
 ```
 
@@ -118,8 +149,9 @@ cargo run --release -p bard  # release build
 cargo test --workspace
 ```
 
-Formatting and lints must pass before committing (`rustfmt.toml` holds the
-formatter settings):
+Formatting, lints and tests must pass before committing, and CI runs the same
+checks on every push and pull request (`rustfmt.toml` holds the formatter
+settings). See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ```bash
 cargo fmt --all -- --check
