@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-11-12
+
 ### Fixed
 
 - **A damaged stats, album-flag or loved file is no longer silently replaced.**

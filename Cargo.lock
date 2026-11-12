@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "bard"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "bard-audio",
@@ -675,7 +675,7 @@ dependencies = [
 
 [[package]]
 name = "bard-audio"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "opusic-sys",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "bard-core"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "dirs 7.0.0",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "bard-services"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "aes 0.9.4",
  "anyhow",
