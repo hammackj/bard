@@ -7,6 +7,25 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Streamer mode no longer leaves the stream silent.** When a track had
+  just ended and was flagged or blocked before Bard moved on, the track
+  replacing it was loaded paused, as if you had paused. It now plays.
+- **The sleep timer pauses even between tracks.** Running out while one
+  track had ended and the next had not yet started, it did nothing and the
+  music played on. Play, from media keys or the tray, right after a pause
+  now resumes instead of being ignored.
+- **Saving play counts and flags no longer holds up the window.** A save in
+  progress kept counting a play, or reading the counts, waiting until it
+  was on disk. The now-playing file for OBS and the cover cache's records
+  are no longer forced to disk on every write, which on a busy disk could
+  stall each track change and pause.
+- **A stats, flags or loved file damaged into non-text bytes is set aside**
+  like any other damaged file, instead of leaving every session unsaved.
+- **Bard starts on filesystems without file locking** (some network home
+  folders), without the single-instance lock, instead of refusing to.
+
 ## [0.2.6] — 2026-11-12
 
 ### Fixed

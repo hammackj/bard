@@ -28,6 +28,13 @@ pub struct DataDirLock {
     path: PathBuf,
 }
 
+/// The filesystem does not do locks, as opposed to the lock being refused.
+fn locks_unsupported(e: &std::io::Error) -> bool {
+    const ENOLCK: i32 = 37;
+    const EOPNOTSUPP: i32 = 95;
+    e.kind() == std::io::ErrorKind::Unsupported || matches!(e.raw_os_error(), Some(ENOLCK | EOPNOTSUPP))
+}
+
 impl DataDirLock {
     /// Takes the lock for `data_dir`, creating the directory if needed.
     /// `Ok(None)` when another process holds it.
@@ -39,11 +46,32 @@ impl DataDirLock {
         match file.try_lock() {
             Ok(()) => Ok(Some(DataDirLock { _file: file, path })),
             Err(TryLockError::WouldBlock) => Ok(None),
+            // A filesystem with no locks at all (some network homes): run as
+            // before the lock existed rather than not at all. The window
+            // raise over the session bus still stops most second launches.
+            Err(TryLockError::Error(e)) if locks_unsupported(&e) => {
+                eprintln!("[bard] {} cannot be locked ({e}); running without the single-instance lock", path.display());
+                Ok(Some(DataDirLock { _file: file, path }))
+            }
             Err(TryLockError::Error(e)) => Err(e),
         }
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_filesystem_without_locks_runs_unlocked() {
+        assert!(locks_unsupported(&std::io::Error::from_raw_os_error(37)));
+        assert!(locks_unsupported(&std::io::Error::from_raw_os_error(95)));
+        assert!(locks_unsupported(&std::io::Error::from(std::io::ErrorKind::Unsupported)));
+        assert!(!locks_unsupported(&std::io::Error::from_raw_os_error(13)), "permission denied still stops");
+        assert!(!locks_unsupported(&std::io::Error::from_raw_os_error(5)), "an I/O error still stops");
     }
 }
