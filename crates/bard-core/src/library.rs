@@ -304,8 +304,8 @@ mod tests {
 
     #[test]
     fn id_is_sha1_of_the_resolved_path() {
-        // sha1("/home/user/Music/Artist/Album/01 - Track.flac"),
-        // the id the Electron build gave that track (it is in the real stats.json).
+        // The first 16 hex digits of sha1(path), as the Electron build's ids
+        // were, so stats.json carries over.
         let p = "/home/user/Music/Artist/Album/01 - Track.flac";
         assert_eq!(track_id(p), "50f36209b3904081");
         // Dots fold, as path.resolve does.
