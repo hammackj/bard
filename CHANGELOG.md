@@ -7,6 +7,8 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-12
+
 Bard is a native Rust app.
 
 ### Changed
