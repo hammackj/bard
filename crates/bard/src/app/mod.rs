@@ -39,7 +39,7 @@ mod output;
 mod reduce;
 mod shell;
 
-pub use launch::Launch;
+pub use launch::{Launch, Start};
 
 // CoreEvent carries a whole config or track, so it is the large variant.
 // These go through a channel a few times a second at most, and boxing it

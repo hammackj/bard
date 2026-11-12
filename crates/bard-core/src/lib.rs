@@ -109,6 +109,7 @@ pub mod electron_device;
 pub mod gain;
 pub mod history;
 pub mod library;
+pub mod lock;
 mod nowplaying;
 pub mod paths;
 pub mod playlist;
@@ -122,4 +123,5 @@ pub mod util;
 
 pub use bard::{Bard, CoreEvent, LibraryScanner, Options, Transition, default_data_dir};
 pub use gain::{gain_db_for, gain_multiplier};
+pub use lock::DataDirLock;
 pub use stores::{LoadState, PLAY_THRESHOLD_RATIO, PLAY_THRESHOLD_SEC};

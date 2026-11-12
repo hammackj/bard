@@ -16,6 +16,11 @@ so minor bumps are where breaking changes land.
   cannot be read is left alone for the session. Either way Bard says so and
   keeps playing. Saves that fail are retried, with a notice, and every save
   reaches the disk before it replaces the old file.
+- **Two Bards can no longer run on the same data at once.** Launching twice
+  in the same instant, or without a session bus, could start a second copy
+  that wrote the same stats and settings. Bard now takes a lock on its data
+  directory before opening anything; a second launch raises the running
+  window and exits, and exits even when the raise fails.
 
 ## [0.2.4] — 2026-11-12
 
