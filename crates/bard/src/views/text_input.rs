@@ -52,7 +52,9 @@ actions!(
     ]
 );
 
-/// Linux bindings, in the "TextInput" key context.
+/// Text-field bindings, in the "TextInput" key context. `secondary` is Cmd
+/// on macOS and Ctrl elsewhere; word movement is Alt on macOS, Ctrl
+/// elsewhere, and macOS adds Cmd+arrows for line start and end.
 pub fn bind_keys(cx: &mut App) {
     let c = Some("TextInput");
     cx.bind_keys([
@@ -62,30 +64,46 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("right", Right, c),
         KeyBinding::new("shift-left", SelectLeft, c),
         KeyBinding::new("shift-right", SelectRight, c),
-        KeyBinding::new("ctrl-a", SelectAll, c),
-        KeyBinding::new("ctrl-v", Paste, c),
-        KeyBinding::new("ctrl-c", Copy, c),
-        KeyBinding::new("ctrl-x", Cut, c),
+        KeyBinding::new("secondary-a", SelectAll, c),
+        KeyBinding::new("secondary-v", Paste, c),
+        KeyBinding::new("secondary-c", Copy, c),
+        KeyBinding::new("secondary-x", Cut, c),
         KeyBinding::new("home", Home, c),
         KeyBinding::new("end", End, c),
         KeyBinding::new("enter", Submit, c),
         KeyBinding::new("shift-enter", SubmitShift, c),
         KeyBinding::new("escape", Cancel, c),
+        KeyBinding::new("shift-home", SelectHome, c),
+        KeyBinding::new("shift-end", SelectEnd, c),
+        KeyBinding::new("secondary-z", Undo, c),
+        KeyBinding::new("secondary-shift-z", Redo, c),
+        KeyBinding::new("secondary-y", Redo, c),
+        // Only a numeric field takes these; others pass them on (the filter's
+        // Up/Down move the library selection).
+        KeyBinding::new("up", StepUp, c),
+        KeyBinding::new("down", StepDown, c),
+    ]);
+    #[cfg(not(target_os = "macos"))]
+    cx.bind_keys([
         KeyBinding::new("ctrl-left", WordLeft, c),
         KeyBinding::new("ctrl-right", WordRight, c),
         KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
         KeyBinding::new("ctrl-shift-right", SelectWordRight, c),
         KeyBinding::new("ctrl-backspace", BackspaceWord, c),
         KeyBinding::new("ctrl-delete", DeleteWord, c),
-        KeyBinding::new("shift-home", SelectHome, c),
-        KeyBinding::new("shift-end", SelectEnd, c),
-        KeyBinding::new("ctrl-z", Undo, c),
-        KeyBinding::new("ctrl-shift-z", Redo, c),
-        KeyBinding::new("ctrl-y", Redo, c),
-        // Only a numeric field takes these; others pass them on (the filter's
-        // Up/Down move the library selection).
-        KeyBinding::new("up", StepUp, c),
-        KeyBinding::new("down", StepDown, c),
+    ]);
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([
+        KeyBinding::new("alt-left", WordLeft, c),
+        KeyBinding::new("alt-right", WordRight, c),
+        KeyBinding::new("alt-shift-left", SelectWordLeft, c),
+        KeyBinding::new("alt-shift-right", SelectWordRight, c),
+        KeyBinding::new("alt-backspace", BackspaceWord, c),
+        KeyBinding::new("alt-delete", DeleteWord, c),
+        KeyBinding::new("cmd-left", Home, c),
+        KeyBinding::new("cmd-right", End, c),
+        KeyBinding::new("cmd-shift-left", SelectHome, c),
+        KeyBinding::new("cmd-shift-right", SelectEnd, c),
     ]);
 }
 

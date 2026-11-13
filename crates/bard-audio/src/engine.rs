@@ -545,9 +545,13 @@ impl NullOutput {
                 let now = Instant::now();
                 if next > now {
                     std::thread::sleep(next - now);
-                } else {
+                } else if now - next > Duration::from_millis(250) {
+                    // Far behind (a suspended machine): start the clock afresh.
                     next = now;
                 }
+                // Otherwise behind by an oversleep: render the next period at
+                // once and catch up, so the output keeps real time. macOS
+                // oversleeps enough to slow playback measurably without it.
             }
         })?;
         Ok(NullOutput { active, quit, thread: Some(thread) })

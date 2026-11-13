@@ -29,20 +29,31 @@ running under a stream without wondering whether the next track is licensed.
 - **Even volume.** ReplayGain normalisation by track or album, plus crossfade.
 - Plays MP3, FLAC, WAV, Ogg Vorbis, M4A (AAC/ALAC) and Opus.
 - Album art, a live visualiser, repeat one/all and a sleep timer.
-- A tray icon with a now-playing preview. MPRIS lets desktop media controls
-  work, and global media keys are available if you opt in.
+- Runs on Linux, macOS and Windows.
+- On Linux, a tray icon with a now-playing preview, and MPRIS, so desktop
+  media controls and media keys work.
 
 ## Requirements
 
-Linux with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
-(Wayland). The tray needs a StatusNotifierItem host, which Plasma provides.
+- **Linux** with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
+  (Wayland). The tray needs a StatusNotifierItem host, which Plasma provides.
+- **macOS** 11 or newer on Apple Silicon.
+- **Windows** 10 or 11, x86_64.
+
+The OBS password is kept in the system keyring: a Secret Service provider on
+Linux (KWallet, GNOME Keyring or KeePassXC), the Keychain on macOS, and
+Credential Manager on Windows.
+
+On macOS and Windows, Bard has no tray icon or media-key support yet. Closing
+the window quits it.
 
 ## Installing
 
 ### From a release
 
 [Releases](https://github.com/hammackj/bard/releases) have a Debian package
-and a tarball for x86_64 Linux.
+and a tarball for x86_64 Linux, a zipped app for macOS on Apple Silicon, and a
+zip for Windows.
 
 **Debian / Ubuntu 24.04 or newer:**
 
@@ -67,6 +78,18 @@ install -Dm755 bard ~/.local/bin/bard
 
 That adds a launcher and icons for your user. The binary needs the PipeWire,
 Opus and xkbcommon libraries, which most desktops already have.
+
+**macOS:** unzip `bard-<version>-aarch64-macos.zip` and move **Bard** to
+Applications. It isn't notarised, so the first time, right-click it and
+choose **Open**, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Bard.app
+```
+
+**Windows:** extract `bard-<version>-x86_64-windows.zip` anywhere and run
+`bard.exe`. It isn't code-signed, so SmartScreen may ask first: choose
+**More info**, then **Run anyway**.
 
 ### From source
 
@@ -96,6 +119,11 @@ That builds the release binary, installs it to `~/.local/bin/bard`, and
 registers a `.desktop` entry and the icons in your per-user XDG directories.
 `--desktop` also puts a launcher on the desktop.
 
+On **macOS** you need the Xcode command line tools and CMake
+(`brew install cmake`); on **Windows**, the Visual Studio C++ build tools and
+CMake. Then `cargo build --release -p bard` gives you `target/release/bard`
+(`bard.exe` on Windows). There's no install script for either yet.
+
 Run it again after pulling to update; `cargo build` alone doesn't touch the
 copy your launcher runs. Every build records its commit, shown next to the
 version in Settings → About and the avatar menu, with `-dirty` if it was built
@@ -105,7 +133,7 @@ from uncommitted changes.
 
 1. Launch Bard and click **Choose a music folder**. Tags and embedded art are
    read once and cached.
-2. Open **Settings** (`Ctrl+,`) to set the output device, normalisation,
+2. Open **Settings** (`Ctrl+,`, or `Cmd+,` on macOS) to set the output device, normalisation,
    crossfade and streamer mode.
 
 ### The OBS overlay
@@ -119,7 +147,9 @@ exposing it would put your library and its artwork on the network. Most
 royalty-free catalogues allow use _within_ a stream but not redistributing the
 audio, and keeping the overlay local helps you stay inside that.
 
-`nowplaying.json` is written to `~/.config/bard`, atomically, whenever the
+`nowplaying.json` is written to Bard's data folder (`~/.config/bard` on
+Linux, `~/Library/Application Support/bard` on macOS, `%APPDATA%\bard` on
+Windows), atomically, whenever the
 track, play state or queue length changes. It isn't rewritten on every
 progress tick. You can turn it off in Settings.
 
@@ -150,7 +180,7 @@ silently.
 | `/`           | Focus the library filter |
 | `Enter`       | Queue the selected track |
 | `Shift+Enter` | Play it now              |
-| `Ctrl+,`      | Settings                 |
+| `Ctrl+,`      | Settings (`Cmd+,` on Mac) |
 | `?`           | Shortcut list            |
 
 Global media keys are **off by default**: once Bard takes them, they stop

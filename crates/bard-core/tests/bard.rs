@@ -676,6 +676,8 @@ fn nowplaying_json_can_be_turned_off() {
     assert!(!f.dir().join("nowplaying.json").exists());
 }
 
+// Unix paths: on Windows they resolve onto the current drive.
+#[cfg(unix)]
 #[test]
 fn add_library_path_dedupes_and_persists() {
     let mut f = fixture(false);
