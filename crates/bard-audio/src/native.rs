@@ -111,8 +111,14 @@ struct Router {
     target: Option<String>,
     /// The device the stream is on, `None` when it is on the default.
     on: Option<String>,
+    /// The id of the device the stream was opened on, default or not: a
+    /// default that has since changed is followed by reopening.
+    opened: Option<String>,
     stream: Option<cpal::Stream>,
     outputs: Vec<OutputDevice>,
+    /// The last error reported, so a device that keeps failing to open is
+    /// reported once rather than on every poll.
+    last_error: Option<String>,
 }
 
 impl Router {
@@ -126,13 +132,19 @@ impl Router {
             active: false,
             target: None,
             on: None,
+            opened: None,
             stream: None,
             outputs: Vec::new(),
+            last_error: None,
         }
     }
 
-    fn error(&self, msg: impl std::fmt::Display) {
-        let _ = self.events.send(PlayerEvent::Error(format!("audio output: {msg}")));
+    fn error(&mut self, msg: impl std::fmt::Display) {
+        let msg = format!("audio output: {msg}");
+        if self.last_error.as_ref() != Some(&msg) {
+            let _ = self.events.send(PlayerEvent::Error(msg.clone()));
+            self.last_error = Some(msg);
+        }
     }
 
     fn run(&mut self, rx: mpsc::Receiver<Cmd>) {
@@ -162,7 +174,12 @@ impl Router {
                         .target
                         .as_ref()
                         .is_some_and(|t| self.on.as_ref() != Some(t) && self.outputs.iter().any(|o| &o.id == t));
-                    if back || self.stream.is_none() {
+                    // Not every backend moves a default-device stream when the
+                    // system default changes; reopen on the new one if not.
+                    let moved = self.target.is_none()
+                        && self.stream.is_some()
+                        && self.host.default_output_device().and_then(|d| device_id(&d)) != self.opened;
+                    if back || moved || self.stream.is_none() {
                         self.rebuild();
                     }
                 }
@@ -192,7 +209,7 @@ impl Router {
         }
     }
 
-    fn apply_active(&self) {
+    fn apply_active(&mut self) {
         let Some(stream) = &self.stream else { return };
         let res = if self.active { stream.play() } else { stream.pause() };
         if let Err(e) = res {
@@ -218,12 +235,15 @@ impl Router {
         let Some(device) = device else {
             // No device at all; the poll tries again.
             self.on = None;
+            self.opened = None;
             return;
         };
         match self.open(&device) {
             Ok(stream) => {
                 self.stream = Some(stream);
                 self.on = on;
+                self.opened = device_id(&device);
+                self.last_error = None;
                 self.apply_active();
             }
             Err(e) => {

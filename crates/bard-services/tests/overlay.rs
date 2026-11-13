@@ -54,7 +54,11 @@ fn start() -> (tempfile::TempDir, Arc<Mutex<Bard>>, Services, u16) {
         ..Default::default()
     };
     let services = Services::start(bard.clone(), Arc::new(NoControls), opts);
-    (dir, bard, services, port)
+    // Normally `port`; the next one up if another test took it between
+    // `free_port` and the bind (see walks_past_a_taken_port...).
+    let bound = services.overlay_port().expect("overlay bound");
+    assert!((port..port + 16).contains(&bound), "asked for {port}, bound {bound}");
+    (dir, bard, services, bound)
 }
 
 #[test]

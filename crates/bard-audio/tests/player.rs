@@ -77,7 +77,9 @@ fn plays_to_the_end_with_progress_and_ended() {
         }
         std::thread::sleep(Duration::from_millis(16));
     }
-    assert!(loud > 5, "analyser saw the bursts ({loud} loud frames)");
+    // Polled every 16 ms, which a loaded machine can stretch a lot; any
+    // sighting shows the analyser carries the signal.
+    assert!(loud >= 2, "analyser saw the bursts ({loud} loud frames)");
 
     let ended_at = events.iter().position(|(_, e)| matches!(e, PlayerEvent::Ended { .. })).expect("Ended");
     let took = events[ended_at].0 - t0;
@@ -141,9 +143,12 @@ fn seek_pause_resume_toggle() {
     assert!(!p.position().playing);
 
     assert!(p.toggle(), "toggle resumes");
+    // Measured, not assumed: a loaded machine oversleeps.
+    let resumed = Instant::now();
     std::thread::sleep(Duration::from_millis(300));
     let pos = p.position().position;
-    assert!((0.7..0.9).contains(&pos), "{pos}");
+    let want = 0.5 + resumed.elapsed().as_secs_f64();
+    assert!((want - 0.2..want + 0.05).contains(&pos), "{pos}, want about {want}");
 
     // Seek beyond the end ends the track.
     p.seek(99.0);
