@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Bard.app's Info.plist. The release workflow fills in @VERSION@. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Bard</string>
+    <key>CFBundleDisplayName</key>
+    <string>Bard</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.hammackj.bard</string>
+    <key>CFBundleExecutable</key>
+    <string>bard</string>
+    <key>CFBundleIconFile</key>
+    <string>bard</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright (c) 2026 hammackj. MIT licence.</string>
+</dict>
+</plist>

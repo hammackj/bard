@@ -114,6 +114,15 @@ impl Live {
         }
     }
 
+    /// Pumps until `done` holds, or `limit` passes. For waits on a fade to
+    /// finish, which a loaded CI machine can stretch past its nominal length.
+    fn pump_until(&mut self, limit: Duration, done: impl Fn(&Self) -> bool) {
+        let end = Instant::now() + limit;
+        while !done(self) && Instant::now() < end {
+            self.pump(Duration::from_millis(20));
+        }
+    }
+
     /// Plays `first` with `next` queued behind it, and waits until it is heard.
     fn start(&mut self, first: &str, next: &[&str]) {
         self.core(|b| {
@@ -563,7 +572,9 @@ fn a_normalisation_change_during_a_fade_belongs_to_the_incoming_track() {
             during <= outgoing + 0.01,
             "{from:?}->{to:?}: the outgoing track keeps its level: {during} > {outgoing}"
         );
-        l.pump(Duration::from_millis(2000));
+        // The fade takes 2 s from the skip: 1 s out, 1 s in.
+        l.pump(Duration::from_millis(1700));
+        l.pump_until(Duration::from_secs(3), |l| (l.fx.player.current_gain() - want).abs() < 0.02);
         assert!(l.heard("s2"));
         let g = l.fx.player.current_gain();
         assert!((g - want).abs() < 0.02, "{from:?}->{to:?}: s2 at {g}, want {want}");

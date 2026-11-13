@@ -399,8 +399,12 @@ mod tests {
                     *left -= 1;
                     anyhow::bail!("disk full");
                 }
+                // Recorded once on disk, so a test that sees the value here
+                // can read the file (Windows writes slowly enough to lose
+                // that race otherwise).
+                write(p, c)?;
                 w.lock().unwrap().push(c.audio.volume);
-                write(p, c)
+                Ok(())
             }),
         );
         let said = Arc::new(Mutex::new(Vec::new()));

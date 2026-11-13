@@ -52,7 +52,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast
 
       # The release workflow builds the .deb from a release binary; a debug
       # build is enough to check the packaging still works and that $auto
@@ -89,4 +89,4 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --no-fail-fast

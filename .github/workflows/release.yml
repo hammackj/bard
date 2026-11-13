@@ -1,10 +1,18 @@
 name: Release
 
-# Builds the Linux x86_64 binary for a version tag and publishes it as a
-# GitHub Release, with that version's CHANGELOG section as the notes.
+# Builds Bard for a version tag and publishes a GitHub Release with that
+# version's CHANGELOG section as the notes:
+#
+# - Linux x86_64: a tarball and a .deb
+# - macOS (Apple Silicon): Bard.app, zipped
+# - Windows x86_64: bard.exe, zipped
 #
 # Runs on pushing a tag (vX.Y.Z), or by hand for a tag that already exists:
-#   gh workflow run Release -f tag=v0.2.14
+#   gh workflow run Release -f tag=v0.2.15
+#
+# A dry run builds and packages a branch without publishing; the packages
+# are left as the run's artifacts:
+#   gh workflow run Release --ref my-branch -f dry_run=true
 
 on:
   push:
@@ -12,19 +20,56 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to release, e.g. v0.2.14
-        required: true
+        description: Existing tag to release, e.g. v0.2.15 (empty for a dry run of the branch)
+        required: false
+      dry_run:
+        description: Build and package only; publish nothing
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Check the tag matches Cargo.toml and the CHANGELOG
+        id: check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run of $TAG at version $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG does not match Cargo.toml version $version"
+            exit 1
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::no CHANGELOG section for $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -47,16 +92,6 @@ jobs:
         with:
           tool: cargo-deb
 
-      - name: Check the tag matches Cargo.toml
-        run: |
-          version="$(cargo metadata --format-version 1 --no-deps \
-            | python3 -c 'import json,sys; print({p["name"]: p["version"] for p in json.load(sys.stdin)["packages"]}["bard"])')"
-          if [ "v$version" != "$TAG" ]; then
-            echo "::error::tag $TAG does not match Cargo.toml version $version"
-            exit 1
-          fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-
       - name: Build
         run: |
           export BARD_COMMIT="$(git rev-parse --short HEAD)"
@@ -71,8 +106,8 @@ jobs:
           cp -r resources/icons resources/icon.svg resources/bard.desktop "dist/$name/resources/"
           cp README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
+          rm -r "dist/$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
-          echo "ASSET=dist/$name.tar.gz" >> "$GITHUB_ENV"
 
       - name: Debian package
         run: |
@@ -87,7 +122,117 @@ jobs:
             exit 1
           fi
           (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-          echo "DEB=$deb" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: |
+          export BARD_COMMIT="$(git rev-parse --short HEAD)"
+          cargo build --release --locked -p bard
+
+      - name: Bundle Bard.app
+        run: |
+          app=dist/Bard.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          install -m 755 target/release/bard "$app/Contents/MacOS/bard"
+
+          iconset="$RUNNER_TEMP/bard.iconset"
+          mkdir -p "$iconset"
+          for s in 16 32 128 256 512; do
+            cp "resources/icons/icon-$s.png" "$iconset/icon_${s}x${s}.png"
+            cp "resources/icons/icon-$((s * 2)).png" "$iconset/icon_${s}x${s}@2x.png"
+          done
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/bard.icns"
+
+          sed "s/@VERSION@/$VERSION/g" resources/macos/Info.plist > "$app/Contents/Info.plist"
+          plutil -lint "$app/Contents/Info.plist"
+
+          # Not notarised: an ad-hoc signature only, which Apple Silicon
+          # needs to run the binary at all.
+          codesign --force --deep --sign - "$app"
+          codesign --verify --verbose "$app"
+
+          name="bard-$VERSION-aarch64-macos"
+          (cd dist && ditto -c -k --keepParent Bard.app "$name.zip" && rm -r Bard.app)
+          (cd dist && shasum -a 256 "$name.zip" > "$name.zip.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-2025
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: |
+          export BARD_COMMIT="$(git rev-parse --short HEAD)"
+          cargo build --release --locked -p bard
+
+      - name: Package
+        run: |
+          name="bard-$VERSION-x86_64-windows"
+          mkdir -p "dist/$name"
+          cp target/release/bard.exe README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
+          (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null && rm -r "$name")
+          (cd dist && sha256sum "$name.zip" > "$name.zip.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, linux, macos, windows]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Release notes from CHANGELOG
         run: |
@@ -96,13 +241,11 @@ jobs:
             on && /^## \[/ { exit }
             on { print }
           ' CHANGELOG.md > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then
-            echo "::error::no CHANGELOG section for $VERSION"
-            exit 1
-          fi
           cat >> notes.md <<'EOF'
 
           ---
+
+          ### Linux
 
           **Debian / Ubuntu 24.04 or newer:** download the `.deb` and run
           `sudo apt install ./bard-player_*_amd64.deb`.
@@ -115,19 +258,35 @@ jobs:
           ./scripts/install-desktop.sh ~/.local/bin/bard
           ```
 
-          That adds a launcher and icons for your user. Bard needs Linux with
-          PipeWire, and the `libpipewire`, `libopus` and `libxkbcommon` runtime
+          That adds a launcher and icons for your user. Bard needs PipeWire,
+          and the `libpipewire`, `libopus` and `libxkbcommon` runtime
           libraries, which most desktops already have.
+
+          ### macOS (Apple Silicon)
+
+          Download `bard-*-aarch64-macos.zip`, unzip it and move **Bard** to
+          Applications. The app is not notarised, so the first time, right-click
+          it and choose **Open**, or run
+          `xattr -dr com.apple.quarantine /Applications/Bard.app`.
+
+          ### Windows
+
+          Download `bard-*-x86_64-windows.zip`, extract it anywhere and run
+          `bard.exe`. It is not code-signed, so SmartScreen may ask you to
+          confirm: **More info**, then **Run anyway**.
+
+          On macOS and Windows there is no tray icon or media-key support yet.
           EOF
 
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ls -l dist
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" "$ASSET.sha256" "$DEB" "$DEB.sha256" --clobber
+            gh release upload "$TAG" dist/* --clobber
             gh release edit "$TAG" --notes-file notes.md
           else
-            gh release create "$TAG" "$ASSET" "$ASSET.sha256" "$DEB" "$DEB.sha256" \
+            gh release create "$TAG" dist/* \
               --title "Bard $VERSION" --notes-file notes.md --verify-tag
           fi

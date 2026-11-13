@@ -303,6 +303,7 @@ impl Library {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn id_is_sha1_of_the_resolved_path() {
         // The first 16 hex digits of sha1(path), as the Electron build's ids
@@ -312,6 +313,14 @@ mod tests {
         // Dots fold, as path.resolve does.
         let dotted = "/home/user/Music/./Artist/x/../Album/01 - Track.flac";
         assert_eq!(track_id(dotted), "50f36209b3904081");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn id_folds_dots_and_keeps_the_drive() {
+        let id = track_id(r"D:\Music\Artist\Album\01 - Track.flac");
+        assert_eq!(track_id(r"D:\Music\.\Artist\x\..\Album\01 - Track.flac"), id);
+        assert_ne!(track_id(r"E:\Music\Artist\Album\01 - Track.flac"), id);
     }
 
     #[test]
