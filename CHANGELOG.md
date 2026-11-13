@@ -21,6 +21,8 @@ so minor bumps are where breaking changes land.
   Ubuntu 24.04 or newer.
 - `resources/bard.desktop`, a standard desktop entry for packages, and an
   AUR PKGBUILD (`bard-player-bin`) under `packaging/aur/`.
+- **Build provenance attestations** for every release file, so a download
+  can be checked with `gh attestation verify <file> -R hammackj/bard`.
 
 ## [0.2.15] — 2026-11-12
 

@@ -259,6 +259,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Build provenance attestations: a Sigstore-signed record that each
+      # package was built by this workflow from this commit.
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -270,6 +274,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*
 
       - name: Release notes from CHANGELOG
         run: |
@@ -316,6 +325,16 @@ jobs:
           `bard-*-x86_64-windows.zip` anywhere and run `bard.exe`. Neither is
           code-signed, so SmartScreen may ask you to confirm: **More info**,
           then **Run anyway**.
+
+          ### Verifying a download
+
+          Every package has a build provenance attestation, which shows it
+          was built by this repository's Release workflow. With the GitHub
+          CLI:
+
+          ```bash
+          gh attestation verify <file> -R hammackj/bard
+          ```
 
           **macOS and Windows support is experimental**, with no tray icon or
           media-key support yet. Please report problems at

@@ -99,6 +99,18 @@ portable copy instead, extract `bard-<version>-x86_64-windows.zip` anywhere
 and run `bard.exe`. Neither is code-signed, so SmartScreen may ask first:
 choose **More info**, then **Run anyway**.
 
+**Verifying a download:** every release file has a
+[build provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations),
+a signed record that it was built by this repository's Release workflow from
+the tagged commit. Check one with the GitHub CLI:
+
+```bash
+gh attestation verify bard-<version>-x86_64-linux.tar.gz -R hammackj/bard
+```
+
+This proves where the file came from. It doesn't stop the macOS or Windows
+warnings above, which need Apple and Microsoft code signing.
+
 ### Uninstalling
 
 Uninstalling removes the app. Your settings, play counts, loved tracks,
