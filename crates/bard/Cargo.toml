@@ -17,8 +17,9 @@ futures = "0.3"
 unicode-segmentation = "1"
 gpui = { package = "gpui-pre", version = "=0.3.12" }
 # Wayland and X11 are opt-in: without them GPUI silently runs headless and
-# no window ever reaches the screen.
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["wayland", "x11"] }
+# no window ever reaches the screen. font-kit is macOS's text system: without
+# it GPUI draws windows with no text at all.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.12", features = ["wayland", "x11", "font-kit"] }
 gpui_wgpu = { package = "gpui-pre-wgpu", version = "=0.3.12", optional = true }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
