@@ -66,3 +66,27 @@ jobs:
           echo "Depends: $depends"
           grep -q libpipewire <<<"$depends"
           dpkg-deb -c "$deb" | grep -q './usr/share/applications/bard.desktop'
+
+  # macOS and Windows: the same lints and tests. No system packages needed;
+  # libopus is built from source (CMake is on both runner images).
+  native:
+    name: clippy, test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace

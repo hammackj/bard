@@ -5,9 +5,9 @@
 //! |---|---|
 //! | `overlay.ts` (express + SSE) | [`overlay`] (axum), 127.0.0.1 only |
 //! | `obs.ts`, `streamer.ts` | [`obs`]; arming is [`Bard::arm`] |
-//! | `secrets.ts` (safeStorage) | [`secrets`] (Secret Service), plus a one-time migration of `obs-password.bin` |
-//! | Chromium's implicit MPRIS | [`mpris`], `org.mpris.MediaPlayer2.bard` |
-//! | `tray.ts` | [`tray`] (StatusNotifierItem) |
+//! | `secrets.ts` (safeStorage) | [`secrets`] (Secret Service, Keychain or Credential Manager), plus a one-time migration of `obs-password.bin` |
+//! | Chromium's implicit MPRIS | `mpris`, `org.mpris.MediaPlayer2.bard` (Linux) |
+//! | `tray.ts` | `tray` (StatusNotifierItem; Linux) |
 //! | `shortcuts.ts` | [`media_keys`]: nothing is grabbed; keys arrive over MPRIS |
 //!
 //! # Wiring it into the app
@@ -57,10 +57,12 @@
 //! [`Bard::set_overlay_port`]: bard_core::Bard::set_overlay_port
 
 pub mod media_keys;
+#[cfg(target_os = "linux")]
 pub mod mpris;
 pub mod obs;
 pub mod overlay;
 pub mod secrets;
+#[cfg(target_os = "linux")]
 pub mod tray;
 
 use bard_core::types::StreamerSource;
@@ -99,7 +101,9 @@ pub trait AppControls: Send + Sync + 'static {
     fn quit(&self);
 }
 
-/// Which services to run. All on by default.
+/// Which services to run. All on by default where the platform has them:
+/// MPRIS and the tray are D-Bus services, so they are Linux-only, and off
+/// (and ignored) elsewhere.
 #[derive(Debug, Clone)]
 pub struct ServicesOptions {
     pub overlay: bool,
@@ -119,9 +123,9 @@ impl Default for ServicesOptions {
         ServicesOptions {
             overlay: true,
             obs: true,
-            mpris: true,
-            tray: true,
-            mpris_bus_suffix: mpris::BUS_SUFFIX.into(),
+            mpris: cfg!(target_os = "linux"),
+            tray: cfg!(target_os = "linux"),
+            mpris_bus_suffix: "bard".into(),
             obs_password: secrets::ObsPassword::default(),
             migrate_obs_password: true,
         }
@@ -132,9 +136,13 @@ struct Inner {
     bard: Arc<Mutex<Bard>>,
     rt: Handle,
     data_dir: PathBuf,
+    /// For MPRIS art URLs.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     artwork_dir: PathBuf,
     overlay: Mutex<Option<overlay::OverlayServer>>,
+    #[cfg(target_os = "linux")]
     mpris: Option<mpris::Mpris>,
+    #[cfg(target_os = "linux")]
     tray: Option<tray::Tray>,
     obs_enabled: bool,
     /// Set once the keyring thread has run; until then the watcher waits.
@@ -216,7 +224,12 @@ impl Services {
             None
         };
 
+        // MPRIS and the tray, on D-Bus.
+        #[cfg(not(target_os = "linux"))]
+        let _ = (&controls, &item);
+
         // MPRIS.
+        #[cfg(target_os = "linux")]
         let mpris = if opts.mpris {
             let initial = mpris::PlayerState {
                 track: item.as_ref().map(|i| mpris::MprisTrack::from_item(i, &artwork_dir)),
@@ -239,6 +252,7 @@ impl Services {
         };
 
         // Tray.
+        #[cfg(target_os = "linux")]
         let tray = if opts.tray {
             let initial = tray::TrayState {
                 current: item.as_ref().map(|i| (i.track.title.clone(), i.track.artist.clone())),
@@ -264,7 +278,9 @@ impl Services {
             data_dir,
             artwork_dir,
             overlay: Mutex::new(overlay),
+            #[cfg(target_os = "linux")]
             mpris,
+            #[cfg(target_os = "linux")]
             tray,
             obs_enabled: opts.obs,
             obs_ready: false.into(),
@@ -311,13 +327,16 @@ impl Services {
                 if let Some(o) = i.overlay.lock().unwrap().as_ref() {
                     o.push(np);
                 }
+                #[cfg(target_os = "linux")]
                 if let Some(m) = &i.mpris {
                     m.update(mpris::Update::Progress(np.clone()));
                 }
+                #[cfg(target_os = "linux")]
                 if let Some(t) = &i.tray {
                     t.update(tray::TrayState { playing: np.is_playing, queue_length: np.queue_length, ..t.state() });
                 }
             }
+            #[cfg(target_os = "linux")]
             CoreEvent::NowPlaying(item) => {
                 if let Some(m) = &i.mpris {
                     let track = item.as_ref().map(|it| mpris::MprisTrack::from_item(it, &i.artwork_dir));
@@ -333,6 +352,7 @@ impl Services {
                 }
             }
             CoreEvent::ConfigChanged(c) => {
+                #[cfg(target_os = "linux")]
                 if let Some(m) = &i.mpris {
                     m.update(mpris::Update::Volume(c.audio.volume));
                 }
@@ -363,12 +383,20 @@ impl Services {
     /// With no tray, closing the window must quit rather than hide to it, or
     /// Bard would keep running with no way back to it.
     pub fn tray_running(&self) -> bool {
-        self.inner.tray.as_ref().is_some_and(|t| t.is_running())
+        #[cfg(target_os = "linux")]
+        let running = self.inner.tray.as_ref().is_some_and(|t| t.is_running());
+        #[cfg(not(target_os = "linux"))]
+        let running = false;
+        running
     }
 
     /// The MPRIS bus name owned, if MPRIS is running.
     pub fn mpris_bus_name(&self) -> Option<&str> {
-        self.inner.mpris.as_ref().map(|m| m.bus_name())
+        #[cfg(target_os = "linux")]
+        let name = self.inner.mpris.as_ref().map(|m| m.bus_name());
+        #[cfg(not(target_os = "linux"))]
+        let name = None;
+        name
     }
 
     /// `secureStorageAvailable`. Blocking D-Bus call on first use; call it off
@@ -414,6 +442,7 @@ impl Services {
         {
             b.set_overlay_port(None);
         }
+        #[cfg(target_os = "linux")]
         if let Some(t) = &self.inner.tray {
             let awaiter = t.shutdown();
             let _ = rt.block_on(async { tokio::time::timeout(std::time::Duration::from_secs(1), awaiter).await });

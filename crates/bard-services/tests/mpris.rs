@@ -4,6 +4,8 @@
 //! Skipped (passes vacuously, with a note) when dbus-daemon or busctl is
 //! missing.
 
+#![cfg(target_os = "linux")]
+
 use bard_core::types::{NowPlaying, QueueItem, Track};
 use bard_core::{Bard, CoreEvent};
 use bard_services::{AppControls, Services, ServicesOptions, secrets::ObsPassword};

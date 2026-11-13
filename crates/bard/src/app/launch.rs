@@ -54,6 +54,7 @@ impl Launch {
     }
 
     /// The MPRIS name this instance owns, and a second launch looks for.
+    #[cfg(target_os = "linux")]
     /// Dev runs take one per data dir: one instance per set of files is what
     /// single-instance protects, and two scratch copies may run side by side.
     fn mpris_suffix(&self) -> String {
@@ -81,6 +82,15 @@ impl Launch {
     /// The running instance is found by its MPRIS name, which it owns for as
     /// long as it runs, and raised with MPRIS `Raise` -- the same request the
     /// desktop's media controls make.
+    ///
+    /// MPRIS is D-Bus, so on macOS and Windows there is nothing to ask: the
+    /// lock alone keeps a second copy from running.
+    #[cfg(not(target_os = "linux"))]
+    fn raise_running(&self) -> bool {
+        false
+    }
+
+    #[cfg(target_os = "linux")]
     fn raise_running(&self) -> bool {
         let name = format!("org.mpris.MediaPlayer2.{}", self.mpris_suffix());
         let raise = || -> zbus::Result<bool> {
@@ -128,6 +138,7 @@ impl Launch {
     pub(super) fn services(&self) -> ServicesOptions {
         if self.dev {
             ServicesOptions {
+                #[cfg(target_os = "linux")]
                 mpris_bus_suffix: self.mpris_suffix(),
                 obs_password: bard_services::secrets::ObsPassword::with_service("bard-dev"),
                 migrate_obs_password: false,

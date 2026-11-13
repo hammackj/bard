@@ -18,15 +18,22 @@ pub fn resolve(p: impl AsRef<Path>) -> PathBuf {
     } else {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")).join(p)
     };
-    let mut out = PathBuf::from("/");
+    // Starts from the path's own root: `/` on Unix, the drive (`C:\`) or
+    // share on Windows. `pop` never climbs above it, as `..` at the root of
+    // a Unix path stays there.
+    let mut out = PathBuf::new();
     for c in joined.components() {
         match c {
+            Component::Prefix(_) | Component::RootDir => out.push(c.as_os_str()),
             Component::ParentDir => {
                 out.pop();
             }
             Component::Normal(s) => out.push(s),
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => {}
+            Component::CurDir => {}
         }
+    }
+    if out.as_os_str().is_empty() {
+        out.push("/");
     }
     out
 }
@@ -69,10 +76,19 @@ mod tests {
 
     const ROOT: &str = "/home/user/Music";
 
+    #[cfg(unix)]
     #[test]
     fn resolve_folds_dots_like_node() {
         assert_eq!(resolve("/a/./b/../c/"), PathBuf::from("/a/c"));
         assert_eq!(resolve("/../x"), PathBuf::from("/x"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_keeps_the_drive() {
+        assert_eq!(resolve(r"D:\Music\.\A\..\B\x.flac"), PathBuf::from(r"D:\Music\B\x.flac"));
+        assert_eq!(resolve(r"D:\..\x"), PathBuf::from(r"D:\x"));
+        assert_eq!(resolve(r"\\nas\music\a\..\b"), PathBuf::from(r"\\nas\music\b"));
     }
 
     #[test]

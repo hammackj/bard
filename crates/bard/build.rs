@@ -24,4 +24,12 @@ fn main() {
         .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().nth(1).map(str::to_string))
         .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=BARD_RUSTC={version}");
+
+    // The icon Explorer and the taskbar show for bard.exe.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rerun-if-changed=../../resources/windows");
+        embed_resource::compile("../../resources/windows/bard.rc", embed_resource::NONE)
+            .manifest_optional()
+            .expect("embedding the Windows icon");
+    }
 }

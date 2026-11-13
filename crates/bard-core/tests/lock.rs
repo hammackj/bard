@@ -134,6 +134,7 @@ fn a_crashed_holder_leaves_no_stale_lock() {
     assert!(acquire_once_free(dir.path()).is_some());
 }
 
+#[cfg(unix)]
 #[test]
 fn aliases_of_one_directory_are_one_lock() {
     let dir = tempfile::tempdir().unwrap();

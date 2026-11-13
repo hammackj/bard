@@ -1,5 +1,8 @@
 //! Bard: a local music player for a curated library.
 
+// A release build on Windows is a GUI app: no console window behind it.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use gpui::*;
 use gpui_platform::application;
 

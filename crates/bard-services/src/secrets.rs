@@ -29,7 +29,6 @@
 //! [`Services::set_obs_password`]: crate::Services::set_obs_password
 
 use aes::cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// The keyring entry: service and user.
@@ -236,7 +235,14 @@ pub fn decrypt_safe_storage(blob: &[u8], secret: &[u8]) -> Option<String> {
     String::from_utf8(plain.to_vec()).ok()
 }
 
+/// The Electron build was Linux-only, so elsewhere there is nothing to find.
+#[cfg(not(target_os = "linux"))]
+fn chromium_safe_storage_secrets() -> Result<Vec<Vec<u8>>, String> {
+    Err("no Secret Service on this platform".into())
+}
+
 /// Every candidate OSCrypt secret the Secret Service holds for this app.
+#[cfg(target_os = "linux")]
 fn chromium_safe_storage_secrets() -> Result<Vec<Vec<u8>>, String> {
     use secret_service::EncryptionType;
     use secret_service::blocking::SecretService;
@@ -251,7 +257,7 @@ fn chromium_safe_storage_secrets() -> Result<Vec<Vec<u8>>, String> {
     ];
     let mut out = Vec::new();
     for attrs in searches {
-        let map: HashMap<&str, &str> = attrs.iter().copied().collect();
+        let map: std::collections::HashMap<&str, &str> = attrs.iter().copied().collect();
         let Ok(found) = ss.search_items(map) else { continue };
         for item in found.unlocked.iter().chain(found.locked.iter()) {
             if item.ensure_unlocked().is_err() {

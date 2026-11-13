@@ -1,4 +1,4 @@
-//! Smoke test you can hear: plays files through PipeWire.
+//! Smoke test you can hear: plays files through the system's audio output.
 //!
 //!     cargo run -p bard-audio --example play -- --list
 //!     cargo run -p bard-audio --example play -- [--output NODE] [--volume 0.5]

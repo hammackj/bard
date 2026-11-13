@@ -6,6 +6,8 @@
 //! Needs a running PipeWire session, so it is opt-in:
 //!     cargo test -p bard-audio --test pipewire -- --ignored --nocapture
 
+#![cfg(target_os = "linux")]
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::Receiver;
@@ -75,7 +77,7 @@ fn drain(rx: &Receiver<PlayerEvent>) -> Vec<PlayerEvent> {
 fn stream_appears_targets_and_moves_silently() {
     let node = format!("bard-audio-selftest-{}", std::process::id());
     let (p, rx) = Player::with_options(PlayerOptions {
-        backend: Backend::PipeWire,
+        backend: Backend::System,
         silent: true,
         node_name: node.clone(),
         app_name: "bard-audio selftest".into(),

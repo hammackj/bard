@@ -17,7 +17,6 @@ use lofty::tag::Tag;
 use sha1::{Digest, Sha1};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -35,7 +34,9 @@ pub const PARSE_CONCURRENCY: usize = 8;
 /// it must never change: a different id detaches every play count and cover.
 pub fn track_id(path: impl AsRef<Path>) -> String {
     let resolved = resolve(path);
-    let digest = Sha1::digest(resolved.as_os_str().as_bytes());
+    // On Unix these are the path's bytes; on Windows, its WTF-8 form (UTF-8
+    // for any real path).
+    let digest = Sha1::digest(resolved.as_os_str().as_encoded_bytes());
     let mut hex = String::with_capacity(16);
     for b in &digest[..8] {
         hex.push_str(&format!("{b:02x}"));
@@ -55,7 +56,7 @@ pub fn find_audio_files<S: AsRef<str>>(roots: &[S]) -> Vec<PathBuf> {
     for root in roots {
         let root = resolve(root.as_ref());
         let walker = walkdir::WalkDir::new(&root).follow_links(false).into_iter();
-        let entries = walker.filter_entry(|e| e.depth() == 0 || !e.file_name().as_bytes().starts_with(b"."));
+        let entries = walker.filter_entry(|e| e.depth() == 0 || !e.file_name().as_encoded_bytes().starts_with(b"."));
         for entry in entries.flatten() {
             if !entry.file_type().is_file() {
                 continue;
@@ -332,12 +333,13 @@ mod tests {
         for f in ["A/1.flac", "A/B/2.MP3", "A/cover.jpg", ".hidden/3.flac", "A/.4.ogg", "5.Opus"] {
             std::fs::write(r.join(f), b"x").unwrap();
         }
+        #[cfg(unix)]
         std::os::unix::fs::symlink(r.join("A/1.flac"), r.join("link.flac")).unwrap();
         let root = r.to_str().unwrap().to_string();
         // Listing a root twice does not list its files twice.
         let mut found: Vec<String> = find_audio_files(&[root.clone(), root.clone()])
             .iter()
-            .map(|p| p.strip_prefix(r).unwrap().to_string_lossy().into_owned())
+            .map(|p| p.strip_prefix(r).unwrap().to_string_lossy().replace('\\', "/"))
             .collect();
         found.sort();
         assert_eq!(found, ["5.Opus", "A/1.flac", "A/B/2.MP3"]);

@@ -521,6 +521,7 @@ mod tests {
 
     /// A file that cannot be read is never written: the session runs in
     /// memory, and the next start reads it intact.
+    #[cfg(unix)]
     #[test]
     fn an_unreadable_store_is_left_alone_for_a_later_start() {
         use std::os::unix::fs::PermissionsExt;
@@ -564,6 +565,7 @@ mod tests {
 
     /// A write that fails is retried without waiting for another change, and
     /// both the failure and the recovery are said once.
+    #[cfg(unix)]
     #[test]
     fn a_failing_write_is_retried_and_reported() {
         use std::os::unix::fs::PermissionsExt;

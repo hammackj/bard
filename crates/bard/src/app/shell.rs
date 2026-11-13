@@ -210,33 +210,40 @@ fn toggle_popup(shell: &ShellRef, cx: &mut App) {
     }
 }
 
-fn popup_options(config: &Config, layer: bool) -> WindowOptions {
+/// The compositor places a layer surface by anchor and margin, so on Wayland
+/// the corner setting finally works. "Near the cursor" has no equivalent there
+/// and uses the default corner.
+#[cfg(target_os = "linux")]
+fn layer_kind(config: &Config) -> WindowKind {
     use bard_core::types::TrayPopupCorner as C;
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
-    let size = size(px(popup::WIDTH), px(popup::HEIGHT));
-    let kind = if layer {
-        // The compositor places a layer surface by anchor and margin, so on
-        // Wayland the corner setting finally works. "Near the cursor" has no
-        // equivalent there and uses the default corner.
-        let anchor = match config.window.tray_popup_corner {
-            C::BottomLeft => Anchor::BOTTOM | Anchor::LEFT,
-            C::TopRight => Anchor::TOP | Anchor::RIGHT,
-            C::TopLeft => Anchor::TOP | Anchor::LEFT,
-            C::BottomRight | C::Cursor => Anchor::BOTTOM | Anchor::RIGHT,
-        };
-        let m = px(16.);
-        WindowKind::LayerShell(LayerShellOptions {
-            namespace: "bard-popup".into(),
-            layer: Layer::Overlay,
-            anchor,
-            exclusive_zone: None,
-            exclusive_edge: None,
-            margin: Some((m, m, m, m)),
-            keyboard_interactivity: KeyboardInteractivity::None,
-        })
-    } else {
-        WindowKind::PopUp
+    let anchor = match config.window.tray_popup_corner {
+        C::BottomLeft => Anchor::BOTTOM | Anchor::LEFT,
+        C::TopRight => Anchor::TOP | Anchor::RIGHT,
+        C::TopLeft => Anchor::TOP | Anchor::LEFT,
+        C::BottomRight | C::Cursor => Anchor::BOTTOM | Anchor::RIGHT,
     };
+    let m = px(16.);
+    WindowKind::LayerShell(LayerShellOptions {
+        namespace: "bard-popup".into(),
+        layer: Layer::Overlay,
+        anchor,
+        exclusive_zone: None,
+        exclusive_edge: None,
+        margin: Some((m, m, m, m)),
+        keyboard_interactivity: KeyboardInteractivity::None,
+    })
+}
+
+/// Layer shell is Wayland's; elsewhere the popup is an ordinary popup window.
+#[cfg(not(target_os = "linux"))]
+fn layer_kind(_config: &Config) -> WindowKind {
+    WindowKind::PopUp
+}
+
+fn popup_options(config: &Config, layer: bool) -> WindowOptions {
+    let size = size(px(popup::WIDTH), px(popup::HEIGHT));
+    let kind = if layer { layer_kind(config) } else { WindowKind::PopUp };
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size })),
         titlebar: None,

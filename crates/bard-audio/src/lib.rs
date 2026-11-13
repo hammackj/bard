@@ -1,12 +1,12 @@
-//! Bard's audio engine: decode, PipeWire output, gain, fades, and the
-//! analyser behind the visualiser.
+//! Bard's audio engine: decode, output (PipeWire on Linux, CoreAudio or
+//! WASAPI elsewhere), gain, fades, and the analyser behind the visualiser.
 //!
 //! This replaces the Electron renderer's Web Audio graph
 //! (`src/renderer/src/audio/engine.ts`):
 //!
 //! ```text
 //!   Source (symphonia / libopus, rubato)  -> engine thread
-//!     -> chunk queue -> gain -> analyser -> PipeWire stream  (audio thread)
+//!     -> chunk queue -> gain -> analyser -> output stream    (audio thread)
 //! ```
 //!
 //! [`Player`] is a cheap, `Send + Sync` handle. Every method returns at once:
@@ -18,9 +18,11 @@
 //!
 //! - `bard-audio`: the engine. Owns the decoder, the transport state and the
 //!   crossfade sequence; emits [`PlayerEvent`]s.
-//! - `bard-pipewire`: a PipeWire main loop for the stream and the sink list.
-//!   The stream's process callback runs on PipeWire's realtime data thread and
-//!   is lock-free.
+//! - `bard-pipewire` (Linux): a PipeWire main loop for the stream and the sink
+//!   list. The stream's process callback runs on PipeWire's realtime data
+//!   thread and is lock-free.
+//! - `bard-audio-out` (macOS, Windows): owns a cpal stream on CoreAudio or
+//!   WASAPI and polls the device list; see `native.rs`.
 //!
 //! # Deviations from the requested API
 //!
@@ -51,7 +53,10 @@ pub mod decode;
 mod engine;
 mod gain;
 mod mp4;
+#[cfg(not(target_os = "linux"))]
+mod native;
 mod opus;
+#[cfg(target_os = "linux")]
 mod pw;
 mod render;
 
@@ -111,20 +116,24 @@ pub struct Position {
     pub playing: bool,
 }
 
-/// A PipeWire sink.
+/// An output device: a PipeWire sink on Linux, a CoreAudio or WASAPI device
+/// elsewhere.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputDevice {
-    /// `node.name`: stable across restarts and replugs; save this.
+    /// Stable across restarts and replugs; save this. PipeWire's
+    /// `node.name`, or cpal's device id elsewhere.
     pub id: String,
-    /// `node.description`, for the picker.
+    /// For the picker: `node.description`, or the device's name.
     pub name: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Backend {
+    /// The platform's audio system: PipeWire on Linux, CoreAudio on macOS,
+    /// WASAPI on Windows.
     #[default]
-    PipeWire,
-    /// Renders in real time into nothing. No device, no sound, no PipeWire.
+    System,
+    /// Renders in real time into nothing. No device, no sound.
     Null,
 }
 
@@ -133,15 +142,16 @@ pub struct PlayerOptions {
     pub backend: Backend,
     /// Run the whole pipeline but write zeros to the device.
     pub silent: bool,
-    /// The stream's `node.name`.
+    /// The stream's `node.name` (PipeWire only).
     pub node_name: String,
-    /// `application.name` / `node.description`: what mixers show.
+    /// `application.name` / `node.description`: what mixers show (PipeWire
+    /// only; elsewhere the OS names the stream after the executable).
     pub app_name: String,
 }
 
 impl Default for PlayerOptions {
     fn default() -> Self {
-        PlayerOptions { backend: Backend::PipeWire, silent: false, node_name: "bard".into(), app_name: "Bard".into() }
+        PlayerOptions { backend: Backend::System, silent: false, node_name: "bard".into(), app_name: "Bard".into() }
     }
 }
 
@@ -179,7 +189,7 @@ impl std::fmt::Debug for Player {
 }
 
 impl Player {
-    /// A player on the default PipeWire sink.
+    /// A player on the system's default output.
     pub fn new() -> Result<(Player, Receiver<PlayerEvent>)> {
         Player::with_options(PlayerOptions::default())
     }
@@ -193,12 +203,15 @@ impl Player {
         let (ev_tx, ev_rx) = mpsc::channel();
 
         let output: Box<dyn Output> = match opts.backend {
-            Backend::PipeWire => Box::new(pw::PwOutput::spawn(
+            #[cfg(target_os = "linux")]
+            Backend::System => Box::new(pw::PwOutput::spawn(
                 renderer,
                 shared.clone(),
                 ev_tx.clone(),
                 pw::PwOptions { node_name: opts.node_name, app_name: opts.app_name },
             )?),
+            #[cfg(not(target_os = "linux"))]
+            Backend::System => Box::new(native::NativeOutput::spawn(renderer, shared.clone(), ev_tx.clone())?),
             Backend::Null => Box::new(NullOutput::spawn(renderer).context("spawning the null output")?),
         };
 
@@ -356,8 +369,9 @@ impl Player {
         self.inner.analyser.clone()
     }
 
-    /// PipeWire sinks (`media.class = Audio/Sink`), virtual ones included,
-    /// sorted by name. Kept current as devices come and go.
+    /// Output devices, sorted by name, kept current as devices come and go:
+    /// PipeWire sinks (`media.class = Audio/Sink`, virtual ones included) on
+    /// Linux, the OS's output devices elsewhere.
     pub fn outputs(&self) -> Vec<OutputDevice> {
         self.inner.shared.outputs.lock().map(|o| o.clone()).unwrap_or_default()
     }
