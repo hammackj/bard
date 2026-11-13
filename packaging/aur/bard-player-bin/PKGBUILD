@@ -47,5 +47,9 @@ package() {
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 THIRD-PARTY.md "$pkgdir/usr/share/licenses/$pkgname/THIRD-PARTY.md"
+  # The fonts' and icons' licence texts; tarballs from 0.2.16 on carry them.
+  if [ -d licenses ]; then
+    install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname/" licenses/*
+  fi
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

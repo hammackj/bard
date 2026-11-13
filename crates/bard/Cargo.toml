@@ -87,4 +87,7 @@ assets = [
     ["../../resources/icons/icon-1024.png", "usr/share/icons/hicolor/1024x1024/apps/bard.png", "644"],
     ["../../README.md", "usr/share/doc/bard-player/", "644"],
     ["../../THIRD-PARTY.md", "usr/share/doc/bard-player/", "644"],
+    ["assets/fonts/LICENSE-Inter.txt", "usr/share/doc/bard-player/licenses/", "644"],
+    ["assets/fonts/LICENSE-FiraCode.txt", "usr/share/doc/bard-player/licenses/", "644"],
+    ["assets/icons/LICENSE-Feather.txt", "usr/share/doc/bard-player/licenses/", "644"],
 ]

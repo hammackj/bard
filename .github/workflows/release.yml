@@ -105,6 +105,8 @@ jobs:
           install -m 755 scripts/install-desktop.sh "dist/$name/scripts/"
           cp -r resources/icons resources/icon.svg resources/bard.desktop "dist/$name/resources/"
           cp README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
+          mkdir "dist/$name/licenses"
+          cp crates/bard/assets/fonts/LICENSE-*.txt crates/bard/assets/icons/LICENSE-*.txt "dist/$name/licenses/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           rm -r "dist/$name"
           (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
@@ -162,6 +164,12 @@ jobs:
           done
           iconutil -c icns "$iconset" -o "$app/Contents/Resources/bard.icns"
 
+          # The fonts' and icons' licences travel with them.
+          cp LICENSE THIRD-PARTY.md "$app/Contents/Resources/"
+          mkdir "$app/Contents/Resources/licenses"
+          cp crates/bard/assets/fonts/LICENSE-*.txt crates/bard/assets/icons/LICENSE-*.txt \
+            "$app/Contents/Resources/licenses/"
+
           sed "s/@VERSION@/$VERSION/g" resources/macos/Info.plist > "$app/Contents/Info.plist"
           plutil -lint "$app/Contents/Info.plist"
 
@@ -207,6 +215,8 @@ jobs:
           name="bard-$VERSION-x86_64-windows"
           mkdir -p "dist/$name"
           cp target/release/bard.exe README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
+          mkdir "dist/$name/licenses"
+          cp crates/bard/assets/fonts/LICENSE-*.txt crates/bard/assets/icons/LICENSE-*.txt "dist/$name/licenses/"
           (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null && rm -r "$name")
           (cd dist && sha256sum "$name.zip" > "$name.zip.sha256")
 

@@ -66,6 +66,7 @@ jobs:
           echo "Depends: $depends"
           grep -q libpipewire <<<"$depends"
           dpkg-deb -c "$deb" | grep -q './usr/share/applications/bard.desktop'
+          dpkg-deb -c "$deb" | grep -q './usr/share/doc/bard-player/licenses/LICENSE-Inter.txt'
 
   # macOS and Windows: the same lints and tests. No system packages needed;
   # libopus is built from source (CMake is on both runner images).

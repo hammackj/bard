@@ -1,7 +1,8 @@
 # Third-party assets
 
 Bard's own code is MIT-licensed (see `LICENSE`). These bundled assets keep
-their own licences.
+their own licences. Release packages carry the licence texts in a
+`licenses/` folder.
 
 ## Fonts — SIL Open Font License 1.1
 
