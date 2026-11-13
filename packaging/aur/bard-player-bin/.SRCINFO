@@ -1,6 +1,6 @@
 pkgbase = bard-player-bin
 	pkgdesc = Local music player for streamers, with Content ID-aware streamer mode and an OBS overlay
-	pkgver = 0.2.15
+	pkgver = 0.2.16
 	pkgrel = 1
 	url = https://github.com/hammackj/bard
 	arch = x86_64
@@ -20,9 +20,9 @@ pkgbase = bard-player-bin
 	conflicts = bard
 	options = !strip
 	options = !debug
-	source = https://github.com/hammackj/bard/releases/download/v0.2.15/bard-0.2.15-x86_64-linux.tar.gz
+	source = https://github.com/hammackj/bard/releases/download/v0.2.16/bard-0.2.16-x86_64-linux.tar.gz
 	source = bard.desktop
-	sha256sums = 3d1aae88473155de88775b2ebcaf3fe159e26fce34d29a19946b13f6eaa9e83d
+	sha256sums = 4921a4d3d95b1a9c9c2f0531dddcb1b28a0c18eae9a74f6988dc27e998d4ed68
 	sha256sums = d8dbefa520137acebb66d3073d434908e29bbae8b938ffcd518de0cbc229a479
 
 pkgname = bard-player-bin
