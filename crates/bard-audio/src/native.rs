@@ -60,9 +60,13 @@ impl NativeOutput {
             .name("bard-audio-out".into())
             .spawn(move || {
                 let mut out = Router::new(renderer, shared, events, lost);
+                // The device list is ready before `Player::new` returns; the
+                // stream is opened after, so the caller (the UI thread, at
+                // startup) never waits on the audio device. On macOS that
+                // wait can involve the main run loop, which is the caller.
                 out.publish();
-                out.rebuild();
                 let _ = ready_tx.send(Ok(()));
+                out.rebuild();
                 out.run(rx);
             })
             .context("spawning the audio output thread")?;
