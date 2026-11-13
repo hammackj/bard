@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "bard"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "anyhow",
  "bard-audio",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "bard-audio"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "anyhow",
  "cpal",
@@ -712,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "bard-core"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "anyhow",
  "dirs 7.0.0",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "bard-services"
-version = "0.2.15"
+version = "0.2.16"
 dependencies = [
  "aes 0.9.4",
  "anyhow",

@@ -7,6 +7,10 @@ so minor bumps are where breaking changes land.
 
 ## [Unreleased]
 
+## [0.2.16] — 2026-11-12
+
+Experimental macOS and Windows builds, and a Debian package.
+
 ### Added
 
 - **Experimental macOS and Windows support.** Bard builds and runs on macOS
