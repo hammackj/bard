@@ -4,8 +4,9 @@ name: Release
 # version's CHANGELOG section as the notes:
 #
 # - Linux x86_64: a tarball and a .deb
-# - macOS (Apple Silicon): Bard.app, zipped
-# - Windows x86_64: bard.exe, zipped
+# - macOS (Apple Silicon): Bard.app on a disk image, with an uninstaller
+# - Windows x86_64: an installer (Inno Setup, with an uninstaller), and a
+#   portable zip
 #
 # Runs on pushing a tag (vX.Y.Z), or by hand for a tag that already exists:
 #   gh workflow run Release -f tag=v0.2.15
@@ -169,6 +170,7 @@ jobs:
           mkdir "$app/Contents/Resources/licenses"
           cp crates/bard/assets/fonts/LICENSE-*.txt crates/bard/assets/icons/LICENSE-*.txt \
             "$app/Contents/Resources/licenses/"
+          install -m 755 resources/macos/uninstall.command "$app/Contents/Resources/uninstall.command"
 
           sed "s/@VERSION@/$VERSION/g" resources/macos/Info.plist > "$app/Contents/Info.plist"
           plutil -lint "$app/Contents/Info.plist"
@@ -178,9 +180,22 @@ jobs:
           codesign --force --deep --sign - "$app"
           codesign --verify --verbose "$app"
 
+      - name: Disk image
+        run: |
+          # What the window shows: the app, a shortcut to drag it onto, and
+          # the uninstaller.
+          stage="$RUNNER_TEMP/dmg"
+          mkdir -p "$stage"
+          cp -R dist/Bard.app "$stage/"
+          ln -s /Applications "$stage/Applications"
+          install -m 755 resources/macos/uninstall.command "$stage/Uninstall Bard.command"
+
           name="bard-$VERSION-aarch64-macos"
-          (cd dist && ditto -c -k --keepParent Bard.app "$name.zip" && rm -r Bard.app)
-          (cd dist && shasum -a 256 "$name.zip" > "$name.zip.sha256")
+          hdiutil create -volname "Bard $VERSION" -srcfolder "$stage" \
+            -fs HFS+ -format UDZO -ov "dist/$name.dmg"
+          hdiutil verify "dist/$name.dmg"
+          rm -r dist/Bard.app
+          (cd dist && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -217,8 +232,20 @@ jobs:
           cp target/release/bard.exe README.md LICENSE THIRD-PARTY.md CHANGELOG.md "dist/$name/"
           mkdir "dist/$name/licenses"
           cp crates/bard/assets/fonts/LICENSE-*.txt crates/bard/assets/icons/LICENSE-*.txt "dist/$name/licenses/"
-          (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null && rm -r "$name")
+          (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null)
           (cd dist && sha256sum "$name.zip" > "$name.zip.sha256")
+          echo "STAGE=dist/$name" >> "$GITHUB_ENV"
+
+      - name: Installer
+        run: |
+          choco install innosetup --no-progress -y >/dev/null
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          "$iscc" -DAppVersion="$VERSION" -DStage="$(cygpath -w "$PWD/$STAGE")" \
+            -O"$(cygpath -w "$PWD/dist")" resources/windows/bard.iss
+          rm -r "$STAGE"
+          setup="bard-$VERSION-x86_64-windows-setup.exe"
+          test -f "dist/$setup"
+          (cd dist && sha256sum "$setup" > "$setup.sha256")
 
       - uses: actions/upload-artifact@v4
         with:
@@ -274,16 +301,21 @@ jobs:
 
           ### macOS (Apple Silicon)
 
-          Download `bard-*-aarch64-macos.zip`, unzip it and move **Bard** to
-          Applications. The app is not notarised, so the first time, right-click
-          it and choose **Open**, or run
+          Download `bard-*-aarch64-macos.dmg`, open it and drag **Bard** onto
+          **Applications**. The app is not notarised, so the first time,
+          right-click it and choose **Open**, or run
           `xattr -dr com.apple.quarantine /Applications/Bard.app`.
+          To uninstall, run **Uninstall Bard** from the disk image (or
+          `Bard.app/Contents/Resources/uninstall.command`).
 
           ### Windows
 
-          Download `bard-*-x86_64-windows.zip`, extract it anywhere and run
-          `bard.exe`. It is not code-signed, so SmartScreen may ask you to
-          confirm: **More info**, then **Run anyway**.
+          Download `bard-*-x86_64-windows-setup.exe` and run it. It installs
+          for your user without asking for admin rights, and Bard can be
+          uninstalled from **Settings → Apps**. For a portable copy, extract
+          `bard-*-x86_64-windows.zip` anywhere and run `bard.exe`. Neither is
+          code-signed, so SmartScreen may ask you to confirm: **More info**,
+          then **Run anyway**.
 
           **macOS and Windows support is experimental**, with no tray icon or
           media-key support yet. Please report problems at

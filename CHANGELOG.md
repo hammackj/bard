@@ -10,11 +10,12 @@ so minor bumps are where breaking changes land.
 ### Added
 
 - **Experimental macOS and Windows support.** Bard builds and runs on macOS
-  (Apple Silicon) and Windows (x86_64), and each release includes a zipped `Bard.app` and a
-  Windows zip. Audio goes through CoreAudio or WASAPI at the device's own
-  sample rate, with the same output-device picking as on Linux. The OBS
-  password is kept in the Keychain or Credential Manager, and shortcuts use
-  Cmd on macOS. There is no tray icon or media-key support on either yet.
+  (Apple Silicon) and Windows (x86_64). Each release includes a macOS disk
+  image and a Windows installer (plus a portable zip), both with uninstallers
+  that can also remove Bard's data. Audio goes through CoreAudio or WASAPI
+  at the device's own sample rate, with the same output-device picking as on
+  Linux. The OBS password is kept in the Keychain or Credential Manager, and
+  shortcuts use Cmd on macOS. There is no tray icon or media-key support on either yet.
   Please report problems as GitHub issues.
 - **A Debian package** (`bard-player`) on each release, for Debian and
   Ubuntu 24.04 or newer.

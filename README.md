@@ -57,8 +57,8 @@ Credential Manager on Windows.
 ### From a release
 
 [Releases](https://github.com/hammackj/bard/releases) have a Debian package
-and a tarball for x86_64 Linux, a zipped app for macOS on Apple Silicon, and a
-zip for Windows. The macOS and Windows builds are
+and a tarball for x86_64 Linux, a disk image for macOS on Apple Silicon, and an
+installer and a portable zip for Windows. The macOS and Windows builds are
 [experimental](#requirements).
 
 **Debian / Ubuntu 24.04 or newer:**
@@ -85,17 +85,42 @@ install -Dm755 bard ~/.local/bin/bard
 That adds a launcher and icons for your user. The binary needs the PipeWire,
 Opus and xkbcommon libraries, which most desktops already have.
 
-**macOS:** unzip `bard-<version>-aarch64-macos.zip` and move **Bard** to
-Applications. It isn't notarised, so the first time, right-click it and
+**macOS:** open `bard-<version>-aarch64-macos.dmg` and drag **Bard** onto
+**Applications**. It isn't notarised, so the first time, right-click it and
 choose **Open**, or clear the quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Bard.app
 ```
 
-**Windows:** extract `bard-<version>-x86_64-windows.zip` anywhere and run
-`bard.exe`. It isn't code-signed, so SmartScreen may ask first: choose
-**More info**, then **Run anyway**.
+**Windows:** run `bard-<version>-x86_64-windows-setup.exe`. It installs for
+your user, without admin rights, and adds Bard to the Start menu. For a
+portable copy instead, extract `bard-<version>-x86_64-windows.zip` anywhere
+and run `bard.exe`. Neither is code-signed, so SmartScreen may ask first:
+choose **More info**, then **Run anyway**.
+
+### Uninstalling
+
+Uninstalling removes the app. Your settings, play counts, loved tracks,
+artwork cache and saved OBS password are kept unless you choose to delete
+them, so a reinstall picks up where you left off. Your music files are never
+touched.
+
+- **Windows:** **Settings → Apps → Bard → Uninstall**. It asks whether to
+  delete your Bard data too.
+- **macOS:** run **Uninstall Bard** from the disk image, or
+  `/Applications/Bard.app/Contents/Resources/uninstall.command` in a terminal.
+  It quits Bard, removes the app, and asks whether to delete your data.
+  Like the app, the first time you may need to right-click it and choose
+  **Open**.
+- **Debian / Ubuntu:** `sudo apt remove bard-player`.
+- **Arch:** `sudo pacman -R bard-player-bin`.
+- **Tarball or source install:** delete `~/.local/bin/bard`, and
+  `bard.desktop` and the `bard` icons under `~/.local/share/applications` and
+  `~/.local/share/icons/hicolor`.
+
+Bard's data lives in `~/.config/bard` on Linux,
+`~/Library/Application Support/bard` on macOS and `%APPDATA%\bard` on Windows.
 
 ### From source
 
