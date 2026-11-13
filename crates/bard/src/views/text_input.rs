@@ -52,22 +52,26 @@ actions!(
     ]
 );
 
-/// Text-field bindings, in the "TextInput" key context. `secondary` is Cmd
-/// on macOS and Ctrl elsewhere; word movement is Alt on macOS, Ctrl
-/// elsewhere, and macOS adds Cmd+arrows for line start and end.
+/// Text-field bindings, in the "TextInput" key context.
 pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(bindings());
+}
+
+/// The bindings themselves: Cmd on macOS where Ctrl is used elsewhere, Alt
+/// to move by word on macOS, and Cmd+arrows for line start and end there.
+///
+/// Spelled out per platform rather than with GPUI's `secondary-` alias:
+/// [`KeyBinding::new`] parses without knowing the OS, so `secondary-` fails
+/// on every platform -- and panics, at startup. The test below builds them.
+pub fn bindings() -> Vec<KeyBinding> {
     let c = Some("TextInput");
-    cx.bind_keys([
+    let mut keys = vec![
         KeyBinding::new("backspace", Backspace, c),
         KeyBinding::new("delete", Delete, c),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
         KeyBinding::new("shift-left", SelectLeft, c),
         KeyBinding::new("shift-right", SelectRight, c),
-        KeyBinding::new("secondary-a", SelectAll, c),
-        KeyBinding::new("secondary-v", Paste, c),
-        KeyBinding::new("secondary-c", Copy, c),
-        KeyBinding::new("secondary-x", Cut, c),
         KeyBinding::new("home", Home, c),
         KeyBinding::new("end", End, c),
         KeyBinding::new("enter", Submit, c),
@@ -75,16 +79,20 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("escape", Cancel, c),
         KeyBinding::new("shift-home", SelectHome, c),
         KeyBinding::new("shift-end", SelectEnd, c),
-        KeyBinding::new("secondary-z", Undo, c),
-        KeyBinding::new("secondary-shift-z", Redo, c),
-        KeyBinding::new("secondary-y", Redo, c),
         // Only a numeric field takes these; others pass them on (the filter's
         // Up/Down move the library selection).
         KeyBinding::new("up", StepUp, c),
         KeyBinding::new("down", StepDown, c),
-    ]);
+    ];
     #[cfg(not(target_os = "macos"))]
-    cx.bind_keys([
+    keys.extend([
+        KeyBinding::new("ctrl-a", SelectAll, c),
+        KeyBinding::new("ctrl-v", Paste, c),
+        KeyBinding::new("ctrl-c", Copy, c),
+        KeyBinding::new("ctrl-x", Cut, c),
+        KeyBinding::new("ctrl-z", Undo, c),
+        KeyBinding::new("ctrl-shift-z", Redo, c),
+        KeyBinding::new("ctrl-y", Redo, c),
         KeyBinding::new("ctrl-left", WordLeft, c),
         KeyBinding::new("ctrl-right", WordRight, c),
         KeyBinding::new("ctrl-shift-left", SelectWordLeft, c),
@@ -93,7 +101,13 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-delete", DeleteWord, c),
     ]);
     #[cfg(target_os = "macos")]
-    cx.bind_keys([
+    keys.extend([
+        KeyBinding::new("cmd-a", SelectAll, c),
+        KeyBinding::new("cmd-v", Paste, c),
+        KeyBinding::new("cmd-c", Copy, c),
+        KeyBinding::new("cmd-x", Cut, c),
+        KeyBinding::new("cmd-z", Undo, c),
+        KeyBinding::new("cmd-shift-z", Redo, c),
         KeyBinding::new("alt-left", WordLeft, c),
         KeyBinding::new("alt-right", WordRight, c),
         KeyBinding::new("alt-shift-left", SelectWordLeft, c),
@@ -105,6 +119,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-left", SelectHome, c),
         KeyBinding::new("cmd-shift-right", SelectEnd, c),
     ]);
+    keys
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -888,5 +903,15 @@ impl Render for TextInput {
 impl Focusable for TextInput {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every binding parses: a bad keystroke panics in `KeyBinding::new`,
+    /// which at startup takes the whole app down before a window opens.
+    #[test]
+    fn every_key_binding_parses() {
+        assert!(!super::bindings().is_empty());
     }
 }
