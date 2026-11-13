@@ -418,11 +418,16 @@ mod tests {
         assert!(t.has_artwork);
         assert!(cover_shade(&art, &t.id).unwrap().abs_diff(40) < 4);
 
+        // The cache keys on size and mtime, and a same-sized rewrite within
+        // one tick of Windows' clock (about 15 ms) keeps the mtime. A real
+        // retag is never that quick; the test is.
+        std::thread::sleep(std::time::Duration::from_millis(50));
         flac_with_art(&f, Some(200));
         let t = read_track(&f, &art);
         assert!(t.has_artwork);
         assert!(cover_shade(&art, &t.id).unwrap().abs_diff(200) < 4, "the new art, not the cached");
 
+        std::thread::sleep(std::time::Duration::from_millis(50));
         flac_with_art(&f, None);
         let t = read_track(&f, &art);
         assert!(!t.has_artwork, "art removed from the file");

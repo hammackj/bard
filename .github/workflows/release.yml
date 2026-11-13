@@ -285,7 +285,9 @@ jobs:
           `bard.exe`. It is not code-signed, so SmartScreen may ask you to
           confirm: **More info**, then **Run anyway**.
 
-          On macOS and Windows there is no tray icon or media-key support yet.
+          **macOS and Windows support is experimental**, with no tray icon or
+          media-key support yet. Please report problems at
+          https://github.com/hammackj/bard/issues.
           EOF
 
       - name: Publish

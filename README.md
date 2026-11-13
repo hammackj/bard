@@ -29,7 +29,7 @@ running under a stream without wondering whether the next track is licensed.
 - **Even volume.** ReplayGain normalisation by track or album, plus crossfade.
 - Plays MP3, FLAC, WAV, Ogg Vorbis, M4A (AAC/ALAC) and Opus.
 - Album art, a live visualiser, repeat one/all and a sleep timer.
-- Runs on Linux, macOS and Windows.
+- Runs on Linux, with experimental support for macOS and Windows.
 - On Linux, a tray icon with a now-playing preview, and MPRIS, so desktop
   media controls and media keys work.
 
@@ -37,15 +37,20 @@ running under a stream without wondering whether the next track is licensed.
 
 - **Linux** with PipeWire, on Wayland or X11. Bard is developed on KDE Plasma
   (Wayland). The tray needs a StatusNotifierItem host, which Plasma provides.
-- **macOS** 11 or newer on Apple Silicon.
-- **Windows** 10 or 11, x86_64.
+- **macOS** 11 or newer on Apple Silicon (experimental).
+- **Windows** 10 or 11, x86_64 (experimental).
 
 The OBS password is kept in the system keyring: a Secret Service provider on
 Linux (KWallet, GNOME Keyring or KeePassXC), the Keychain on macOS, and
 Credential Manager on Windows.
 
-On macOS and Windows, Bard has no tray icon or media-key support yet. Closing
-the window quits it.
+> [!NOTE]
+> **macOS and Windows support is experimental.** Bard is developed and used
+> on Linux. The macOS and Windows builds are built and tested in CI, but have
+> hardly been used on real machines yet, and there's no tray icon or
+> media-key support on either (closing the window quits Bard). If something
+> doesn't work, please [open an issue](https://github.com/hammackj/bard/issues)
+> with your OS version and what happened.
 
 ## Installing
 
@@ -53,7 +58,8 @@ the window quits it.
 
 [Releases](https://github.com/hammackj/bard/releases) have a Debian package
 and a tarball for x86_64 Linux, a zipped app for macOS on Apple Silicon, and a
-zip for Windows.
+zip for Windows. The macOS and Windows builds are
+[experimental](#requirements).
 
 **Debian / Ubuntu 24.04 or newer:**
 
