@@ -60,7 +60,7 @@ required-features = ["snapshot"]
 # $auto works out the library dependencies with dpkg-shlibdeps).
 [package.metadata.deb]
 name = "bard-player"
-maintainer = "hammackj <172781+hammackj@users.noreply.github.com>"
+maintainer = "hammackj <jacob.hammack@hammackj.com>"
 copyright = "2026 hammackj"
 license-file = ["../../LICENSE", "0"]
 extended-description = """\

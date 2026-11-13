@@ -1,4 +1,4 @@
-# Maintainer: hammackj <172781+hammackj@users.noreply.github.com>
+# Maintainer: hammackj <jacob.hammack@hammackj.com>
 #
 # Installs the prebuilt binary from the GitHub release. The AUR name is
 # bard-player because "bard" (and "bard-bin") belong to an unrelated songbook
