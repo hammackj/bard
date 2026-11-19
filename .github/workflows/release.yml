@@ -126,7 +126,7 @@ jobs:
           fi
           (cd dist && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: dist/*
@@ -197,7 +197,7 @@ jobs:
           rm -r dist/Bard.app
           (cd dist && shasum -a 256 "$name.dmg" > "$name.dmg.sha256")
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: dist/*
@@ -247,7 +247,7 @@ jobs:
           test -f "dist/$setup"
           (cd dist && sha256sum "$setup" > "$setup.sha256")
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*
@@ -270,7 +270,7 @@ jobs:
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
